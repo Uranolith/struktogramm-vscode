@@ -43,6 +43,7 @@ function jsonEl(el) {
     case 'repeat': o.until = stripKw(one(el), 'until'); o.body = jsonSeq(el.body); break;
     case 'forever': o.body = jsonSeq(el.body); break;
     case 'parallel': o.threads = el.branches.map(jsonSeq); break;
+    case 'try': o.catchVar = String((el.text || [])[0] || '').trim(); o.try = jsonSeq(el.qTry); o.catch = jsonSeq(el.qCatch); o.finally = jsonSeq(el.qFinally); break;
     default: o.text = lines(el).join('\n');
   }
   const cm = (el.comment || []).filter((c) => String(c).trim());
@@ -100,6 +101,7 @@ function xmlNode(o, ind) {
     case 'repeat': return `${ind}<repeat${a} until="${xesc(o.until)}">\n${cm}${seq('body', o.body)}${ind}</repeat>\n`;
     case 'forever': return `${ind}<forever${a}>\n${cm}${seq('body', o.body)}${ind}</forever>\n`;
     case 'parallel': return `${ind}<parallel${a}>\n${cm}${o.threads.map((t) => seq('thread', t)).join('')}${ind}</parallel>\n`;
+    case 'try': return `${ind}<try${a}>\n${cm}${seq('block', o.try)}${seq('catch', o.catch, ` var="${xesc(o.catchVar)}"`)}${seq('finally', o.finally)}${ind}</try>\n`;
     default: return textEl(o.type);
   }
 }
@@ -161,6 +163,15 @@ function compactEl(el, ind, out) {
       push('parallel', true);
       el.branches.forEach((b) => { out.push(I + 'thread'); compactSeq(b, I + ' ', out); });
       return;
+    case 'try': {
+      const v = String((el.text || [])[0] || '').trim();
+      push('try', true);
+      compactSeq(el.qTry, I, out);
+      push('catch' + (v ? ' ' + v : ''));
+      compactSeq(el.qCatch, I, out);
+      if (el.qFinally && el.qFinally.length) { push('finally'); compactSeq(el.qFinally, I, out); }
+      return;
+    }
     default: lines(el).forEach((l, k) => push(l.trim(), k === 0));
   }
 }

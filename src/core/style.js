@@ -68,7 +68,7 @@ function isTarget(toks) {
   }
 }
 
-const NO_ASSIGN = /^(return|exit|throw|raise|output|ausgabe|print|write|writeln|input|eingabe|read|readln|leave|break|continue|if|while|until|case|foreach)$/i;
+const NO_ASSIGN = /^(type|return|exit|throw|raise|output|ausgabe|print|write|writeln|input|eingabe|read|readln|leave|break|continue|if|while|until|case|foreach)$/i;
 
 /** Index des "=" einer alten Zuweisung "x = 5" (oder -1) */
 function legacyAssignIdx(toks) {

@@ -38,6 +38,7 @@
     call: '<rect x="1.5" y="4.5" width="13" height="7"/><path d="M3.5 4.5 V11.5 M12.5 4.5 V11.5"/>',
     jump: '<rect x="1.5" y="4.5" width="13" height="7"/><path d="M4.5 4.5 L2 8 L4.5 11.5"/>',
     parallel: '<rect x="1.5" y="2.5" width="13" height="11"/><path d="M1.5 5 H14.5 M1.5 11 H14.5 M8 5 V11"/>',
+    try: '<rect x="1.5" y="1.5" width="13" height="13"/><path d="M4.5 4 H14.5 M4.5 4 V7.5 H14.5 M4.5 9.5 H14.5 M4.5 9.5 V12.5 H14.5"/>',
   };
   const icon = (k) => `<svg class="ico" viewBox="0 0 16 16">${ICONS[k] || ''}</svg>`;
 
@@ -50,7 +51,9 @@
     ['repeat', 'Fußschleife', 'Fußgesteuerte Schleife (repeat until / do while)'],
     ['forever', 'Endlos', 'Endlosschleife'],
     ['call', 'Aufruf', 'Unterprogramm-Aufruf'],
-    ['jump', 'Sprung', 'Aussprung (leave, return, exit)'],
+    ['jump', 'Sprung', 'Aussprung (leave, return, exit, throw)'],
+    ['try', 'Try', 'Fehlerbehandlung (try / catch / finally)'],
+    ['parallel', 'Parallel', 'Parallelverarbeitung'],
   ];
 
   const HINTS = {
@@ -62,11 +65,12 @@
     repeat: 'Fußgesteuerte Schleife (Abbruchbedingung):  until x = 0',
     forever: 'Endlosschleife – verlassen mit einem Sprung „leave“. Text optional.',
     call: 'Aufruf eines Unterprogramms:  ausgabe(a, b)   oder   x := summe(a, b)',
-    jump: 'leave (Schleife verlassen)  ·  return x  ·  exit 0  ·  throw "Fehler"',
+    jump: 'leave (Schleife verlassen)  ·  leave 2 (zwei Schleifen)  ·  return x  ·  exit 0  ·  throw "Fehler"',
+    try: 'Name der Variable, die im catch-Teil die Fehlermeldung enthält, z.B.  fehler',
     parallel: 'Anzahl paralleler Zweige',
     root: 'Hauptprogramm: Name.  Unterprogramm: Signatur, z.B.  summe(a: int, b: int): int',
   };
-  const TYPE_NAMES = { instruction: 'Anweisung', alternative: 'Verzweigung', case: 'Fallauswahl', for: 'Zählschleife', while: 'Kopfschleife', repeat: 'Fußschleife', forever: 'Endlosschleife', call: 'Aufruf', jump: 'Sprung', parallel: 'Parallel', root: 'Diagramm' };
+  const TYPE_NAMES = { instruction: 'Anweisung', alternative: 'Verzweigung', case: 'Fallauswahl', for: 'Zählschleife', while: 'Kopfschleife', repeat: 'Fußschleife', forever: 'Endlosschleife', call: 'Aufruf', jump: 'Sprung', parallel: 'Parallel', try: 'Try', root: 'Diagramm' };
   const COLORS = ['ffffff', 'ffd6d6', 'ffe8c2', 'fff3a8', 'd6f5d6', 'cfefff', 'd8e2ff', 'eadcff', 'e6e6e6'];
 
   function buildToolbar() {
@@ -74,7 +78,7 @@
       toolbar.innerHTML = `
         <span class="group"><button data-a="saveNsd" class="primary" title="Als .nsd-Datei speichern und im Editor öffnen">Als Struktogramm speichern</button>
         <button data-a="toCode" title="In eine andere Programmiersprache übersetzen">Code erzeugen …</button></span>
-        <span class="group"><button data-a="export" title="Exportieren: SVG, PNG, JSON, XML oder KI-kompakt">Exportieren …</button><button data-a="aiClip" title="Token-sparenden Pseudocode für KI-Agents in die Zwischenablage kopieren">KI ⧉</button></span>
+        <span class="group"><button data-a="export" title="Exportieren: SVG, PNG, JSON, XML oder KI-kompakt">Exportieren …</button></span>
       <span class="group exec">
         <button data-x="run" class="run" title="Ausführen bzw. fortsetzen (F5). Ist ein Unterprogramm ausgewählt, wird dieses ausgeführt.">▶ <span>Ausführen</span></button>
         <button data-x="step" title="Einzelschritt (F10) – das hervorgehobene Element wird ausgeführt">⏭ <span>Schritt</span></button>
@@ -112,7 +116,7 @@
       <span class="group">
         <button data-a="toCode" class="primary" title="Code erzeugen – mit eigener Übersetzung oder dem Original-Structorizer">Code erzeugen …</button>
         <button data-a="export" title="Exportieren: SVG, PNG, JSON, XML oder KI-kompakt">Exportieren …</button>
-        <button data-a="aiClip" title="Token-sparenden Pseudocode für KI-Agents in die Zwischenablage kopieren">KI ⧉</button>
+        
         <button data-a="structorizer" title="Im Original-Structorizer öffnen (benötigt Java)">Structorizer</button>
       </span>
       <span class="group exec">
@@ -283,15 +287,18 @@
       render();
       if (m.editNew && sel) {
         const el = getAt(sel);
-        if (el && (el.type !== 'forever')) openDialog(true);
+        if (el && (el.type !== 'forever' || reopenAsEdit)) openDialog(!reopenAsEdit);
+        reopenAsEdit = false;
       }
     } else if (m.type === 'clipboard') {
       hasClipboard = m.has; updateButtons();
     } else if (m.type === 'renderPng') renderPng(m.svg, m.id);
     else if (m.type === 'execCommand') execCmd(m.cmd);
+    else if (m.type === 'execTurtle') turtleApply(m.ops);
     else if (m.type === 'execReset') {
       $('conout').innerHTML = '';
       $('vars').innerHTML = '';
+      turtleReset();
       errPath = null;
       showExecPanel();
       conLine('▶ ' + (m.title || ''), 'info');
@@ -316,6 +323,52 @@
       markExec(m.state === 'paused' || m.state === 'input');
     }
   });
+
+  /* ------------------------------ Turtleizer ------------------------------ */
+  // Zeichenfläche für forward/left/… – erscheint, sobald das Programm die Turtle benutzt
+  const turtle = { lines: [], bg: '#ffffff', t: null };
+  function turtleReset() {
+    turtle.lines = []; turtle.bg = '#ffffff'; turtle.t = null;
+    const box = $('turtle');
+    if (box) { box.hidden = true; $('turtlesvg').innerHTML = ''; }
+  }
+  function turtleApply(ops) {
+    for (const o of ops) {
+      if (o.op === 'line') turtle.lines.push(o);
+      else if (o.op === 'clear') turtle.lines = [];
+      else if (o.op === 'bg') turtle.bg = o.c;
+      else if (o.op === 'turtle') turtle.t = o;
+    }
+    showExecPanel();
+    drawTurtle();
+  }
+  function drawTurtle() {
+    const box = $('turtle'), svg = $('turtlesvg');
+    if (!box || !svg) return;
+    box.hidden = false;
+    const t = turtle.t || { x: 0, y: 0, dir: 0, visible: true };
+    let x0 = t.x, x1 = t.x, y0 = t.y, y1 = t.y;
+    for (const l of turtle.lines) {
+      x0 = Math.min(x0, l.x1, l.x2); x1 = Math.max(x1, l.x1, l.x2);
+      y0 = Math.min(y0, l.y1, l.y2); y1 = Math.max(y1, l.y1, l.y2);
+    }
+    const pad = 20, w = Math.max(x1 - x0, 100) + 2 * pad, h = Math.max(y1 - y0, 100) + 2 * pad;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    svg.setAttribute('viewBox', `${cx - w / 2} ${cy - h / 2} ${w} ${h}`);
+    // Linien je Farbe zu einem Pfad zusammenfassen (schnell auch bei vielen Linien)
+    const byColor = new Map();
+    for (const l of turtle.lines) {
+      const d = `M${l.x1.toFixed(2)} ${l.y1.toFixed(2)}L${l.x2.toFixed(2)} ${l.y2.toFixed(2)}`;
+      byColor.set(l.c, (byColor.get(l.c) || '') + d);
+    }
+    let s = `<rect x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}" fill="${turtle.bg}"/>`;
+    for (const [c, d] of byColor) s += `<path d="${d}" stroke="${c}" stroke-width="1.5" fill="none" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+    if (t.visible) {
+      const sz = Math.max(w, h) / 30;
+      s += `<g transform="translate(${t.x} ${t.y}) rotate(${-t.dir})"><polygon points="0,${-sz} ${sz * 0.6},${sz * 0.6} ${-sz * 0.6},${sz * 0.6}" fill="#2e8b57" stroke="#14532d" vector-effect="non-scaling-stroke"/></g>`;
+    }
+    svg.innerHTML = s;
+  }
 
   /* ------------------------------ Ausführung ------------------------------ */
   function execCmd(cmd) {
@@ -502,7 +555,7 @@
     items.push(['-']);
     items.push(['sub:after', 'Danach einfügen ▸']);
     if (el && !isRoot) items.push(['sub:before', 'Davor einfügen ▸']);
-    if (el && !isRoot && ['instruction', 'call', 'jump', 'alternative', 'case', 'for', 'while', 'repeat', 'forever'].includes(el.type)) items.push(['sub:wrap', 'Umschließen mit ▸']);
+    if (el && !isRoot && ['instruction', 'call', 'jump', 'alternative', 'case', 'for', 'while', 'repeat', 'forever', 'try', 'parallel'].includes(el.type)) items.push(['sub:wrap', 'Umschließen mit ▸']);
     items.push(['-']);
     if (el && !isRoot) { items.push(['copy', 'Kopieren', 'Strg+C'], ['cut', 'Ausschneiden', 'Strg+X']); }
     items.push(['paste', 'Einfügen', 'Strg+V', !hasClipboard]);
@@ -537,7 +590,7 @@
       const sm = document.createElement('div');
       sm.id = 'submenu';
       sm.className = 'menu';
-      const kinds = mode === 'wrap' ? KINDS.filter(([k]) => ['alternative', 'for', 'while', 'repeat', 'forever'].includes(k)) : KINDS;
+      const kinds = mode === 'wrap' ? KINDS.filter(([k]) => ['alternative', 'for', 'while', 'repeat', 'forever', 'try'].includes(k)) : KINDS;
       sm.innerHTML = kinds.map(([k, label]) => `<div class="item" data-k="${k}">${icon(k)}<span>${label}</span></div>`).join('');
       document.body.appendChild(sm);
       const r = it.getBoundingClientRect();
@@ -614,6 +667,7 @@
   });
 
   /* ------------------------------ Bearbeiten-Dialog ------------------------------ */
+  let reopenAsEdit = false; // nach einem Typwechsel „bearbeiten“ statt „einfügen“
   function openDialog(isNew) {
     if (READONLY || !sel) return;
     const el = getAt(sel);
@@ -625,7 +679,9 @@
     dialog.innerHTML = `
       <div class="box" role="dialog" aria-label="Element bearbeiten">
         <h2>${icon(type === 'root' ? 'instruction' : type)} ${TYPE_NAMES[type] || type} ${isNew ? 'einfügen' : 'bearbeiten'}</h2>
-        <label for="dText">${type === 'root' ? 'Name / Signatur' : type === 'alternative' ? 'Bedingung' : type === 'parallel' ? 'Anzahl Zweige' : 'Text'}</label>
+        ${type !== 'root' ? `<label for="dType">Elementtyp</label>
+        <select id="dType" title="Elementtyp wechseln – enthaltene Elemente bleiben erhalten">${KINDS.map(([k, label]) => `<option value="${k}"${k === type ? ' selected' : ''}>${label}</option>`).join('')}</select>` : ''}
+        <label for="dText">${type === 'root' ? 'Name / Signatur' : type === 'alternative' ? 'Bedingung' : type === 'parallel' ? 'Anzahl Zweige' : type === 'try' ? 'Fehlervariable (catch)' : 'Text'}</label>
         <textarea id="dText" rows="${Math.max(type === 'instruction' || type === 'case' ? 4 : 2, (el.text || []).length + 1)}" spellcheck="false">${escapeHtml(text)}</textarea>
         <div class="hint">${escapeHtml(HINTS[type] || '').replace(/\n/g, '<br>')}</div>
         ${type === 'root' ? `<div class="row"><label><input type="radio" name="rt" value="program" ${el.rootType === 'program' ? 'checked' : ''}> Hauptprogramm</label>
@@ -645,22 +701,34 @@
       chosen = b.dataset.c;
     }));
     const ta = $('dText');
-    const ac = type === 'root' || type === 'parallel' ? null : attachCompletion(ta, sel, type);
+    const ac = type === 'root' || type === 'parallel' || type === 'try' ? null : attachCompletion(ta, sel, type);
     ta.focus();
     if (isNew && type !== 'instruction') ta.select();
     else ta.setSelectionRange(ta.value.length, ta.value.length);
     const path = sel;
     const close = () => { dialog.hidden = true; dialog.innerHTML = ''; };
-    const ok = () => {
+    const props = () => {
       // Deklarationen vereinheitlichen: "var x:int" / "var x : int" → "var x: int"
       const fixDecl = (l) => l.replace(/^(\s*(?:var|const|dim)\s+[^:="']*?)\s*:(?!=)\s*(?=\S)/i, '$1: ');
-      const cmd = { op: 'update', path, text: ta.value.replace(/\r/g, '').replace(/\n+$/, '').split('\n').map((l) => (type === 'instruction' ? fixDecl(l) : l)), comment: $('dComment').value.replace(/\r/g, ''), color: chosen };
+      const cmd = { text: ta.value.replace(/\r/g, '').replace(/\n+$/, '').split('\n').map((l) => (type === 'instruction' ? fixDecl(l) : l)), comment: $('dComment').value.replace(/\r/g, ''), color: chosen };
       const rt = dialog.querySelector('input[name="rt"]:checked');
       if (rt) cmd.rootType = rt.value;
       const dis = $('dDisabled');
       if (dis) cmd.disabled = dis.checked;
+      return cmd;
+    };
+    const ok = () => {
+      const cmd = { op: 'update', path, ...props() };
       close();
       op(cmd);
+    };
+    const typeSel = $('dType');
+    if (typeSel) typeSel.onchange = () => {
+      // Typ wechseln: bisherige Eingaben übernehmen, danach öffnet sich der Dialog für das neue Element
+      const p = props();
+      close();
+      reopenAsEdit = true;
+      op({ op: 'changeType', path, kind: typeSel.value, props: p });
     };
     $('dOk').onclick = ok;
     $('dCancel').onclick = close;
@@ -674,12 +742,24 @@
   }
 
   /* ------------------------------ Autovervollständigung ------------------------------ */
+  // Befehlssatz des Structorizer-Executors (Funktionen) plus Umwandlungen
   const BUILTINS = [
-    ['sqrt', 1], ['abs', 1], ['pow', 2], ['sqr', 1], ['round', 1], ['floor', 1], ['ceil', 1], ['trunc', 1],
-    ['random', 1], ['randint', 2], ['length', 1], ['len', 1], ['min', 2], ['max', 2], ['sum', 1], ['range', 2],
-    ['upper', 1], ['lower', 1], ['substring', 3], ['copy', 3], ['pos', 2], ['chr', 1], ['ord', 1],
-    ['str', 1], ['int', 1], ['float', 1], ['sin', 1], ['cos', 1], ['tan', 1], ['exp', 1], ['ln', 1], ['log', 1], ['odd', 1],
+    ['abs', 1], ['min', 2], ['max', 2], ['round', 1], ['ceil', 1], ['floor', 1], ['sgn', 1], ['signum', 1], ['sqr', 1], ['sqrt', 1],
+    ['exp', 1], ['log', 1], ['pow', 2], ['sin', 1], ['cos', 1], ['tan', 1], ['asin', 1], ['acos', 1], ['atan', 1],
+    ['toRadians', 1], ['toDegrees', 1], ['random', 1],
+    ['length', 1], ['pos', 2], ['copy', 3], ['lowercase', 1], ['uppercase', 1], ['trim', 1], ['split', 2], ['strcmp', 2],
+    ['ord', 1], ['chr', 1], ['isArray', 1], ['isString', 1], ['isChar', 1], ['isBool', 1], ['isNumber', 1],
+    ['copyArray', 1], ['copyRecord', 1],
+    ['getX', 0], ['getY', 0], ['getOrientation', 0],
+    ['fileOpen', 1], ['fileCreate', 1], ['fileAppend', 1], ['fileEOF', 1], ['fileRead', 1], ['fileReadChar', 1],
+    ['fileReadInt', 1], ['fileReadDouble', 1], ['fileReadLine', 1],
+    ['str', 1], ['int', 1], ['float', 1],
   ];
+  // Structorizer-Prozeduren: stehen allein in einer Zeile
+  const PROCEDURES = [['inc', 1], ['dec', 1], ['insert', 3], ['delete', 3], ['randomize', 0], ['fileWrite', 2], ['fileWriteLine', 2], ['fileClose', 1],
+    // Turtleizer
+    ['forward', 1], ['backward', 1], ['left', 1], ['right', 1], ['gotoXY', 2], ['gotoX', 1], ['gotoY', 1], ['penUp', 0], ['penDown', 0],
+    ['hideTurtle', 0], ['showTurtle', 0], ['setPenColor', 3], ['setBackground', 3], ['clear', 0]];
   // [Wort, Beschreibung, Leerzeichen anhängen, eher am Zeilenanfang]
   const KEYWORDS = [
     ['INPUT', 'Eingabe', 1, 1], ['OUTPUT', 'Ausgabe', 1, 1], ['var', 'Deklaration  var x: int', 1, 1], ['const', 'Konstante', 1, 1],
@@ -690,10 +770,11 @@
     ['to', 'for … to …', 1, 0], ['downto', 'for … downto …', 1, 0], ['by', 'Schrittweite', 1, 0], ['in', 'foreach … in …', 1, 0],
     ['and', 'logisches Und', 1, 0], ['or', 'logisches Oder', 1, 0], ['not', 'logisches Nicht', 1, 0],
     ['mod', 'Divisionsrest', 1, 0], ['true', 'wahr', 0, 0], ['false', 'falsch', 0, 0],
+    ['type', 'Typdefinition  type Punkt = record{x: int; y: int}', 1, 1], ['record', 'Record-Typ', 0, 0], ['enum', 'Aufzählungstyp', 0, 0],
   ];
   const TYPE_WORDS = ['int', 'double', 'float', 'string', 'boolean', 'char'];
-  const KIND_LABEL = { var: 'Variable', func: 'Unterprogramm', builtin: 'Funktion', kw: 'Schlüsselwort', type: 'Datentyp' };
-  const KIND_ICON = { var: 'x', func: 'ƒ', builtin: 'ƒ', kw: 'K', type: 'T' };
+  const KIND_LABEL = { var: 'Variable', func: 'Unterprogramm', builtin: 'Funktion', proc: 'Prozedur', kw: 'Schlüsselwort', type: 'Datentyp' };
+  const KIND_ICON = { var: 'x', func: 'ƒ', builtin: 'ƒ', proc: 'ƒ', kw: 'K', type: 'T' };
 
   /** Kandidaten: Variablen des aktuellen Diagramms, dann Unterprogramme, Standardfunktionen, Schlüsselwörter */
   function completionItems(path) {
@@ -706,6 +787,7 @@
     // Datentypen vor gleichnamigen Funktionen: "in" → int, "int" → int()
     for (const t of TYPE_WORDS) push({ name: t, kind: 'type', detail: 'Datentyp', space: true });
     for (const [n, p] of BUILTINS) push({ name: n, kind: 'builtin', detail: TYPE_WORDS.includes(n) ? 'Umwandlung nach ' + n : n + '(…)', call: true, params: p });
+    for (const [n, p] of PROCEDURES) push({ name: n, kind: 'proc', detail: 'Prozedur ' + n + '(…)', call: true, params: p });
     for (const [k, d, space, lead] of KEYWORDS) push({ name: k, kind: 'kw', detail: d, space: !!space, lead: !!lead });
     return items;
   }
@@ -774,13 +856,13 @@
       if (/^\s*(var|const|dim)\s+[\p{L}\p{N}_,\s]*$/iu.test(lineBefore)) return { items: [] }; // neuer Name
       if (!t) {
         switch (elType) {
-          case 'instruction': return { items: uniq([...kws('INPUT', 'OUTPUT', 'var', 'const'), ...vars, ...funcs]) };
+          case 'instruction': return { items: uniq([...kws('INPUT', 'OUTPUT', 'var', 'const', 'type'), ...vars, ...funcs, ...byKind('proc')]) };
           case 'call': return { items: uniq([...funcs, ...vars]) };
           case 'jump': return { items: kws('leave', 'return', 'exit', 'continue', 'throw') };
           case 'for': return { items: kws('for', 'foreach') };
           case 'while': return { items: uniq([...kws('while'), ...expr()]) };
           case 'repeat': return { items: uniq([...kws('until'), ...expr()]) };
-          case 'forever': return { items: [] };
+          case 'forever': case 'try': return { items: [] };
           default: return { items: expr() }; // Bedingung, Fallauswahl
         }
       }

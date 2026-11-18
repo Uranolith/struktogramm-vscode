@@ -607,18 +607,24 @@ class CParser {
     this.p++;
     if (T[this.p] && T[this.p].v === '(') this.group();
     const body = this.body(end);
-    let hadCatch = false;
-    let fin = [];
+    // try / catch / finally -> TRY-Element (erster catch-Zweig wird der catch-Teil)
+    let catchVar = null, catchBody = null, fin = [], extra = 0;
     while (T[this.p] && (T[this.p].v === 'catch' || T[this.p].v === 'finally')) {
       if (T[this.p].v === 'catch') {
-        this.p++; hadCatch = true;
-        if (T[this.p] && T[this.p].v === '(') this.group();
-        this.body(end);
+        this.p++;
+        let name = null;
+        if (T[this.p] && T[this.p].v === '(') {
+          const g = this.group().filter((x) => x.t === 'id');
+          name = g.length ? g[g.length - 1].v : null; // catch (Exception e) / catch (e)
+        }
+        const b = this.body(end);
+        if (catchBody) { extra++; continue; }
+        catchVar = name; catchBody = b;
       } else { this.p++; fin = this.body(end); }
     }
-    const out = body.concat(fin);
-    if (hadCatch && out.length) addComment(out[0], 'try/catch: Fehlerbehandlung wird im Struktogramm nicht dargestellt');
-    return out;
+    const el = mk.try(catchVar || 'fehler', body, catchBody || [], fin);
+    if (extra) addComment(el, `${extra} weitere catch-Zweige wurden nicht übernommen`);
+    return [el];
   }
 
   /* ------------------------------------------------------------ */

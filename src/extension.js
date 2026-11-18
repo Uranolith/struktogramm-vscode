@@ -37,7 +37,8 @@ class NsdEditorProvider {
     this.active = state;
     panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')] };
     panel.webview.html = webviewHtml(panel.webview, this.context.extensionUri, false);
-    state.exec = new ExecController(panel.webview, () => fromNsd(document.getText()));
+    state.exec = new ExecController(panel.webview, () => fromNsd(document.getText()),
+      () => (document.uri.scheme === 'file' ? path.dirname(document.uri.fsPath) : undefined));
 
     const send = () => {
       let model = null, error = null, svg = '';
@@ -116,7 +117,7 @@ class NsdEditorProvider {
     try { model = fromNsd(document.getText()); } catch (e) { model = { roots: [] }; }
     const sel = apply(model, cmd);
     state.select = sel;
-    state.editNew = cmd.op === 'insert' || cmd.op === 'addRoot';
+    state.editNew = cmd.op === 'insert' || cmd.op === 'addRoot' || cmd.op === 'changeType';
     const text = toNsd(model);
     if (text === document.getText()) { state.send(); return; }
     const edit = new vscode.WorkspaceEdit();
@@ -144,7 +145,8 @@ class PreviewPanel {
         localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
       });
       this.panel.webview.html = webviewHtml(this.panel.webview, this.context.extensionUri, true);
-      this.exec = new ExecController(this.panel.webview, () => { const d = this.document(); if (!d) throw new Error('Kein Quelltext geöffnet.'); return this.model(d); });
+      this.exec = new ExecController(this.panel.webview, () => { const d = this.document(); if (!d) throw new Error('Kein Quelltext geöffnet.'); return this.model(d); },
+        () => { const d = this.document(); return d && d.uri.scheme === 'file' ? path.dirname(d.uri.fsPath) : undefined; });
       const subs = [
         vscode.window.onDidChangeActiveTextEditor((ed) => { if (ed && supportedLanguage(ed.document.languageId, ed.document.fileName)) { this.docUri = ed.document.uri; this.exec.abort(); this.update(); } }),
         vscode.workspace.onDidChangeTextDocument((e) => { if (this.docUri && e.document.uri.toString() === this.docUri.toString()) { this.exec.abort('■ Ausführung abgebrochen, weil der Code geändert wurde.'); this.schedule(); } }),
@@ -292,7 +294,66 @@ async function pickLanguage(context) {
   return pick;
 }
 
-async function toCodeFromModel(model, baseName) {
+/* ====================================================================== */
+/* Live-Code: erzeugter, noch ungespeicherter Code folgt dem Struktogramm  */
+/* ====================================================================== */
+const liveLinks = new Map(); // URI des erzeugten Dokuments -> { codeDoc, srcUri, target, baseName, text, timer }
+let liveStatus = null;
+
+function updateLiveStatus() {
+  if (!liveStatus) return;
+  const ed = vscode.window.activeTextEditor;
+  const link = ed && liveLinks.get(ed.document.uri.toString());
+  if (!link) { liveStatus.hide(); return; }
+  liveStatus.text = `$(sync) Live: ${path.basename(vscode.Uri.parse(link.srcUri).fsPath)}`;
+  liveStatus.tooltip = 'Dieser Code wird automatisch aktualisiert, wenn sich das Struktogramm ändert – bis du ihn speicherst oder selbst bearbeitest.\nKlicken, um die Live-Aktualisierung zu beenden.';
+  liveStatus.show();
+}
+
+function endLive(key, reason) {
+  const link = liveLinks.get(key);
+  if (!link) return;
+  clearTimeout(link.timer);
+  liveLinks.delete(key);
+  updateLiveStatus();
+  if (reason) vscode.window.setStatusBarMessage(`Struktogramm: Live-Aktualisierung beendet (${reason}).`, 6000);
+}
+
+function registerLiveCode(codeDoc, srcUri, target, baseName) {
+  liveLinks.set(codeDoc.uri.toString(), { codeDoc, srcUri: srcUri.toString(), target, baseName, text: codeDoc.getText(), timer: null });
+  updateLiveStatus();
+}
+
+/** Struktogramm wurde geändert -> verknüpfte Code-Dokumente (verzögert) neu erzeugen */
+function scheduleLiveUpdate(nsdDoc) {
+  const src = nsdDoc.uri.toString();
+  for (const [key, link] of liveLinks) {
+    if (link.srcUri !== src) continue;
+    clearTimeout(link.timer);
+    link.timer = setTimeout(() => { updateLiveCode(key, link, nsdDoc).catch(() => {}); }, 250);
+  }
+}
+
+async function updateLiveCode(key, link, nsdDoc) {
+  const d = link.codeDoc;
+  if (d.isClosed || !d.isUntitled) { endLive(key); return; }
+  if (link.text === null) { scheduleLiveUpdate(nsdDoc); return; } // vorheriges Schreiben läuft noch
+  if (d.getText() !== link.text) { endLive(key, 'der Code wurde von Hand geändert'); return; }
+  let code;
+  try {
+    const model = fromNsd(nsdDoc.getText());
+    if (!model.roots.length) return;
+    code = generateCode(model, link.target, { className: toClassName(link.baseName) });
+  } catch (e) { return; } // unvollständiges Diagramm: alten Stand behalten
+  if (code.replace(/\r\n/g, '\n') === d.getText().replace(/\r\n/g, '\n')) return;
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(d.uri, new vscode.Range(0, 0, d.lineCount, 0), code);
+  link.text = null; // während des Schreibens keine Handänderung erkennen
+  await vscode.workspace.applyEdit(edit);
+  link.text = d.getText();
+}
+
+async function toCodeFromModel(model, baseName, srcUri) {
   const pick = await pickLanguage(extContext);
   if (!pick) return;
   let code, languageId;
@@ -308,6 +369,8 @@ async function toCodeFromModel(model, baseName) {
   try { doc = await vscode.workspace.openTextDocument({ language: languageId, content: code }); }
   catch { doc = await vscode.workspace.openTextDocument({ language: 'plaintext', content: code }); }
   await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+  // Eigene Übersetzung aus einer .nsd: Code bleibt bis zum Speichern mit dem Struktogramm verbunden
+  if (srcUri && pick.engine === 'own') registerLiveCode(doc, srcUri, pick.id, baseName);
   if (pick.id === 'java' || pick.id === 'Java') vscode.window.setStatusBarMessage(`Tipp: Als ${toClassName(baseName)}.java speichern.`, 8000);
 }
 
@@ -329,7 +392,7 @@ async function toCode(arg, provider) {
   const doc = await vscode.workspace.openTextDocument(uri);
   const model = fromNsd(doc.getText());
   if (!model.roots.length) { vscode.window.showWarningMessage('Das Struktogramm ist leer.'); return; }
-  await toCodeFromModel(model, path.basename(uri.fsPath).replace(/\.[^.]*$/, ''));
+  await toCodeFromModel(model, path.basename(uri.fsPath).replace(/\.[^.]*$/, ''), uri);
 }
 
 async function openInStructorizer(document) {
@@ -556,6 +619,27 @@ function activate(context) {
       if (u) await openInStructorizer(await vscode.workspace.openTextDocument(u));
     }),
     vscode.commands.registerCommand('struktogramm.setupStructorizer', () => setupStructorizer(context)),
+  );
+
+  // Live-Code: ungespeicherter erzeugter Code folgt dem Struktogramm
+  liveStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
+  liveStatus.command = 'struktogramm.stopLiveCode';
+  context.subscriptions.push(
+    liveStatus,
+    vscode.commands.registerCommand('struktogramm.stopLiveCode', () => {
+      const ed = vscode.window.activeTextEditor;
+      if (ed) endLive(ed.document.uri.toString(), 'beendet');
+    }),
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      if (!e.contentChanges.length || !liveLinks.size) return;
+      const key = e.document.uri.toString();
+      const own = liveLinks.get(key);
+      // Handänderung im erzeugten Code -> Verbindung lösen (eigene Schreibvorgänge haben text === null)
+      if (own && own.text !== null && e.document.getText() !== own.text) { endLive(key, 'der Code wurde von Hand geändert'); return; }
+      scheduleLiveUpdate(e.document);
+    }),
+    vscode.workspace.onDidCloseTextDocument((d) => endLive(d.uri.toString())),
+    vscode.window.onDidChangeActiveTextEditor(() => updateLiveStatus()),
   );
 }
 

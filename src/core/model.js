@@ -10,6 +10,7 @@
  *                                                 letzte Marke "%" = kein default-Zweig
  *             for | while | repeat | forever   -> text, body
  *             parallel                         -> branches
+ *             try                              -> text[0]=Name der Fehlervariable, qTry, qCatch, qFinally
  * Optional:   comment:string[], color:'rrggbb', disabled:boolean
  */
 
@@ -28,6 +29,7 @@ const mk = {
   repeat: (text, body = []) => ({ type: 'repeat', text: toLines(text), body }),
   forever: (body = []) => ({ type: 'forever', text: [], body }),
   parallel: (branches) => ({ type: 'parallel', text: [], branches }),
+  try: (catchVar = 'fehler', qTry = [], qCatch = [], qFinally = []) => ({ type: 'try', text: toLines(catchVar), qTry, qCatch, qFinally }),
 };
 
 /** Alle Unterfolgen eines Elements: [{ key, seq }] mit key als Pfadfragment */
@@ -37,6 +39,7 @@ function sequencesOf(el) {
     case 'alternative': return [{ key: 'qTrue', seq: el.qTrue }, { key: 'qFalse', seq: el.qFalse }];
     case 'case': case 'parallel': return el.branches.map((seq, i) => ({ key: 'branches/' + i, seq }));
     case 'for': case 'while': case 'repeat': case 'forever': return [{ key: 'body', seq: el.body }];
+    case 'try': return [{ key: 'qTry', seq: el.qTry }, { key: 'qCatch', seq: el.qCatch }, { key: 'qFinally', seq: el.qFinally }];
     default: return [];
   }
 }
@@ -63,6 +66,7 @@ function defaultElement(kind) {
     case 'repeat': return mk.repeat('until Bedingung');
     case 'forever': return mk.forever();
     case 'parallel': return mk.parallel([[], []]);
+    case 'try': return mk.try('fehler');
     default: throw new Error('Unbekannter Elementtyp: ' + kind);
   }
 }

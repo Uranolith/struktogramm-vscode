@@ -46,6 +46,7 @@ class BaseGen {
     this.I = this.lang === 'pascal' ? '  ' : '    ';
     this.sigs = new Map();
     this.funcs = new Map();
+    this.collectTypes();
     for (const r of doc.roots) {
       const sig = P.parseSignature(r.text);
       this.sigs.set(r, sig);
@@ -219,6 +220,13 @@ class BaseGen {
         identsOf(linesOf(el).join(' ')).forEach((n) => seen.add(n));
       }
     });
+    // Fehlervariablen von TRY-Elementen sind Zeichenketten (Fehlermeldung)
+    walk(root.children, (el) => {
+      if (el.type !== 'try') return;
+      const v = this.catchVar(el);
+      all.add(v);
+      if (!types.get(v)) types.set(v, 'string');
+    });
     for (const n of all) if (!types.has(n)) types.set(n, null);
     return { types, explicit, params, inline, hoist, forDecl, all, declared: new Set(), fnTypes };
   }
@@ -295,16 +303,76 @@ class BaseGen {
     return out;
   }
 
+  /** Wird diese Schleife von einem „leave n“ (n > 1) weiter innen verlassen? */
+  loopNeedsLabel(loop) {
+    const LOOPS = ['for', 'while', 'repeat', 'forever'];
+    const scan = (seq, d) => seq.some((e) => {
+      if (e.type === 'jump' && linesOf(e).some((l) => { const c = P.classifyLine(l); return c.kind === 'leave' && c.count > 1 && c.count === d + 1; })) return true;
+      if (LOOPS.includes(e.type)) return scan(e.body, d + 1);
+      return require('./model').sequencesOf(e).some((s) => scan(s.seq, d));
+    });
+    return scan(loop.body || [], 0);
+  }
+
+  /** leave n: mehrere Schleifen verlassen */
+  leaveN(count, ind) {
+    const stack = this.loopStack || [];
+    const label = stack[stack.length - count];
+    if (!label) return null;
+    switch (this.lang) {
+      case 'java': case 'javascript': return [ind + `break ${label};`];
+      case 'kotlin': return [ind + `break@${label}`];
+      case 'rust': return [ind + `break '${label.toLowerCase()};`];
+      case 'c': case 'cpp': case 'csharp': case 'pascal': return [ind + `goto ${label};`];
+      case 'python': return [ind + `raise _Leave${label}()`];
+      default: return [ind + this.comment(`leave ${count}: ${count} Schleifen verlassen – bitte von Hand umsetzen`), ...this.stmt({ kind: 'leave' }, ind)];
+    }
+  }
+
   el(el, ind) {
+    const LOOPS = ['for', 'while', 'repeat', 'forever'];
+    if (LOOPS.includes(el.type) && !el.disabled) {
+      const label = this.loopNeedsLabel(el) ? `L${(this.labelCount = (this.labelCount || 0) + 1)}` : null;
+      this.loopStack = this.loopStack || [];
+      this.loopStack.push(label);
+      let out;
+      try { out = this.elInner(el, ind); } finally { this.loopStack.pop(); }
+      if (label) {
+        const k = out.findIndex((l) => l.startsWith(ind) && !l.slice(ind.length).startsWith(this.comment('').trim()));
+        const pre = { java: `${label}: `, javascript: `${label}: `, kotlin: `${label}@ `, rust: `'${label.toLowerCase()}: ` }[this.lang];
+        if (pre && k >= 0) out[k] = ind + pre + out[k].slice(ind.length);
+        if (['c', 'cpp', 'csharp', 'pascal'].includes(this.lang)) out.push(ind + `${label}: ;`);
+        if (this.lang === 'pascal') { this.pasLabels = this.pasLabels || []; this.pasLabels.push(label); }
+        if (this.lang === 'python') {
+          // Python hat keine Sprungmarken: eigene Ausnahme verlässt alle inneren Schleifen
+          this.needs.add('leave:' + label);
+          const loopLines = out.slice(k);
+          out.splice(k, out.length - k, ind + 'try:', ...loopLines.map((l) => this.I + l), ind + `except _Leave${label}:`, ind + this.I + 'pass');
+        }
+      }
+      return out;
+    }
+    return this.elInner(el, ind);
+  }
+
+  elInner(el, ind) {
     const out = this.elComments(el, ind);
     if (el.disabled) { out.push(ind + this.comment('(deaktiviert) ' + linesOf(el).join(' | '))); return out; }
     switch (el.type) {
       case 'instruction': case 'call': case 'jump': {
         const lines = linesOf(el);
         if (el.type === 'jump' && !lines.length) out.push(...this.stmt({ kind: 'leave' }, ind, el));
-        for (const l of lines) out.push(...this.stmt(P.classifyLine(l), ind, el));
+        for (const l of lines) {
+          const pl = this.procLine(l);
+          if (pl == null) continue;
+          const c = P.classifyLine(pl);
+          if (c.kind === 'typedef') continue; // Typdefinitionen stehen am Dateianfang (typeDefs)
+          const multi = c.kind === 'leave' && c.count > 1 ? this.leaveN(c.count, ind) : null;
+          out.push(...(multi || this.stmt(c, ind, el)));
+        }
         break;
       }
+      case 'try': out.push(...this.tryEl(el, ind)); break;
       case 'alternative': out.push(...this.ifEl(el, ind)); break;
       case 'case': out.push(...this.caseEl(el, ind)); break;
       case 'for': out.push(...this.forEl(el, ind)); break;
@@ -318,6 +386,102 @@ class BaseGen {
       default: out.push(ind + this.comment('Unbekanntes Element: ' + el.type));
     }
     return out;
+  }
+
+  /**
+   * Structorizer-Prozeduren als Zuweisung schreiben:
+   * inc(x[, d]) -> x := x + d,  insert(w, s, i) -> s := insert(w, s, i),  delete(s, i, n) -> s := delete(s, i, n),
+   * randomize() entfällt (null). Pascal kennt Insert/Delete selbst.
+   */
+  procLine(line) {
+    const { matchClose, splitTop } = require('./tokenizer');
+    const toks = P.ptoks(line);
+    if (toks.length < 3 || toks[0].t !== 'id' || toks[1].v !== '(' || matchClose(toks, 1) !== toks.length - 1) return line;
+    if (this.funcs.has(toks[0].v)) return line;
+    const n = toks[0].v.toLowerCase();
+    const args = splitTop(toks.slice(2, -1), ',').filter((p) => p.length).map(joinTokens);
+    const par = (s) => (/^[\p{L}\p{N}_.]+$/u.test(s) ? s : `(${s})`);
+    switch (n) {
+      case 'randomize': return null;
+      case 'inc': case 'dec': return args.length ? `${args[0]} := ${args[0]} ${n === 'inc' ? '+' : '-'} ${args[1] ? par(args[1]) : '1'}` : line;
+      case 'insert': return this.lang === 'pascal' || args.length !== 3 ? line : `${args[1]} := insert(${args.join(', ')})`;
+      case 'delete': return this.lang === 'pascal' || args.length !== 3 ? line : `${args[0]} := delete(${args.join(', ')})`;
+      default: return line;
+    }
+  }
+
+  /** Name der Fehlervariable eines TRY-Elements */
+  catchVar(el) { return String((el.text || [])[0] || '').trim() || 'fehler'; }
+
+  /** TRY ohne Ausnahmen in der Zielsprache (C, Rust): try- und finally-Teil nacheinander */
+  tryEl(el, ind) {
+    const out = [ind + this.comment(`try – Fehlerbehandlung (catch ${this.catchVar(el)}) gibt es in dieser Sprache nicht`)];
+    out.push(...this.seq(el.qTry, ind));
+    if (el.qFinally.length) { out.push(ind + this.comment('finally')); out.push(...this.seq(el.qFinally, ind)); }
+    return out;
+  }
+
+  /** Records und Aufzählungen aus allen Diagrammen (type X = record{…} / enum{…}) */
+  collectTypes() {
+    const recs = new Map(), enums = [];
+    for (const r of this.doc.roots) {
+      walk(r.children, (el) => {
+        if (!['instruction', 'call'].includes(el.type)) return;
+        for (const l of linesOf(el)) {
+          const c = P.classifyLine(l);
+          if (c.kind !== 'typedef') continue;
+          if (c.typeKind === 'enum') {
+            let next = 0, base = null;
+            for (const it of c.items) {
+              if (it.value != null && it.value !== '') {
+                if (/^-?\d+$/.test(it.value.trim())) { next = parseInt(it.value, 10); base = null; } else { base = it.value; next = 0; }
+              }
+              if (!enums.some((e) => e.name === it.name)) enums.push({ name: it.name, value: base ? (next ? `${base} + ${next}` : base) : String(next) });
+              next++;
+            }
+          } else recs.set(c.name, c.fields.map((f) => ({ name: f.name, type: P.normType(f.type) || 'int' })));
+        }
+      });
+    }
+    this.recordTypes = recs;
+    this.enumConsts = enums;
+  }
+
+  /** Vorgabewert eines einfachen Typs als Literal der Zielsprache */
+  litDefault(t) {
+    const n = P.normType(t);
+    if (this.recordTypes && this.recordTypes.has(n)) return this.recordNew(n, []);
+    const py = this.lang === 'python', pas = this.lang === 'pascal';
+    return { int: '0', double: '0.0', string: pas ? "''" : '""', boolean: py ? 'False' : 'false', char: pas ? "' '" : "' '" }[n] || (py ? 'None' : '0');
+  }
+
+  /** Record-Literal Punkt{x: 3, y: 4} -> Zielsprache; vals: übersetzte Werte in Feldreihenfolge (fehlende = null) */
+  recordNew(type, vals) {
+    const fields = this.recordTypes.get(type) || [];
+    const v = fields.map((f, k) => (vals[k] != null ? vals[k] : this.litDefault(f.type)));
+    switch (this.lang) {
+      case 'python': return `${type}(${v.join(', ')})`;
+      case 'java': case 'csharp': return `new ${type}(${v.join(', ')})`;
+      case 'javascript': return `({ ${fields.map((f, k) => `${f.name}: ${v[k]}`).join(', ')} })`;
+      case 'c': return `(${type}){ ${v.join(', ')} }`;
+      case 'cpp': return `${type}{ ${v.join(', ')} }`;
+      case 'kotlin': return `${type}(${v.join(', ')})`;
+      case 'rust': return `${type} { ${fields.map((f, k) => `${f.name}: ${v[k]}`).join(', ')} }`;
+      case 'pascal': return `Make${type}(${v.join(', ')})`;
+      default: return `${type}(${v.join(', ')})`;
+    }
+  }
+
+  /** Aus translateExpr: Record-Literal mit Pseudocode-Werten [{name|null, src}] */
+  recordLiteral(type, entries) {
+    const fields = this.recordTypes.get(type) || [];
+    const vals = fields.map(() => null);
+    entries.forEach((e, k) => {
+      const idx = e.name ? fields.findIndex((f) => f.name === e.name) : k;
+      if (idx < 0 || idx >= fields.length) return;
+      vals[idx] = typeof this.val === 'function' ? this.val(fields[idx].type, e.src) : this.x(e.src);
+    });
+    return this.recordNew(type, vals);
   }
 
   /** Fall-Marken einer Fallauswahl (wie Structorizer: letzter Zweig = default, außer Marke "%") */
@@ -392,7 +556,8 @@ class CGen extends BaseGen {
         return c.decls.map((d) => {
           this.cur.declared.add(d.name);
           const t = c.type || this.typeOf(d.name);
-          return ind + this.declLine(d.name + (d.suffix || ''), t, d.init != null ? this.x(d.init) : null, c.isConst);
+          const rec = !d.suffix && this.recordTypes.has(P.normType(t));
+          return ind + this.declLine(d.name + (d.suffix || ''), t, d.init != null ? this.x(d.init) : rec ? this.recordNew(P.normType(t), []) : null, c.isConst);
         });
       case 'assign': {
         const target = c.target;
@@ -433,7 +598,8 @@ class CGen extends BaseGen {
         if (L === 'javascript') return [ind + (lit ? `throw new Error(${e});` : `throw ${e};`)];
         if (L === 'cpp') { this.needs.add('stdexcept'); return [ind + (lit ? `throw runtime_error(${e});` : `throw ${e};`)]; }
         this.needs.add('stdlib');
-        return [ind + `fprintf(stderr, "%s\\n", ${lit ? e : '"Fehler"'}); exit(1);`];
+        this.needs.add('cthrow');
+        return [ind + `_throw(${lit ? e : '"Fehler"'});`];
       }
       default: {
         // Pascal-Stil "Funktionsname := Wert" wird oben als assign erkannt
@@ -629,6 +795,94 @@ class CGen extends BaseGen {
     return [ind + `while (${c}) {`, ...this.seq(body, ind + this.I), ind + '}'];
   }
 
+  tryEl(el, ind) {
+    const L = this.lang, I = this.I, v = this.catchVar(el);
+    if (L === 'c') {
+      // C: try/catch mit setjmp/longjmp nachgebildet (Hilfsfunktion _throw)
+      this.needs.add('cthrow'); this.needs.add('stdlib');
+      const out = [ind + '{', ind + I + 'jmp_buf* _prev = _try_env;', ind + I + 'jmp_buf _env;', ind + I + '_try_env = &_env;',
+        ind + I + 'if (setjmp(_env) == 0) {', ...this.seq(el.qTry, ind + I + I), ind + I + I + '_try_env = _prev;',
+        ind + I + '} else {', ind + I + I + '_try_env = _prev;', ind + I + I + `const char* ${v} = _try_msg;`, ...this.seq(el.qCatch, ind + I + I), ind + I + '}'];
+      out.push(...this.seq(el.qFinally, ind + I), ind + '}');
+      return out;
+    }
+    if (L === 'cpp') this.needs.add('stdexcept');
+    const head = { java: '} catch (Exception _e) {', csharp: '} catch (Exception _e) {', javascript: '} catch (_e) {', cpp: '} catch (const exception& _e) {' }[L];
+    const decl = { java: `String ${v} = _e.getMessage();`, csharp: `string ${v} = _e.Message;`, javascript: `const ${v} = _e instanceof Error ? _e.message : String(_e);`, cpp: `string ${v} = _e.what();` }[L];
+    const wasDeclared = this.cur.declared.has(v);
+    this.cur.declared.add(v);
+    const out = [ind + 'try {', ...this.seq(el.qTry, ind + I), ind + head, ind + I + decl, ...this.seq(el.qCatch, ind + I)];
+    if (!wasDeclared) this.cur.declared.delete(v);
+    if (el.qFinally.length && L !== 'cpp') out.push(ind + '} finally {', ...this.seq(el.qFinally, ind + I));
+    out.push(ind + '}');
+    if (el.qFinally.length && L === 'cpp') out.push(ind + this.comment('finally (C++ hat kein finally)'), ...this.seq(el.qFinally, ind));
+    return out;
+  }
+
+  /** C/C++: Hilfsfunktionen für Structorizer-Zeichenkettenfunktionen und throw */
+  cppHelpers() {
+    if (this.lang === 'c') return this.cHelpers();
+    if (this.lang !== 'cpp') return [];
+    const out = [];
+    if (this.needs.has('strupper')) out.push('string str_upper(string s) { for (auto& c : s) c = toupper((unsigned char) c); return s; }');
+    if (this.needs.has('strlower')) out.push('string str_lower(string s) { for (auto& c : s) c = tolower((unsigned char) c); return s; }');
+    if (this.needs.has('strtrim')) out.push('string str_trim(const string& s) { size_t a = s.find_first_not_of(" \\t\\r\\n"); if (a == string::npos) return ""; size_t b = s.find_last_not_of(" \\t\\r\\n"); return s.substr(a, b - a + 1); }');
+    if (out.length) { this.needs.add('string'); out.push(''); }
+    return out;
+  }
+
+  cHelpers() {
+    const out = [];
+    const N = this.needs;
+    const range = '    size_t ls = strlen(s); size_t k = i < 1 ? 0 : (size_t) (i - 1) > ls ? ls : (size_t) (i - 1);';
+    if (N.has('cthrow')) {
+      out.push('static jmp_buf* _try_env = NULL;', 'static const char* _try_msg = "";',
+        '/* throw: zum nächsten try springen oder Programm beenden */',
+        'void _throw(const char* msg) {', '    if (_try_env) { _try_msg = msg; longjmp(*_try_env, 1); }', '    fprintf(stderr, "%s\\n", msg);', '    exit(1);', '}');
+    }
+    if (N.has('strupper') || N.has('strlower')) {
+      for (const [n, f] of [['strupper', 'toupper'], ['strlower', 'tolower']]) {
+        if (N.has(n)) out.push(`char* str_${n.slice(3)}(const char* s) {`, '    char* r = malloc(strlen(s) + 1);', '    size_t i = 0;', `    for (; s[i]; i++) r[i] = (char) ${f}((unsigned char) s[i]);`, '    r[i] = 0;', '    return r;', '}');
+      }
+    }
+    if (N.has('strtrim')) out.push('char* str_trim(const char* s) {', '    while (isspace((unsigned char) *s)) s++;', '    size_t n = strlen(s);', '    while (n && isspace((unsigned char) s[n - 1])) n--;', '    char* r = malloc(n + 1);', '    memcpy(r, s, n); r[n] = 0;', '    return r;', '}');
+    if (N.has('strpos')) out.push('int str_pos(const char* sub, const char* s) {', '    const char* p = strstr(s, sub);', '    return p ? (int) (p - s) + 1 : 0;', '}');
+    if (N.has('strcopy')) out.push('char* str_copy(const char* s, int i, int n) {', range, '    size_t e = k + (n < 0 ? 0 : (size_t) n); if (e > ls) e = ls;', '    char* r = malloc(e - k + 1);', '    memcpy(r, s + k, e - k); r[e - k] = 0;', '    return r;', '}');
+    if (N.has('strinsert')) out.push('char* str_insert(const char* w, const char* s, int i) {', range, '    size_t lw = strlen(w);', '    char* r = malloc(ls + lw + 1);', '    memcpy(r, s, k); memcpy(r + k, w, lw); strcpy(r + k + lw, s + k);', '    return r;', '}');
+    if (N.has('strdelete')) out.push('char* str_delete(const char* s, int i, int n) {', range, '    size_t e = k + (n < 0 ? 0 : (size_t) n); if (e > ls) e = ls;', '    char* r = malloc(ls - (e - k) + 1);', '    memcpy(r, s, k); strcpy(r + k, s + e);', '    return r;', '}');
+    if (out.length) { N.add('string'); N.add('stdlib'); out.push(''); }
+    if (['strupper', 'strlower', 'strtrim'].some((n) => N.has(n))) N.add('ctype');
+    return out;
+  }
+
+  /** Records und Aufzählungswerte (Java/C#: in der Klasse, sonst am Dateianfang) */
+  typeDefs(ind) {
+    const L = this.lang, I = this.I, out = [];
+    for (const e of this.enumConsts) {
+      out.push(ind + ({ java: `static final int ${e.name} = ${this.x(e.value)};`, csharp: `const int ${e.name} = ${this.x(e.value)};`, javascript: `const ${e.name} = ${this.x(e.value)};` }[L] || `const int ${e.name} = ${this.x(e.value)};`));
+    }
+    for (const [name, fields] of this.recordTypes) {
+      const tn = (f) => this.typeName(f.type);
+      if (L === 'javascript') { out.push(ind + this.comment(`Record ${name}: { ${fields.map((f) => f.name).join(', ')} }`)); continue; }
+      if (L === 'c') { out.push(ind + `typedef struct { ${fields.map((f) => `${tn(f)} ${f.name};`).join(' ')} } ${name};`); continue; }
+      if (L === 'cpp') {
+        out.push(ind + `struct ${name} {`, ...fields.map((f) => ind + I + `${tn(f)} ${f.name}${this.litDefault(f.type) !== '0' || P.normType(f.type) === 'int' ? ' = ' + this.litDefault(f.type) : '{}'};`), ind + '};');
+        out.push(ind + `ostream& operator<<(ostream& o, const ${name}& r) { return o << "${name}{" << ${fields.map((f, k) => `"${k ? ', ' : ''}${f.name}: " << r.${f.name}`).join(' << ')} << "}"; }`);
+        continue;
+      }
+      const pub = L === 'csharp' ? 'public ' : '';
+      out.push(ind + (L === 'java' ? `static class ${name} {` : `class ${name} {`));
+      fields.forEach((f) => out.push(ind + I + `${pub}${tn(f)} ${f.name};`));
+      out.push(ind + I + `${pub}${name}() {${fields.map((f) => ` ${f.name} = ${this.litDefault(f.type)};`).join('')} }`);
+      out.push(ind + I + `${pub}${name}(${fields.map((f) => `${tn(f)} ${f.name}`).join(', ')}) {${fields.map((f) => ` this.${f.name} = ${f.name};`).join('')} }`);
+      if (L === 'java') out.push(ind + I + `public String toString() { return "${name}{" + ${fields.map((f, k) => `"${k ? ', ' : ''}${f.name}: " + ${f.name}`).join(' + ')} + "}"; }`);
+      else out.push(ind + I + `public override string ToString() { return "${name}{" + ${fields.map((f, k) => `"${k ? ', ' : ''}${f.name}: " + ${f.name}`).join(' + ')} + "}"; }`);
+      out.push(ind + '}');
+    }
+    if (out.length) out.push('');
+    return out;
+  }
+
   repeatEl(cond, body, ind) {
     return [ind + 'do {', ...this.seq(body, ind + this.I), ind + `} while (${this.x(P.negateCond(cond))});`];
   }
@@ -686,6 +940,7 @@ class CGen extends BaseGen {
 
   defaultValue(t) {
     const n = P.normType(t);
+    if (this.recordTypes.has(n)) return this.recordNew(n, []);
     if (this.lang === 'c' && n === 'string' ) return null;
     return { int: '0', double: '0.0', boolean: this.lang === 'c' ? 'false' : 'false', string: '""', char: "' '" }[n] || (this.lang === 'java' || this.lang === 'csharp' ? null : null);
   }
@@ -701,21 +956,25 @@ class CGen extends BaseGen {
     const mainName = mainRoot ? this.sigs.get(mainRoot).name : 'Programm';
     const out = [];
     const title = this.comment(`Erzeugt aus Struktogramm "${mainRoot ? mainRoot.text.join(' ') : (roots[0] ? roots[0].text.join(' ') : '')}"`);
+    const td = this.typeDefs(L === 'java' || L === 'csharp' ? this.I : '');
+    const helpers = this.cppHelpers();
     if (L === 'java') {
       const cls = this.opts.className || toClassName(mainName);
       if (this.needs.has('scanner')) out.push('import java.util.Scanner;', '');
       out.push(title, `public class ${cls} {`);
       if (this.needs.has('scanner')) out.push(this.I + 'static Scanner scanner = new Scanner(System.in);', '');
+      out.push(...td);
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
       out.push('}');
     } else if (L === 'csharp') {
       out.push('using System;', '', title, `class ${this.opts.className || toClassName(mainName)}`, '{');
+      out.push(...td);
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines.map((l) => l.replace(/^(\s*)(.*) \{$/, (m0, a, b) => (/^(static|public)/.test(b.trim()) ? `${a}${b}\n${a}{` : m0)))); });
       out.push('}');
     } else if (L === 'javascript') {
       out.push(title);
       if (this.needs.has('prompt')) out.push('// Eingabe im Terminal: npm install prompt-sync', 'const prompt = require("prompt-sync")();');
-      out.push('');
+      out.push('', ...td);
       const subs = gen.filter((g) => !g.isMain);
       const main = gen.find((g) => g.isMain);
       subs.forEach((g) => { out.push(...g.lines, ''); });
@@ -728,6 +987,8 @@ class CGen extends BaseGen {
         if (this.needs.has('stdbool')) inc.push('#include <stdbool.h>');
         if (this.needs.has('string')) inc.push('#include <string.h>');
         if (this.needs.has('math')) inc.push('#include <math.h>');
+        if (this.needs.has('ctype')) inc.push('#include <ctype.h>');
+        if (this.needs.has('cthrow')) inc.push('#include <setjmp.h>');
       } else {
         inc.push('#include <iostream>');
         if (this.needs.has('string')) inc.push('#include <string>');
@@ -736,7 +997,7 @@ class CGen extends BaseGen {
         if (this.needs.has('stdexcept')) inc.push('#include <stdexcept>');
         inc.push('', 'using namespace std;');
       }
-      out.push(title, ...inc, '');
+      out.push(title, ...inc, '', ...td, ...helpers);
       const protos = gen.filter((g) => g.proto).map((g) => g.proto);
       if (protos.length) out.push(...protos, '');
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
@@ -753,7 +1014,8 @@ class PyGen extends BaseGen {
     switch (c.kind) {
       case 'empty': return [];
       case 'decl':
-        return c.decls.filter((d) => d.init != null).map((d) => {
+        return c.decls.filter((d) => d.init != null || this.recordTypes.has(P.normType(c.type))).map((d) => {
+          if (d.init == null) return ind + `${d.name} = ${this.recordNew(P.normType(c.type), [])}`;
           let v = this.x(d.init);
           if (/^\{.*\}$/.test(v)) v = '[' + v.slice(1, -1) + ']';
           return ind + `${d.name} = ${v}`;
@@ -801,6 +1063,25 @@ class PyGen extends BaseGen {
       return '{' + this.x(p.expr) + '}';
     }).join('');
     return `print(f${q}${s}${q})`;
+  }
+
+  tryEl(el, ind) {
+    const I = this.I, v = this.catchVar(el);
+    const out = [ind + 'try:', ...this.block(el.qTry, ind + I), ind + 'except Exception as _e:', ind + I + `${v} = str(_e)`, ...this.seq(el.qCatch, ind + I)];
+    if (el.qFinally.length) out.push(ind + 'finally:', ...this.block(el.qFinally, ind + I));
+    return out;
+  }
+
+  typeDefs() {
+    const I = this.I, out = [];
+    for (const e of this.enumConsts) out.push(`${e.name} = ${this.x(e.value)}`);
+    if (out.length) out.push('', '');
+    for (const [name, fields] of this.recordTypes) {
+      out.push(`class ${name}:`, `${I}def __init__(self${fields.map((f) => `, ${f.name}=${this.litDefault(f.type)}`).join('')}):`);
+      fields.forEach((f) => out.push(`${I}${I}self.${f.name} = ${f.name}`));
+      out.push('', `${I}def __repr__(self):`, `${I}${I}return "${name}{" + ${fields.map((f, k) => `"${k ? ', ' : ''}${f.name}: " + repr(self.${f.name})`).join(' + ')} + "}"`, '', '');
+    }
+    return out;
   }
 
   block(list, ind) {
@@ -908,12 +1189,20 @@ class PyGen extends BaseGen {
       lines.push(...this.seq(r.children, ''));
       mainParts.push(lines);
     }
+    const td = this.typeDefs();
     const head = [];
-    for (const m of ['math', 'random', 'sys']) if (this.needs.has(m)) head.push(`import ${m}`);
+    for (const m of ['math', 'random', 'sys', 'turtle']) if (this.needs.has(m)) head.push(`import ${m}`);
+    // Turtleizer: Farben 0–255, Blick nach oben wie im Structorizer
+    if (this.needs.has('turtle')) head.push('', 'turtle.colormode(255)', 'turtle.setheading(90)');
     const out = [];
     if (head.length) out.push(...head, '', '');
+    const leaves = [...this.needs].filter((n) => n.startsWith('leave:')).map((n) => n.slice(6));
+    if (leaves.length) out.push(...leaves.map((l) => `class _Leave${l}(Exception):
+${this.I}pass`), '', '');
+    out.push(...td);
     parts.forEach((p) => out.push(...p, '', ''));
     mainParts.forEach((p, i) => { if (i) out.push(''); out.push(...p); });
+    if (this.needs.has('turtle')) out.push('turtle.done()');
     return out.join('\n').replace(/\n{4,}/g, '\n\n\n').trim() + '\n';
   }
 }
@@ -948,6 +1237,33 @@ class PasGen extends BaseGen {
       case 'throw': this.needs.add('sysutils'); return [ind + `raise Exception.Create(${this.x(c.expr)});`];
       default: return [ind + this.x(c.expr) + ';'];
     }
+  }
+
+  tryEl(el, ind) {
+    const I = this.I, v = this.catchVar(el);
+    this.needs.add('sysutils');
+    const fin = el.qFinally.length;
+    const i2 = fin ? ind + I : ind;
+    const inner = [i2 + 'try', ...this.seq(el.qTry, i2 + I), i2 + 'except', i2 + I + 'on _E: Exception do', i2 + I + 'begin',
+      i2 + I + I + `${v} := _E.Message;`, ...this.seq(el.qCatch, i2 + I + I), i2 + I + 'end;', i2 + 'end;'];
+    if (!fin) return inner;
+    return [ind + 'try', ...inner, ind + 'finally', ...this.seq(el.qFinally, ind + I), ind + 'end;'];
+  }
+
+  typeDefs() {
+    const I = this.I, out = [];
+    if (this.enumConsts.length) out.push('const', ...this.enumConsts.map((e) => `${I}${e.name} = ${this.x(e.value)};`), '');
+    if (this.recordTypes.size) {
+      out.push('type');
+      for (const [name, fields] of this.recordTypes) out.push(`${I}${name} = record`, ...fields.map((f) => `${I}${I}${f.name}: ${this.typeName(f.type)};`), `${I}end;`);
+      out.push('');
+      for (const [name, fields] of this.recordTypes) {
+        out.push(`function Make${name}(${fields.map((f) => `${f.name}: ${this.typeName(f.type)}`).join('; ')}): ${name};`, 'begin');
+        fields.forEach((f) => out.push(`${I}Result.${f.name} := ${f.name};`));
+        out.push('end;', '');
+      }
+    }
+    return out;
   }
 
   beginEnd(list, ind, term = ';') {
@@ -1007,6 +1323,13 @@ class PasGen extends BaseGen {
 
   repeatEl(cond, body, ind) { return [ind + 'repeat', ...this.seq(body, ind + this.I), ind + `until ${this.x(cond)};`]; }
 
+  /** Sprungmarken für leave n (goto) */
+  labelSection() {
+    if (!this.pasLabels || !this.pasLabels.length) return [];
+    this.needs.add('goto');
+    return [`label ${this.pasLabels.join(', ')};`];
+  }
+
   varSection(info, ind, skip) {
     const byType = new Map();
     for (const n of info.all) {
@@ -1033,8 +1356,9 @@ class PasGen extends BaseGen {
       const ps = sig.params.map((p) => `${p.name}: ${this.typeName(p.type || p.inferredType)}`).join('; ');
       (r.comment || []).filter((s) => s.trim()).forEach((s) => body.push(this.comment(s)));
       body.push(ret ? `function ${sig.name}(${ps}): ${this.typeName(ret)};` : `procedure ${sig.name}(${ps});`);
-      body.push(...this.varSection(info, '', new Set([...info.params, sig.name])));
-      body.push(...this.beginEnd(r.children, ''), '');
+      this.pasLabels = [];
+      const be = this.beginEnd(r.children, '');
+      body.push(...this.varSection(info, '', new Set([...info.params, sig.name])), ...this.labelSection(), ...be, '');
     }
     let mainLines = [];
     let progName = 'Programm';
@@ -1042,14 +1366,17 @@ class PasGen extends BaseGen {
       const info = this.analyze(main, { params: [] });
       this.cur = info; this.curIsMain = true;
       progName = toClassName(this.sigs.get(main).name);
-      mainLines = [...this.varSection(info, '', new Set()), '', ...this.beginEnd(main.children, '', '.')];
+      this.pasLabels = [];
+      const be = this.beginEnd(main.children, '', '.');
+      mainLines = [...this.varSection(info, '', new Set()), ...this.labelSection(), '', ...be];
     }
-    out.push(`program ${progName};`, '', '{$mode objfpc}{$H+}', '');
+    const td = this.typeDefs();
+    out.push(`program ${progName};`, '', '{$mode objfpc}{$H+}' + (this.needs.has('goto') ? '{$goto on}' : ''), '');
     const uses = [];
     if (this.needs.has('math')) uses.push('Math');
     if (this.needs.has('sysutils')) uses.push('SysUtils');
     if (uses.length) out.push(`uses ${uses.join(', ')};`, '');
-    out.push(...body);
+    out.push(...td, ...body);
     if (main) out.push(...mainLines);
     else out.push('begin', 'end.');
     return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
@@ -1104,6 +1431,7 @@ class KtGen extends CGen {
 
   defaultValue(t) {
     const n = P.normType(t);
+    if (this.recordTypes.has(n)) return this.recordNew(n, []);
     if (n && n.endsWith('[]')) {
       const b = P.normType(n.slice(0, -2));
       return { int: 'IntArray(0)', double: 'DoubleArray(0)', boolean: 'BooleanArray(0)', char: 'CharArray(0)' }[b] || 'arrayOf()';
@@ -1276,6 +1604,22 @@ class KtGen extends CGen {
     return [ind + 'do {', ...this.seq(body, ind + this.I), ind + `} while (${this.x(P.negateCond(cond))})`];
   }
 
+  tryEl(el, ind) {
+    const I = this.I, v = this.catchVar(el);
+    const out = [ind + 'try {', ...this.seq(el.qTry, ind + I), ind + '} catch (_e: Exception) {', ind + I + `val ${v} = _e.message ?: ""`, ...this.seq(el.qCatch, ind + I)];
+    if (el.qFinally.length) out.push(ind + '} finally {', ...this.seq(el.qFinally, ind + I));
+    out.push(ind + '}');
+    return out;
+  }
+
+  typeDefs() {
+    const out = [];
+    for (const e of this.enumConsts) out.push(`const val ${e.name} = ${this.x(e.value)}`);
+    for (const [name, fields] of this.recordTypes) out.push(`data class ${name}(${fields.map((f) => `var ${f.name}: ${this.typeName(f.type)} = ${this.defaultValue(f.type)}`).join(', ')})`);
+    if (out.length) out.push('');
+    return out;
+  }
+
   routine(root) {
     const I = this.I;
     const sig = this.sigs.get(root);
@@ -1302,7 +1646,7 @@ class KtGen extends CGen {
     for (const r of roots) if (r !== mainRoot) gen.push(this.routine(r));
     const out = [this.comment(`Erzeugt aus Struktogramm "${(mainRoot || roots[0]).text.join(' ')}"`)];
     if (this.needs.has('exit')) out.push('import kotlin.system.exitProcess');
-    out.push('');
+    out.push('', ...this.typeDefs());
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
     return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
   }
@@ -1323,6 +1667,7 @@ class RsGen extends BaseGen {
 
   defaultValue(t) {
     const n = P.normType(t);
+    if (this.recordTypes.has(n)) return `${n}::default()`;
     if (n && n.endsWith('[]')) return 'Vec::new()';
     return { int: '0', double: '0.0', string: 'String::new()', boolean: 'false', char: "' '" }[n] || '0';
   }
@@ -1335,7 +1680,12 @@ class RsGen extends BaseGen {
     const args = [];
     for (const p of parts) {
       if (p.lit != null) f += this.fmtLit(p.lit);
-      else { f += '{}'; args.push(super.x(p.expr)); }
+      else {
+        // Records und Listen haben keine Display-Ausgabe -> Debug-Format
+        const t = P.normType(this.exprType(p.expr));
+        f += t && (this.recordTypes.has(t) || t.endsWith('[]')) ? '{:?}' : '{}';
+        args.push(super.x(p.expr));
+      }
     }
     return { f: '"' + f + '"', args };
   }
@@ -1364,7 +1714,7 @@ class RsGen extends BaseGen {
     if (n === 'double' && /^-?\d+$/.test(r)) r += '.0';
     if (n === 'string' && P.isStringLiteral(expr)) r = `String::from(${r})`;
     else if (n === 'string' && IDENT_ONLY.test(String(expr).trim())) r += '.clone()';
-    else if (n && n.endsWith('[]') && IDENT_ONLY.test(String(expr).trim())) r += '.clone()';
+    else if (n && (n.endsWith('[]') || this.recordTypes.has(n)) && IDENT_ONLY.test(String(expr).trim())) r += '.clone()';
     return r;
   }
 
@@ -1516,6 +1866,15 @@ class RsGen extends BaseGen {
     return [ind + 'loop {', ...this.seq(body, ind + I), ind + I + `if ${this.bare(cond)} {`, ind + I + I + 'break;', ind + I + '}', ind + '}'];
   }
 
+  /** TRY: Rust hat keine Ausnahmen – throw ist panic!, abgefangen mit catch_unwind (Hilfsfunktion try_block) */
+  tryEl(el, ind) {
+    const I = this.I, v = this.catchVar(el);
+    this.needs.add('try');
+    const out = [ind + `if let Err(${v}) = try_block(|| {`, ...this.seq(el.qTry, ind + I), ind + '}) {', ...this.seq(el.qCatch, ind + I), ind + '}'];
+    if (el.qFinally.length) out.push(...this.seq(el.qFinally, ind));
+    return out;
+  }
+
   routine(root) {
     const I = this.I;
     const sig = this.sigs.get(root);
@@ -1541,14 +1900,33 @@ class RsGen extends BaseGen {
     for (const r of roots) if (r !== mainRoot) gen.push(this.routine(r));
     const out = [
       this.comment(`Erzeugt aus Struktogramm "${(mainRoot || roots[0]).text.join(' ')}"`),
-      '#![allow(unused_mut, unused_variables, unused_assignments, unused_parens, non_snake_case)]',
+      '#![allow(unused_mut, unused_variables, unused_assignments, unused_parens, non_snake_case, dead_code)]',
       '',
     ];
+    for (const e of this.enumConsts) out.push(`const ${e.name}: i32 = ${this.x(e.value)};`);
+    for (const [name, fields] of this.recordTypes) {
+      out.push('#[derive(Clone, Debug, Default, PartialEq)]', `struct ${name} {`, ...fields.map((f) => `    ${f.name}: ${this.typeName(f.type)},`), '}');
+    }
+    if (this.enumConsts.length || this.recordTypes.size) out.push('');
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
     if (this.needs.has('input')) {
       out.push('', '/// Eine Zeile von der Tastatur lesen (ohne Zeilenumbruch)', 'fn read_line() -> String {',
         '    use std::io::Write;', '    std::io::stdout().flush().unwrap();', '    let mut s = String::new();',
         '    std::io::stdin().read_line(&mut s).unwrap();', '    s.trim().to_string()', '}');
+    }
+    if (this.needs.has('try')) {
+      out.push('', '/// try/catch nachgebildet: führt f aus und liefert die Meldung eines panic! (throw) als Err',
+        'fn try_block<F: FnOnce()>(f: F) -> Result<(), String> {',
+        '    let prev = std::panic::take_hook();',
+        '    std::panic::set_hook(Box::new(|_| {}));',
+        '    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));',
+        '    std::panic::set_hook(prev);',
+        '    r.map_err(|e| {',
+        '        if let Some(s) = e.downcast_ref::<String>() { s.clone() }',
+        '        else if let Some(s) = e.downcast_ref::<&str>() { s.to_string() }',
+        '        else { String::from("Fehler") }',
+        '    })',
+        '}');
     }
     if (this.needs.has('random')) {
       out.push('', '/// Einfache Zufallszahl zwischen 0 und 1 (ohne externe Crates)', 'fn random() -> f64 {',
@@ -1567,12 +1945,35 @@ function toClassName(n) {
 }
 
 /**
+ * Eingebundene Diagramme (Structorizer „includeList“) vor den Inhalt der einbindenden Diagramme setzen;
+ * die Includable-Diagramme selbst werden nicht als Funktion erzeugt.
+ */
+function expandIncludes(doc) {
+  const { clone } = require('./model');
+  const inc = new Map(doc.roots.filter((r) => r.rootType === 'includable').map((r) => [P.parseSignature(r.text).name, r]));
+  if (!inc.size) return doc;
+  const prefix = (r, seen) => {
+    const pre = [];
+    for (const n of r.includeList || []) {
+      if (seen.has(n) || !inc.has(n)) continue;
+      seen.add(n);
+      const ir = inc.get(n);
+      pre.push(...prefix(ir, seen), ...clone(ir.children));
+    }
+    return pre;
+  };
+  return { roots: doc.roots.filter((r) => r.rootType !== 'includable').map((r) => ({ ...r, children: [...prefix(r, new Set()), ...r.children] })) };
+}
+
+/**
  * @param {{roots:any[]}} doc
  * @param {keyof TARGETS} lang
  * @param {{className?:string}} opts
  */
 function generateCode(doc, lang, opts = {}) {
   if (!TARGETS[lang]) throw new Error('Unbekannte Zielsprache: ' + lang);
+  if (!doc.roots.length) return '';
+  doc = expandIncludes(doc);
   if (!doc.roots.length) return '';
   const G = { python: PyGen, pascal: PasGen, kotlin: KtGen, rust: RsGen }[lang] || CGen;
   return new G(doc, lang, opts).run();

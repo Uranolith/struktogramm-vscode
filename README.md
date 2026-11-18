@@ -48,6 +48,10 @@ Den Projektordner in VS Code öffnen und **F5** drücken. Es startet ein zweites
 - **Grafischer Editor** für `.nsd`-Dateien: Elemente einfügen, bearbeiten (Doppelklick), ziehen,
   kopieren/einfügen, Kontextmenü, Farben, Kommentare, Rückgängig.
 - **Struktogramm → Code**: Python, Java, C, C++, C#, JavaScript (Node.js), Pascal, Kotlin, Rust.
+  - **Live-Code**: Der erzeugte Code öffnet sich als ungespeichertes Dokument und folgt jeder Änderung am
+    Struktogramm. In der Statusleiste steht dann *Live: datei.nsd*. Die Verbindung endet, sobald du den Code
+    speicherst, selbst bearbeitest oder schließt; ein Klick auf die Statusanzeige beendet sie sofort.
+    Das gilt für die eigene Übersetzung, nicht für die Structorizer-Generatoren.
   - Kotlin: `readln()` für Eingaben, String-Templates für Ausgaben, `IntArray`/`intArrayOf`, `when`, `downTo`/`step`.
   - Rust: `println!`, eine kleine `read_line()`-Hilfsfunktion für Eingaben, `Vec`, `match`, `loop`;
     ganze Zahlen werden in Rechnungen mit Kommazahlen automatisch als `2.0` geschrieben.
@@ -88,7 +92,30 @@ Ein `div` aus importiertem Code wird zu `/`.
 | Zählschleife | `for i := 1 to 10 by 2` · `foreach x in liste` |
 | Kopf-/Fußschleife | `while x > 0` · `until x = 0` |
 | Fallauswahl | 1. Zeile Ausdruck, dann je Fall eine Zeile, letzte Zeile `default` (oder `%`) |
-| Sprung | `leave` · `return x` · `exit 0` |
+| Sprung | `leave` · `leave 2` (zwei Schleifen) · `return x` · `exit 0` · `throw "Fehler"` |
+| Try | Element *Try*: Text = Name der Fehlervariable; Blöcke `try`, `catch fehler`, `finally` |
+| Typdefinition | `type Punkt = record{x: int; y: int}` · `type Farbe = enum{ROT, GRUEN = 5, BLAU}` |
+| Record | `p := Punkt{x: 3, y: 4}` · `var q: Punkt` · `q.x := 7` |
+| Prozeduren | `inc(x)` · `dec(x, 2)` · `insert("ab", s, 3)` · `delete(s, 1, 2)` · `randomize()` |
+
+## Befehlssatz des Structorizers
+Ausführung, Hervorhebung und Autovervollständigung kennen den Befehlssatz des Original-Structorizers
+(Executor und Turtleizer):
+
+| Bereich | Befehle |
+|---|---|
+| Mathematik | `abs` `min` `max` `round` `ceil` `floor` `sgn` `signum` `sqr` `sqrt` `exp` `log` `pow` `sin` `cos` `tan` `asin` `acos` `atan` `toRadians` `toDegrees` `random(n)` `randomize()` |
+| Zeichenketten | `length` `pos` `copy` `insert` `delete` `lowercase` `uppercase` `trim` `split` `strcmp` `ord` `chr` |
+| Prüfen / Kopieren | `isArray` `isString` `isChar` `isBool` `isNumber` `copyArray` `copyRecord` |
+| Prozeduren | `inc(x)` `inc(x, d)` `dec(x)` `dec(x, d)` `insert(w, s, i)` `delete(s, i, n)` |
+| Dateien | `fileOpen` `fileCreate` `fileAppend` `fileClose` `fileEOF` `fileRead` `fileReadChar` `fileReadInt` `fileReadDouble` `fileReadLine` `fileWrite` `fileWriteLine` – relative Pfade gelten ab dem Ordner der `.nsd`-Datei |
+| Turtleizer | `forward` `backward` `left` `right` `gotoXY` `gotoX` `gotoY` `penUp` `penDown` `hideTurtle` `showTurtle` `setPenColor(r, g, b)` `setBackground(r, g, b)` `clear` `getX` `getY` `getOrientation` – die Zeichnung erscheint neben der Konsole |
+| Elemente | Anweisung, Verzweigung, Fallauswahl, Zähl-/Kopf-/Fuß-/Endlosschleife, Aufruf, Sprung, Try, Parallel; eingebundene Diagramme (`includeList` von Includable-Diagrammen) |
+
+Beim Erzeugen von Code werden diese Befehle in die Zielsprache übersetzt, z.B. `uppercase(s)` →
+`s.upper()` (Python) / `s.toUpperCase()` (Java), `try` → `try/catch/finally` (in C mit `setjmp`, in Rust mit
+`catch_unwind`), Records → Klassen/Structs, `leave 2` → `break L1` bzw. `goto`. Turtle-Befehle werden für
+Python in das Modul `turtle` übersetzt; die Datei-API wird nur ausgeführt, nicht übersetzt.
 
 Schlüsselwörter (blau, fett), Funktionsaufrufe (dunkelgelb, fett), Datentypen (petrol), Zeichenketten (rot),
 Operatoren (lila, fett: Zuweisung `:=`, Vergleiche `=` `<>` `<` `>` `≤` `≥`, Rechnen `+ - * / %` `mod`) werden im Diagramm farbig
@@ -109,7 +136,7 @@ wird gefragt, ob das Bild hell oder dunkel werden soll (`struktogramm.exportThem
 | SVG / PNG | Bild, hell oder dunkel |
 | JSON | vollständige Struktur (`diagrams[].body[]` mit `type`, `text`, `condition`, `then`/`else`, `body`, `branches` …) |
 | XML | dieselbe Struktur als einfaches XML (`<if><condition/><then/><else/></if>` …) |
-| KI-kompakt | token-sparender Pseudocode für KI-Agents – in die Zwischenablage (Knopf **KI ⧉**) oder als `.ki.txt` |
+| KI-kompakt | token-sparender Pseudocode für KI-Agents – in die Zwischenablage oder als `.ki.txt` (Menü *Exportieren …* oder Befehl *KI-kompakt in die Zwischenablage*) |
 | Structorizer-Dateien | je Diagramm eine `.nsd` für den Original-Structorizer |
 
 KI-kompakt nutzt Einrückung mit einem Leerzeichen statt Klammern/Tags und ist etwa 6–8× kürzer als JSON:
@@ -133,12 +160,17 @@ return a + b
 Enter/F2 bearbeiten · Entf löschen · Strg+↑/↓ verschieben · Pfeiltasten navigieren ·
 Strg+C/X/V · Strg+Mausrad Zoom · Shift+Klick auf Einfüge-Knopf fügt davor ein.
 
+Im Bearbeiten-Dialog lässt sich der **Elementtyp** wechseln (z.B. Kopfschleife → Fußschleife, Verzweigung →
+Fallauswahl, Anweisung → Aufruf). Enthaltene Elemente bleiben erhalten: Sie wandern in den ersten Block des neuen
+Elements oder stehen – bei einer einfachen Anweisung – direkt dahinter. Bedingungen werden passend umgeformt
+(`while x > 0` → `until x <= 0`).
+
 Im Bearbeiten-Dialog schlägt die Autovervollständigung passend zur Stelle vor (↑/↓ auswählen,
 **Tab**/**Enter** übernehmen, Esc schließt, Strg+Leertaste öffnet von Hand):
 
 | Stelle | Vorschläge |
 |---|---|
-| Zeilenanfang einer Anweisung | `INPUT`, `OUTPUT`, `var`, `const`, dann Variablen und Unterprogramme |
+| Zeilenanfang einer Anweisung | `INPUT`, `OUTPUT`, `var`, `const`, `type`, dann Variablen, Unterprogramme und Prozeduren (`inc`, `forward` …) |
 | nach `var name:` | nur Datentypen (`int`, `double`, `string` …) – Liste öffnet sich von selbst |
 | nach `var ` | nichts (neuer Name) |
 | nach `INPUT` | nur Variablen |

@@ -172,15 +172,23 @@ class PyParser {
             continue;
           }
           case 'try': {
+            // try / except / else / finally -> TRY-Element (erster except-Zweig wird der catch-Teil)
             const body = this.suite(n.children);
-            let hadExcept = false;
+            let catchVar = null, catchBody = null, fin = [], extraExcept = 0;
             while (nodes[i + 1] && ['except', 'else', 'finally'].includes(nodes[i + 1].kw)) {
               i++;
-              if (nodes[i].kw === 'except') hadExcept = true;
-              else body.push(...this.suite(nodes[i].children));
+              const nd = nodes[i];
+              if (nd.kw === 'except') {
+                if (catchBody) { extraExcept++; continue; }
+                const m = /\bas\s+([\p{L}_][\p{L}\p{N}_]*)/u.exec(nd.text || '');
+                catchVar = m ? m[1] : 'fehler';
+                catchBody = this.suite(nd.children);
+              } else if (nd.kw === 'else') body.push(...this.suite(nd.children));
+              else fin = this.suite(nd.children);
             }
-            if (hadExcept && body.length) addComment(body[0], 'try/except: Fehlerbehandlung wird im Struktogramm nicht dargestellt');
-            out.push(...body);
+            const el = mk.try(catchVar || 'fehler', body, catchBody || [], fin);
+            if (extraExcept) addComment(el, `${extraExcept} weitere except-Zweige wurden nicht übernommen`);
+            out.push(el);
             continue;
           }
           case 'match': out.push(this.match(n)); continue;

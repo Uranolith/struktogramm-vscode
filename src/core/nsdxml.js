@@ -133,16 +133,11 @@ function readElement(x) {
     case 'while': return [common(x, mk.while(text, readSeq(child(x, 'qWhile'))))];
     case 'repeat': return [common(x, mk.repeat(text, readSeq(child(x, 'qRepeat'))))];
     case 'forever': return [common(x, mk.forever(readSeq(child(x, 'qForever'))))];
+    case 'try': return [common(x, mk.try(text.length && text.some((l) => l.trim()) ? text : ['fehler'], readSeq(child(x, 'qTry')), readSeq(child(x, 'qCatch')), readSeq(child(x, 'qFinally'))))];
     case 'parallel': {
       let paras = x.children.filter((c) => c.name === 'qPara');
       if (paras.length === 1 && paras[0].children.every((c) => c.name === 'qPara')) paras = paras[0].children;
       return [common(x, mk.parallel(paras.map(readSeq)))];
-    }
-    case 'try': {
-      // try-Elemente werden vereinfacht übernommen (Inhalt von try + finally)
-      const els = readSeq(child(x, 'qTry')).concat(readSeq(child(x, 'qFinally')));
-      if (els.length) els[0].comment = (els[0].comment || []).concat(['try/catch (vereinfacht übernommen)']);
-      return els;
     }
     default:
       return [mk.instruction(`?? unbekanntes Element <${x.name}> ??`)];
@@ -157,6 +152,8 @@ function readRoot(x) {
   for (const k of ['author', 'created']) if (x.attrs[k]) meta[k] = x.attrs[k];
   if (Object.keys(meta).length) r.meta = meta;
   if (x.attrs.color && !/^ffffff$/i.test(x.attrs.color)) r.color = x.attrs.color.toLowerCase();
+  // eingebundene Diagramme (Structorizer: Includable-Diagramme mit Konstanten, Typen, Variablen)
+  if (x.attrs.includeList) r.includeList = x.attrs.includeList.split(',').map((t) => t.trim()).filter(Boolean);
   return r;
 }
 
@@ -199,6 +196,12 @@ function writeElement(el, ind) {
       else if (f && f.kind === 'each') extra = ` counterVar="${escAttr(f.var)}" startValue="" stepConst="" style="TRAVERSAL" insep="in"`;
       return `${ind}<for ${attrs(el, extra)}>\n${I}<qFor>\n${writeSeq(el.body, I + '\t')}${I}</qFor>\n${ind}</for>\n`;
     }
+    case 'try':
+      return `${ind}<try ${attrs(el)}>\n` +
+        `${I}<qTry>\n${writeSeq(el.qTry, I + '\t')}${I}</qTry>\n` +
+        `${I}<qCatch>\n${writeSeq(el.qCatch, I + '\t')}${I}</qCatch>\n` +
+        `${I}<qFinally>\n${writeSeq(el.qFinally, I + '\t')}${I}</qFinally>\n` +
+        `${ind}</try>\n`;
     case 'while': return `${ind}<while ${attrs(el)}>\n${I}<qWhile>\n${writeSeq(el.body, I + '\t')}${I}</qWhile>\n${ind}</while>\n`;
     case 'repeat': return `${ind}<repeat ${attrs(el)}>\n${I}<qRepeat>\n${writeSeq(el.body, I + '\t')}${I}</qRepeat>\n${ind}</repeat>\n`;
     case 'forever': return `${ind}<forever comment="${escAttr(toCommaText(el.comment && el.comment.length ? el.comment : ['']))}" color="${el.color || 'ffffff'}" disabled="${el.disabled ? 1 : 0}">\n${I}<qForever>\n${writeSeq(el.body, I + '\t')}${I}</qForever>\n${ind}</forever>\n`;
@@ -218,7 +221,8 @@ function writeRoot(r, ind, withNs) {
   const ns = withNs ? ' xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by"' : '';
   const m = r.meta || {};
   const meta = ` author="${escAttr(m.author || '')}" created="${escAttr(m.created || isoNow())}" changedby="" changed="${isoNow()}" origin="Struktogramm-Editor (VS Code)"`;
-  return `${ind}<root${ns}${meta} text="${escAttr(toCommaText(r.text || ['']))}" comment="${escAttr(toCommaText(r.comment && r.comment.length ? r.comment : ['']))}" color="${r.color || 'ffffff'}" type="${r.rootType || 'program'}" style="nice">\n${ind}\t<children>\n${writeSeq(r.children || [], ind + '\t\t')}${ind}\t</children>\n${ind}</root>\n`;
+  const inc = r.includeList && r.includeList.length ? ` includeList="${escAttr(r.includeList.join(','))}"` : '';
+  return `${ind}<root${ns}${meta} text="${escAttr(toCommaText(r.text || ['']))}" comment="${escAttr(toCommaText(r.comment && r.comment.length ? r.comment : ['']))}" color="${r.color || 'ffffff'}" type="${r.rootType || 'program'}"${inc} style="nice">\n${ind}\t<children>\n${writeSeq(r.children || [], ind + '\t\t')}${ind}\t</children>\n${ind}</root>\n`;
 }
 
 /** Dokument -> XML-Text */

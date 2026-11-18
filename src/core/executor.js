@@ -13,6 +13,10 @@ class ExecError extends Error {
   constructor(msg, path) { super(msg); this.path = path; }
 }
 class Signal { constructor(kind, value) { this.kind = kind; this.value = value; } }
+/** throw im Struktogramm: kann von einem TRY-Element abgefangen werden */
+class ThrowSignal extends ExecError {
+  constructor(value, path) { super('Ausnahme ausgelöst: ' + fmt(value), path); this.value = value; }
+}
 
 const lc = (t) => (t && t.t === 'id' ? t.v.toLowerCase() : null);
 
@@ -107,6 +111,22 @@ function parseExpr(text) {
         if (peek() && peek().v === '(') { const c = matchClose(toks, i); i = c + 1; }
         return { k: 'lit', v: null };
       }
+      // Record-Literal (Structorizer): Punkt{x: 3, y: 4}  oder  Punkt{3, 4}
+      if (peek() && peek().v === '{') {
+        i++;
+        const fields = [];
+        if (peek() && peek().v !== '}') {
+          for (;;) {
+            let name = null;
+            if (peek() && peek().t === 'id' && toks[i + 1] && toks[i + 1].v === ':') { name = peek().v; i += 2; }
+            fields.push({ name, e: expr(0) });
+            if (peek() && (peek().v === ',' || peek().v === ';')) { i++; continue; }
+            break;
+          }
+        }
+        expect('}');
+        return { k: 'record', type: t.v, fields };
+      }
       return { k: 'id', name: t.v };
     }
     throw new Error(`Unerwartetes Zeichen „${t.v}“ in: ${text}`);
@@ -167,7 +187,18 @@ function fmt(v, inner) {
   if (typeof v === 'boolean') return v ? 'true' : 'false';
   if (Array.isArray(v)) return '{' + v.map((x) => (typeof x === 'string' ? '"' + x + '"' : fmt(x, true))).join(', ') + '}';
   if (v instanceof Float) return Number.isInteger(v.v) ? v.v.toFixed(1) : String(v.v);
+  if (isRecord(v)) return (v[REC_TYPE] || '') + '{' + Object.keys(v).map((k) => `${k}: ${typeof v[k] === 'string' ? '"' + v[k] + '"' : fmt(v[k], true)}`).join(', ') + '}';
   return String(v);
+}
+
+/** Records (Structorizer: type Punkt = record{…}) sind einfache Objekte mit verstecktem Typnamen */
+const REC_TYPE = Symbol('recordType');
+const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Float);
+function makeRecord(type, entries) {
+  const o = {};
+  Object.defineProperty(o, REC_TYPE, { value: type, enumerable: false });
+  for (const [k, val] of entries) o[k] = val;
+  return o;
 }
 
 /** Gleitkommazahlen werden markiert, damit 7.0 / 2 nicht ganzzahlig geteilt wird */
@@ -188,6 +219,7 @@ function equals(a, b) {
   if (typeof a === 'number' && typeof b === 'string' && b.trim() !== '' && !isNaN(Number(b))) return a === Number(b);
   if (typeof b === 'number' && typeof a === 'string' && a.trim() !== '' && !isNaN(Number(a))) return b === Number(a);
   if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, k) => equals(x, b[k]));
+  if (isRecord(a) && isRecord(b)) { const ka = Object.keys(a); return ka.length === Object.keys(b).length && ka.every((k) => equals(a[k], b[k])); }
   return a === b;
 }
 
@@ -198,6 +230,7 @@ function typeLabel(v) {
   if (typeof v === 'string') return v.length === 1 ? 'char/string' : 'string';
   if (typeof v === 'boolean') return 'boolean';
   if (Array.isArray(v)) return 'array[' + v.length + ']';
+  if (isRecord(v)) return v[REC_TYPE] || 'record';
   return typeof v;
 }
 
@@ -215,6 +248,156 @@ class Interpreter {
     this.frames = [];
     this.random = opts.random || Math.random;
     this.subs = doc.roots.map((r, idx) => ({ root: r, idx, sig: P.parseSignature(r.text) }));
+    this.recordTypes = new Map(); // Typname -> [{name, type}]
+    this.constants = new Map();   // Aufzählungswerte (enum)
+    this.files = [];              // Datei-API: Nummer = Index + 1
+  }
+
+  /* ------------------------- Datei-API (Structorizer) ------------------------- */
+  filePath(p) {
+    const path = require('path');
+    const s = String(num(p));
+    return path.isAbsolute(s) ? s : path.join(this.opts.baseDir || process.cwd(), s);
+  }
+
+  fileErr(e) { return e && e.code === 'ENOENT' ? -2 : e && (e.code === 'EACCES' || e.code === 'EPERM') ? -3 : -1; }
+
+  fileHandle(no, mode, path) {
+    const f = this.files[num(no) - 1];
+    if (!f || f.mode !== mode) throw new ExecError(`Datei Nr. ${fmt(no)} ist nicht ${mode === 'r' ? 'zum Lesen' : 'zum Schreiben'} geöffnet`, path);
+    return f;
+  }
+
+  /** nächstes Wort (wie java.util.Scanner.next) */
+  fileToken(f, path) {
+    const m = /\S+/.exec(f.text.slice(f.pos));
+    if (!m) throw new ExecError('Dateiende erreicht – keine weiteren Daten', path);
+    f.pos += m.index + m[0].length;
+    return m[0];
+  }
+
+  /** fileRead: Zahl, "Text", 'Text', {Liste} oder Wort */
+  fileValue(src) {
+    const s = src.trim();
+    if (/^[+-]?\d+$/.test(s)) return parseInt(s, 10);
+    if (/^[+-]?(\d+\.\d*|\d*\.\d+|\d+)([eE][+-]?\d+)?$/.test(s)) return new Float(parseFloat(s));
+    if (/^(true|false)$/i.test(s)) return s.toLowerCase() === 'true';
+    return s;
+  }
+
+  fileRead(f, path) {
+    const rest = f.text.slice(f.pos);
+    const ws = /^\s*/.exec(rest)[0].length;
+    const c = rest[ws];
+    if (c === undefined) throw new ExecError('Dateiende erreicht – keine weiteren Daten', path);
+    if (c === '"' || c === "'" || c === '{') {
+      const endCh = c === '{' ? '}' : c;
+      const end = rest.indexOf(endCh, ws + 1);
+      const stop = end < 0 ? rest.length : end;
+      const inner = rest.slice(ws + 1, stop);
+      f.pos += stop + 1;
+      if (c !== '{') return inner;
+      return inner.trim() ? inner.split(/\s*,\s*/).map((x) => (/^(["']).*\1$/.test(x.trim()) ? x.trim().slice(1, -1) : this.fileValue(x))) : [];
+    }
+    return this.fileValue(this.fileToken(f, path));
+  }
+
+  /* --------------------------- Turtleizer (Structorizer) --------------------------- */
+  /**
+   * Turtle-Grafik: Start bei (0|0), Blick nach oben, y wächst nach unten (Bildschirm).
+   * Zeichenbefehle landen in this.turtleOps und werden nach jeder Zeile an die Oberfläche gemeldet.
+   */
+  turtleBuiltin(name, a, path) {
+    const NAMES = ['forward', 'fd', 'backward', 'bk', 'left', 'rl', 'right', 'rr', 'gotoxy', 'gotox', 'gotoy', 'penup', 'up',
+      'pendown', 'down', 'hideturtle', 'showturtle', 'setpencolor', 'setbackground', 'clear', 'home', 'getx', 'gety', 'getorientation'];
+    if (!NAMES.includes(name)) return undefined;
+    const T = this.turtle || (this.turtle = { x: 0, y: 0, dir: 0, pen: true, color: '#000000', visible: true });
+    if (!this.turtleOps) this.turtleOps = [];
+    const ops = this.turtleOps;
+    const need = (n) => { if (a.length < n || a.slice(0, n).some((v) => typeof v !== 'number')) throw new ExecError(`${name}() braucht ${n} Zahl${n > 1 ? 'en' : ''}`, path); };
+    const moveTo = (nx, ny) => {
+      if (T.pen) ops.push({ op: 'line', x1: T.x, y1: T.y, x2: nx, y2: ny, c: T.color });
+      T.x = nx; T.y = ny;
+    };
+    const rgb = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+    switch (name) {
+      case 'forward': case 'fd': case 'backward': case 'bk': {
+        need(1);
+        const d = (name === 'backward' || name === 'bk' ? -1 : 1) * a[0];
+        const rad = T.dir * Math.PI / 180;
+        moveTo(T.x - d * Math.sin(rad), T.y - d * Math.cos(rad));
+        break;
+      }
+      case 'left': case 'rl': need(1); T.dir += a[0]; break;
+      case 'right': case 'rr': need(1); T.dir -= a[0]; break;
+      case 'gotoxy': need(2); moveTo(a[0], a[1]); break;
+      case 'gotox': need(1); moveTo(a[0], T.y); break;
+      case 'gotoy': need(1); moveTo(T.x, a[0]); break;
+      case 'penup': case 'up': T.pen = false; break;
+      case 'pendown': case 'down': T.pen = true; break;
+      case 'hideturtle': T.visible = false; break;
+      case 'showturtle': T.visible = true; break;
+      case 'setpencolor': need(3); T.color = rgb(a[0], a[1], a[2]); break;
+      case 'setbackground': need(3); ops.push({ op: 'bg', c: rgb(a[0], a[1], a[2]) }); break;
+      case 'clear': ops.push({ op: 'clear' }); break;
+      case 'home': T.x = 0; T.y = 0; T.dir = 0; break;
+      case 'getx': return new Float(T.x);
+      case 'gety': return new Float(T.y);
+      case 'getorientation': return new Float(((T.dir % 360) + 360) % 360);
+      default: break;
+    }
+    ops.push({ op: 'turtle', x: T.x, y: T.y, dir: T.dir, visible: T.visible });
+    return null;
+  }
+
+  fileBuiltin(name, args, path) {
+    const fs = require('fs');
+    switch (name) {
+      case 'fileopen':
+        try { const text = fs.readFileSync(this.filePath(args[0]), 'utf8'); this.files.push({ mode: 'r', text, pos: 0 }); return this.files.length; } catch (e) { return this.fileErr(e); }
+      case 'filecreate': case 'fileappend':
+        try {
+          const full = this.filePath(args[0]);
+          if (name === 'filecreate') fs.writeFileSync(full, ''); else fs.appendFileSync(full, '');
+          this.files.push({ mode: 'w', path: full });
+          return this.files.length;
+        } catch (e) { return this.fileErr(e); }
+      case 'fileclose': { const k = num(args[0]) - 1; if (this.files[k]) this.files[k] = null; return null; }
+      case 'fileeof': { const f = this.fileHandle(args[0], 'r', path); return !/\S/.test(f.text.slice(f.pos)); }
+      case 'fileread': return this.fileRead(this.fileHandle(args[0], 'r', path), path);
+      case 'filereadint': {
+        const t = this.fileToken(this.fileHandle(args[0], 'r', path), path);
+        if (!/^[+-]?\d+$/.test(t)) throw new ExecError(`„${t}“ ist keine ganze Zahl`, path);
+        return parseInt(t, 10);
+      }
+      case 'filereaddouble': {
+        const t = this.fileToken(this.fileHandle(args[0], 'r', path), path);
+        const v = parseFloat(t);
+        if (isNaN(v)) throw new ExecError(`„${t}“ ist keine Zahl`, path);
+        return new Float(v);
+      }
+      case 'filereadchar': {
+        const f = this.fileHandle(args[0], 'r', path);
+        if (f.pos >= f.text.length) throw new ExecError('Dateiende erreicht – keine weiteren Zeichen', path);
+        if (f.text.startsWith('\r\n', f.pos)) { f.pos += 2; return '\n'; }
+        return f.text[f.pos++];
+      }
+      case 'filereadline': {
+        const f = this.fileHandle(args[0], 'r', path);
+        if (f.pos >= f.text.length) throw new ExecError('Dateiende erreicht – keine weitere Zeile', path);
+        const nl = f.text.indexOf('\n', f.pos);
+        const end = nl < 0 ? f.text.length : nl;
+        const line = f.text.slice(f.pos, end).replace(/\r$/, '');
+        f.pos = nl < 0 ? f.text.length : nl + 1;
+        return line;
+      }
+      case 'filewrite': case 'filewriteline': {
+        const f = this.fileHandle(args[0], 'w', path);
+        fs.appendFileSync(f.path, fmt(args[1]) + (name === 'filewriteline' ? require('os').EOL : ''), 'utf8');
+        return null;
+      }
+      default: return undefined;
+    }
   }
 
   get frame() { return this.frames[this.frames.length - 1]; }
@@ -250,6 +433,7 @@ class Interpreter {
     this.frames.push({ name: sig.name, rootIndex, vars, types, sig });
     let result;
     try {
+      yield* this.applyIncludes(r, this.frame);
       yield* this.seq(r.children, `roots/${rootIndex}/children`);
     } catch (e) {
       if (e instanceof Signal && e.kind === 'return') result = e.value;
@@ -267,6 +451,34 @@ class Interpreter {
     return result;
   }
 
+  /**
+   * Eingebundene Diagramme (Structorizer „includeList“): Das Includable-Diagramm wird beim ersten Bedarf
+   * ausgeführt; seine Konstanten, Variablen und Typen stehen danach jedem einbindenden Diagramm zur Verfügung.
+   */
+  *applyIncludes(root, frame) {
+    if (!this.includeCache) this.includeCache = new Map();
+    for (const name of root.includeList || []) {
+      let cached = this.includeCache.get(name);
+      if (cached === 'busy') continue; // gegenseitige Einbindung
+      if (!cached) {
+        const k = this.doc.roots.findIndex((x) => x.rootType === 'includable' && P.parseSignature(x.text).name === name);
+        if (k < 0) throw new ExecError(`Einzubindendes Diagramm „${name}“ nicht gefunden`);
+        const inc = this.doc.roots[k];
+        this.includeCache.set(name, 'busy');
+        const f = { name, rootIndex: k, vars: new Map(), types: new Map(), sig: P.parseSignature(inc.text) };
+        this.frames.push(f);
+        try {
+          yield* this.applyIncludes(inc, f);
+          yield* this.seq(inc.children, `roots/${k}/children`);
+        } finally { this.frames.pop(); }
+        cached = { vars: f.vars, types: f.types };
+        this.includeCache.set(name, cached);
+      }
+      for (const [k, v] of cached.vars) frame.vars.set(k, v);
+      for (const [k, v] of cached.types) frame.types.set(k, v);
+    }
+  }
+
   *seq(list, path) {
     for (let i = 0; i < list.length; i++) yield* this.element(list[i], `${path}/${i}`);
   }
@@ -278,8 +490,12 @@ class Interpreter {
       switch (el.type) {
         case 'instruction': case 'call': case 'jump': {
           const lines = (el.text || []).filter((l) => String(l).trim());
-          if (el.type === 'jump' && !lines.length) throw new Signal('leave');
-          for (const l of lines) yield* this.line(l, path);
+          if (el.type === 'jump' && !lines.length) throw new Signal('leave', 1);
+          for (const l of lines) {
+            yield* this.line(l, path);
+            // Turtle-Zeichnung an die Oberfläche melden
+            if (this.turtleOps && this.turtleOps.length) yield { type: 'turtle', ops: this.turtleOps.splice(0) };
+          }
           break;
         }
         case 'alternative': {
@@ -334,6 +550,24 @@ class Interpreter {
         case 'parallel':
           for (let k = 0; k < el.branches.length; k++) yield* this.seq(el.branches[k], `${path}/branches/${k}`);
           break;
+        case 'try': {
+          // TRY (Structorizer): Fehler und throw im try-Teil werden im catch-Teil behandelt,
+          // der finally-Teil läuft immer – auch bei leave/return/exit
+          let pending = null;
+          try {
+            yield* this.seq(el.qTry || [], path + '/qTry');
+          } catch (e) {
+            if (e instanceof Signal) pending = e;
+            else {
+              const name = String((el.text || [])[0] || '').trim();
+              if (name) this.assignVar(name, e instanceof ThrowSignal ? e.value : e.message);
+              try { yield* this.seq(el.qCatch || [], path + '/qCatch'); } catch (e2) { pending = e2; }
+            }
+          }
+          yield* this.seq(el.qFinally || [], path + '/qFinally');
+          if (pending) throw pending;
+          break;
+        }
         default: break;
       }
     } catch (e) {
@@ -348,7 +582,11 @@ class Interpreter {
     try {
       yield* this.seq(body, path + '/body');
     } catch (e) {
-      if (e instanceof Signal && e.kind === 'leave') return true;
+      if (e instanceof Signal && e.kind === 'leave') {
+        // leave n: weitere äußere Schleifen verlassen
+        if ((e.value || 1) > 1) throw new Signal('leave', e.value - 1);
+        return true;
+      }
       if (e instanceof Signal && e.kind === 'continue') return false;
       throw e;
     }
@@ -440,12 +678,60 @@ class Interpreter {
         return;
       }
       case 'return': throw new Signal('return', c.expr ? yield* this.eval(c.expr, path) : undefined);
-      case 'leave': throw new Signal('leave');
+      case 'leave': throw new Signal('leave', c.count || 1);
       case 'continue': throw new Signal('continue');
       case 'exit': throw new Signal('exit', c.expr ? yield* this.eval(c.expr, path) : 0);
-      case 'throw': throw new ExecError('Ausnahme ausgelöst: ' + fmt(c.expr ? yield* this.eval(c.expr, path) : ''), path);
+      case 'throw': throw new ThrowSignal(c.expr ? yield* this.eval(c.expr, path) : '', path);
+      case 'typedef':
+        if (c.typeKind === 'enum') {
+          let next = 0;
+          for (const it of c.items) {
+            if (it.value != null && it.value !== '') next = num(yield* this.eval(it.value, path));
+            this.constants.set(it.name, next++);
+          }
+        } else this.recordTypes.set(c.name, c.fields.map((f) => ({ name: f.name, type: P.normType(f.type) })));
+        return;
       default:
-        yield* this.eval(c.expr, path);
+        if (!(yield* this.procedure(c.expr, path))) yield* this.eval(c.expr, path);
+    }
+  }
+
+  /**
+   * Structorizer-Prozeduren, die ihr Argument verändern:
+   * inc(x), inc(x, d), dec(x), dec(x, d), insert(w, s, i), delete(s, i, n), randomize()
+   * Rückgabe true, wenn die Zeile eine solche Prozedur war.
+   */
+  *procedure(text, path) {
+    const toks = P.ptoks(text);
+    if (toks.length < 3 || toks[0].t !== 'id' || toks[1].v !== '(' || matchClose(toks, 1) !== toks.length - 1) return false;
+    const name = toks[0].v.toLowerCase();
+    if (!['inc', 'dec', 'insert', 'delete', 'randomize'].includes(name) || this.findSub(toks[0].v, 0)) return false;
+    const args = splitTop(toks.slice(2, -1), ',').filter((p) => p.length).map(joinTokens);
+    switch (name) {
+      case 'randomize': return true;
+      case 'inc': case 'dec': {
+        if (!args.length) throw new ExecError(`${toks[0].v}() braucht eine Variable`, path);
+        const cur = yield* this.eval(args[0], path);
+        const d = args[1] ? yield* this.eval(args[1], path) : 1;
+        const v = name === 'inc' ? num(cur) + num(d) : num(cur) - num(d);
+        yield* this.assignTo(args[0], mkNum(v, isFloat(cur) || isFloat(d)), path);
+        return true;
+      }
+      case 'insert': {
+        if (args.length !== 3) throw new ExecError('insert(was, text, position) braucht drei Argumente', path);
+        const vals = [];
+        for (const a of args) vals.push(yield* this.eval(a, path));
+        yield* this.assignTo(args[1], this.builtin('insert', vals, path), path);
+        return true;
+      }
+      case 'delete': {
+        if (args.length !== 3) throw new ExecError('delete(text, position, anzahl) braucht drei Argumente', path);
+        const vals = [];
+        for (const a of args) vals.push(yield* this.eval(a, path));
+        yield* this.assignTo(args[0], this.builtin('delete', vals, path), path);
+        return true;
+      }
+      default: return false;
     }
   }
 
@@ -464,7 +750,9 @@ class Interpreter {
       case 'string': return '';
       case 'boolean': return false;
       case 'char': return ' ';
-      default: return t && t.endsWith('[]') ? [] : null;
+      default:
+        if (t && this.recordTypes && this.recordTypes.has(t)) return makeRecord(t, this.recordTypes.get(t).map((f) => [f.name, this.defaultValue(f.type)]));
+        return t && t.endsWith('[]') ? [] : null;
     }
   }
 
@@ -495,6 +783,7 @@ class Interpreter {
     if (f.vars.has(name)) return f.vars.get(name);
     const g = this.frames[0];
     if (g && g.vars.has(name)) return g.vars.get(name);
+    if (this.constants.has(name)) return this.constants.get(name);
     return undefined;
   }
 
@@ -538,6 +827,19 @@ class Interpreter {
       case 'lit': return n.v;
       case 'arr': { const a = []; for (const x of n.items) a.push(yield* this.evalNode(x, path)); return a; }
       case 'newarr': { const len = num(yield* this.evalNode(n.n, path)); return Array.from({ length: len }, () => this.defaultValue(P.normType(n.type))); }
+      case 'record': {
+        const def = this.recordTypes.get(n.type) || [];
+        const entries = [];
+        for (let k = 0; k < n.fields.length; k++) {
+          const f = n.fields[k];
+          const name = f.name || (def[k] && def[k].name) || 'f' + k;
+          const type = (def.find((d) => d.name === name) || {}).type;
+          entries.push([name, this.coerce(yield* this.evalNode(f.e, path), type)]);
+        }
+        // nicht angegebene Komponenten mit Vorgabewert
+        for (const d of def) if (!entries.some(([k]) => k === d.name)) entries.push([d.name, this.defaultValue(d.type)]);
+        return makeRecord(n.type, entries);
+      }
       case 'id': {
         const v = this.lookup(n.name);
         if (v === undefined) {
@@ -687,7 +989,38 @@ class Interpreter {
   builtin(name, args, path) {
     const a = args.map(num);
     const f = (v) => new Float(v);
-    switch (name.toLowerCase()) {
+    const lname = name.toLowerCase();
+    if (lname.startsWith('file')) {
+      const r = this.fileBuiltin(lname, args, path);
+      if (r !== undefined) return r;
+    }
+    const tr = this.turtleBuiltin(lname, a, path);
+    if (tr !== undefined) return tr;
+    const s = (k) => String(a[k] == null ? '' : a[k]);
+    switch (lname) {
+      // ---- Structorizer: Mathematik ----
+      case 'asin': return f(Math.asin(a[0]));
+      case 'acos': return f(Math.acos(a[0]));
+      case 'atan': return f(Math.atan(a[0]));
+      case 'toradians': return f(a[0] * Math.PI / 180);
+      case 'todegrees': return f(a[0] * 180 / Math.PI);
+      case 'sgn': return a[0] === 0 ? 0 : a[0] > 0 ? 1 : -1;
+      case 'signum': return f(Math.sign(a[0]));
+      // ---- Structorizer: Zeichenketten ----
+      case 'trim': return s(0).trim();
+      case 'insert': return s(1).slice(0, a[2] - 1) + s(0) + s(1).slice(a[2] - 1);
+      case 'delete': return s(0).slice(0, a[1] - 1) + s(0).slice(a[1] + a[2] - 1);
+      case 'split': return s(0).split(s(1));
+      case 'strcmp': { const x = s(0), y = s(1); return x < y ? -1 : x > y ? 1 : 0; }
+      // ---- Structorizer: Typprüfung und Kopien ----
+      case 'isarray': return Array.isArray(a[0]);
+      case 'isstring': return typeof a[0] === 'string';
+      case 'ischar': return typeof a[0] === 'string' && a[0].length === 1;
+      case 'isbool': return typeof a[0] === 'boolean';
+      case 'isnumber': return isNum(args[0]);
+      case 'copyarray': return Array.isArray(args[0]) ? args[0].slice() : args[0];
+      case 'copyrecord': return isRecord(args[0]) ? makeRecord(args[0][REC_TYPE], Object.entries(args[0])) : args[0];
+      case 'randomize': return null;
       case 'sqrt': if (a[0] < 0) throw new ExecError('Wurzel aus negativer Zahl', path); return f(Math.sqrt(a[0]));
       case 'abs': return mkNum(Math.abs(a[0]), isFloat(args[0]));
       case 'pow': case 'power': return f(Math.pow(a[0], a[1]));
@@ -696,8 +1029,8 @@ class Interpreter {
       case 'sin': return f(Math.sin(a[0]));
       case 'cos': return f(Math.cos(a[0]));
       case 'tan': return f(Math.tan(a[0]));
-      case 'floor': return Math.floor(a[0]);
-      case 'ceil': return Math.ceil(a[0]);
+      case 'floor': return f(Math.floor(a[0])); // wie Java: Ergebnis double
+      case 'ceil': return f(Math.ceil(a[0]));
       case 'round': return Math.round(a[0]);
       case 'trunc': case 'int': {
         if (typeof a[0] === 'string') { const n = parseInt(a[0], 10); if (isNaN(n)) throw new ExecError(`„${a[0]}“ ist keine ganze Zahl`, path); return n; }
@@ -718,8 +1051,8 @@ class Interpreter {
       case 'lowercase': case 'lower': return String(a[0]).toLowerCase();
       case 'copy': return String(a[0]).substr(a[1] - 1, a[2]);
       case 'pos': return String(a[1]).indexOf(a[0]) + 1;
-      case 'min': return a.length === 1 && Array.isArray(a[0]) ? Math.min(...a[0].map(num)) : Math.min(...a);
-      case 'max': return a.length === 1 && Array.isArray(a[0]) ? Math.max(...a[0].map(num)) : Math.max(...a);
+      case 'min': return a.length === 1 && Array.isArray(a[0]) ? Math.min(...a[0].map(num)) : mkNum(Math.min(...a), args.some(isFloat));
+      case 'max': return a.length === 1 && Array.isArray(a[0]) ? Math.max(...a[0].map(num)) : mkNum(Math.max(...a), args.some(isFloat));
       case 'random': return a.length ? Math.floor(this.random() * a[0]) : f(this.random());
       case 'randint': return a[0] + Math.floor(this.random() * (a[1] - a[0] + 1));
       case 'range': {
@@ -729,7 +1062,7 @@ class Interpreter {
       case 'sum': return (a[0] || []).reduce((x, y) => x + num(y), 0);
       case 'odd': return a[0] % 2 !== 0;
       case 'sqr': return mkNum(a[0] * a[0], isFloat(args[0]));
-      case 'inc': case 'dec': throw new ExecError(`${name}() bitte als Zuweisung schreiben (x := x + 1)`, path);
+      case 'inc': case 'dec': throw new ExecError(`${name}() ist eine Prozedur und muss allein in einer Zeile stehen, z.B. inc(x)`, path);
       case 'print': case 'println': throw new ExecError('Für Ausgaben bitte OUTPUT verwenden', path);
       default: throw new ExecError(`Unbekannte Funktion „${name}“ – ist das Unterprogramm als eigenes Diagramm angelegt?`, path);
     }

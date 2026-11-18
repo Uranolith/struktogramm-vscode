@@ -22,7 +22,8 @@ const PRETTY = [[/<-/g, '←'], [/<>/g, '≠'], [/!=/g, '≠'], [/<=/g, '≤'], 
 // Syntaxhervorhebung: Schlüsselwörter, Datentypen, Zeichenketten
 const KEYWORDS = new Set(['input', 'output', 'var', 'dim', 'const', 'for', 'foreach', 'to', 'downto', 'by', 'in', 'while',
   'until', 'do', 'and', 'or', 'not', 'xor', 'div', 'mod', 'shl', 'shr', 'leave', 'break', 'return', 'exit', 'continue',
-  'throw', 'true', 'false', 'if', 'then', 'else', 'repeat', 'as', 'new']);
+  'throw', 'true', 'false', 'if', 'then', 'else', 'repeat', 'as', 'new', 'step', 'each', 'try', 'catch', 'finally', 'type',
+  'record', 'struct', 'enum']);
 const TYPES = new Set(['int', 'integer', 'long', 'short', 'byte', 'double', 'float', 'real', 'string', 'char', 'bool',
   'boolean', 'void', 'array', 'of']);
 // Gruppen: 1 String, 2 Wort, 3 Operator (längste zuerst; auch die „hübschen“ Zeichen ← ≠ ≤ ≥)
@@ -150,6 +151,12 @@ class Renderer {
         s = { w: Math.max(this.textW(ln), BAR + b.w), h: this.textH(ln) + b.h + FOOT };
         break;
       }
+      case 'try': {
+        const a = this.seqSize(el.qTry || []), b = this.seqSize(el.qCatch || []), c = this.seqSize(el.qFinally || []);
+        const hdr = this.textH(['try']);
+        s = { w: Math.max(this.textW(this.tryHeads(el)), BAR + Math.max(a.w, b.w, c.w)), h: 3 * hdr + a.h + b.h + c.h + FOOT };
+        break;
+      }
       case 'parallel': {
         const cols = el.branches.map((b) => this.seqSize(b));
         s = { w: Math.max(cols.reduce((a, c) => a + c.w, 0), 80), h: 2 * LH + Math.max(...cols.map((c) => c.h), this.EMPTY_H) };
@@ -164,6 +171,12 @@ class Renderer {
     }
     this.cache.set(el, s);
     return s;
+  }
+
+  /** Kopfzeilen des TRY-Elements */
+  tryHeads(el) {
+    const v = String((el.text || [])[0] || '').trim();
+    return ['try', 'catch' + (v ? ' ' + v : ''), 'finally'];
   }
 
   foreverText(el) {
@@ -301,6 +314,21 @@ class Renderer {
         const hh = this.textH(ln);
         out.push(this.rect(x, y, w, h, el), this.textBlock(ln, x + PAD, y, el.text && el.text.some((t) => String(t).trim()) ? tcls : 'muted'));
         this.seq(el.body, x + BAR, y + hh, w - BAR, h - hh - FOOT, path + '/body', out);
+        break;
+      }
+      case 'try': {
+        const [tTry, tCatch, tFin] = this.tryHeads(el);
+        const hdr = this.textH(['try']);
+        const parts = [[tTry, el.qTry || [], '/qTry'], [tCatch, el.qCatch || [], '/qCatch'], [tFin, el.qFinally || [], '/qFinally']];
+        out.push(this.rect(x, y, w, h, el));
+        let cy = y;
+        for (const [head, seq, key] of parts) {
+          out.push(this.textBlock([head], x + PAD, cy, tcls));
+          cy += hdr;
+          const sh = this.seqSize(seq).h;
+          this.seq(seq, x + BAR, cy, w - BAR, sh, path + key, out);
+          cy += sh;
+        }
         break;
       }
       case 'parallel': {

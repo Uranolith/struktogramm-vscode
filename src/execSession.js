@@ -9,11 +9,11 @@
 const { Interpreter, Signal, fmt } = require('./core/executor');
 
 class ExecSession {
-  constructor(webview, model, rootIndex) {
+  constructor(webview, model, rootIndex, opts = {}) {
     this.webview = webview;
     this.model = model;
     this.rootIndex = rootIndex;
-    this.interp = new Interpreter(model);
+    this.interp = new Interpreter(model, opts);
     this.gen = this.interp.run(rootIndex);
     this.mode = 'run';
     this.delay = 250;
@@ -43,6 +43,10 @@ class ExecSession {
   out(text, kind = 'out') { this.outBuf.push({ text, kind }); }
 
   flushOut() {
+    if (this.turtleBuf && this.turtleBuf.length) {
+      this.webview.postMessage({ type: 'execTurtle', ops: this.turtleBuf });
+      this.turtleBuf = [];
+    }
     if (!this.outBuf.length) return;
     this.webview.postMessage({ type: 'execOut', lines: this.outBuf });
     this.outBuf = [];
@@ -114,6 +118,11 @@ class ExecSession {
       const y = r.value;
       if (y.type === 'output') { this.out(y.text, y.info ? 'info' : 'out'); if (this.outBuf.length > 200) this.flushOut(); continue; }
       if (y.type === 'input') { this.post('input', { prompt: y.prompt }); return; }
+      if (y.type === 'turtle') {
+        (this.turtleBuf = this.turtleBuf || []).push(...y.ops);
+        if (this.turtleBuf.length > 2000) this.flushOut();
+        continue;
+      }
       if (y.type !== 'step') continue;
       this.steps++;
       this.path = y.path;
@@ -142,9 +151,11 @@ class ExecSession {
  * getModel(): liefert das aktuelle Modell
  */
 class ExecController {
-  constructor(webview, getModel) {
+  /** getBaseDir: Ordner für relative Pfade der Datei-API (fileOpen …) */
+  constructor(webview, getModel, getBaseDir) {
     this.webview = webview;
     this.getModel = getModel;
+    this.getBaseDir = getBaseDir || (() => undefined);
     this.session = null;
   }
 
@@ -160,7 +171,7 @@ class ExecController {
           if (!model || !model.roots.length) return true;
           let idx = Number.isInteger(msg.root) && model.roots[msg.root] ? msg.root : model.roots.findIndex((r) => r.rootType === 'program');
           if (idx < 0) idx = 0;
-          this.session = new ExecSession(this.webview, model, idx);
+          this.session = new ExecSession(this.webview, model, idx, { baseDir: this.getBaseDir() });
           this.session.config(msg);
           this.webview.postMessage({ type: 'execReset', title: (model.roots[idx].text || []).join(' ') });
           this.session.resume(msg.cmd);

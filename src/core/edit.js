@@ -128,9 +128,82 @@ function wrap(doc, path, kind) {
   const w = defaultElement(kind);
   if (w.body) w.body.push(el);
   else if (w.qTrue) w.qTrue.push(el);
+  else if (w.qTry) w.qTry.push(el);
   else return path;
   loc.arr[loc.index] = w;
   return `${loc.base}/${loc.index}`;
+}
+
+/**
+ * Elementtyp wechseln. Nichts geht verloren: enthaltene Elemente wandern in den ersten Block des neuen
+ * Elements; wird ein Container zu einer einfachen Anweisung, stehen sie danach direkt dahinter.
+ * Bedingungen werden übernommen (while c -> repeat until not c und umgekehrt).
+ */
+function changeType(doc, path, kind, props) {
+  if (props) update(doc, path, props);
+  const loc = locate(doc, path);
+  if (!loc || loc.empty || !Array.isArray(loc.arr)) return path;
+  const old = loc.arr[loc.index];
+  if (!old || old.type === kind) return path;
+  const P = require('./pseudo');
+  const { sequencesOf } = require('./model');
+  const SIMPLE = ['instruction', 'call', 'jump'];
+  const nw = defaultElement(kind);
+  for (const k of ['comment', 'color', 'disabled']) if (old[k] !== undefined) nw[k] = clone(old[k]);
+  const seqs = sequencesOf(old).map((s) => s.seq);
+  const kids = [].concat(...seqs);
+  const lines = (old.text || []).map(String).filter((l) => l.trim());
+  // Bedingung bzw. Ausdruck des alten Elements
+  let cond = null;
+  if (old.type === 'alternative') cond = lines.join(' ');
+  else if (old.type === 'while') cond = P.stripKeyword(lines.join(' '), ['while', 'solange']);
+  else if (old.type === 'repeat') cond = P.stripKeyword(lines.join(' '), ['until', 'bis']);
+  else if (old.type === 'case') cond = lines[0] || null;
+  else if (SIMPLE.includes(old.type) && lines.length === 1) cond = lines[0];
+  switch (kind) {
+    case 'instruction': case 'call': case 'jump':
+      if (SIMPLE.includes(old.type) || old.type === 'for') nw.text = old.text.slice();
+      else if (cond) nw.text = [cond];
+      loc.arr.splice(loc.index, 1, nw, ...kids);
+      return path;
+    case 'alternative':
+      if (cond) nw.text = [old.type === 'repeat' ? P.negateCond(cond) : cond];
+      nw.qTrue = seqs[0] ? seqs[0] : [];
+      nw.qFalse = [].concat(...seqs.slice(1));
+      break;
+    case 'case':
+      if (cond) nw.text[0] = cond;
+      if (old.type === 'alternative') {
+        // "if note = 1" -> case note, Fall 1
+        const { findTop, joinTokens } = require('./tokenizer');
+        const t = P.ptoks(cond || '');
+        const k = findTop(t, (x) => x.v === '=' || x.v === '==');
+        const disc = k > 0 ? joinTokens(t.slice(0, k)) : nw.text[0];
+        const val = k > 0 ? joinTokens(t.slice(k + 1)) : '1';
+        nw.text = [disc, val, 'default'];
+        nw.branches = [old.qTrue, old.qFalse];
+      }
+      else nw.branches[0] = kids;
+      break;
+    case 'while':
+      if (old.type === 'repeat' && cond) nw.text = ['while ' + P.negateCond(cond)];
+      else if (cond) nw.text = ['while ' + cond];
+      nw.body = kids;
+      break;
+    case 'repeat':
+      if (old.type === 'while' && cond) nw.text = ['until ' + P.negateCond(cond)];
+      else if (cond) nw.text = ['until ' + cond];
+      nw.body = kids;
+      break;
+    case 'for': case 'foreach': case 'forever':
+      nw.body = kids;
+      break;
+    case 'try': nw.qTry = kids; break;
+    case 'parallel': nw.branches[0] = kids; break;
+    default: break;
+  }
+  loc.arr[loc.index] = nw;
+  return path;
 }
 
 /** Pfad eines Objekts (Element, Root oder Folge) suchen */
@@ -183,6 +256,7 @@ function apply(doc, cmd) {
     case 'move': return move(doc, cmd.path, cmd.dir);
     case 'update': return update(doc, cmd.path, cmd);
     case 'wrap': return wrap(doc, cmd.path, cmd.kind);
+    case 'changeType': return changeType(doc, cmd.path, cmd.kind, cmd.props);
     case 'moveTo': return moveTo(doc, cmd.from, cmd.to, cmd.where);
     case 'addRoot': {
       const sub = cmd.rootType === 'sub';

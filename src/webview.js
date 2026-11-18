@@ -32,6 +32,7 @@ function webviewHtml(webview, extensionUri, readonly) {
   <div class="exechead"><b>Ausführung</b> <span id="execstate"></span><span class="spacer"></span><button id="execClear" title="Ausgabe leeren">Leeren</button><button id="execClose" title="Schließen (beendet die Ausführung)">✕</button></div>
   <div class="execbody">
     <div id="console"><div id="conout"></div><form id="conin" hidden><label id="conprompt" for="coninput"></label><input id="coninput" autocomplete="off" spellcheck="false"><button type="submit">OK</button></form></div>
+    <div id="turtle" hidden title="Turtleizer"><svg id="turtlesvg" xmlns="http://www.w3.org/2000/svg"></svg></div>
     <div id="vars"></div>
   </div>
 </div>

@@ -715,14 +715,21 @@ class ModernParser {
     const T = this.T;
     this.p++;
     const body = this.body(end);
-    let hadCatch = false, fin = [];
+    // Kotlin: try { } catch (e: Exception) { } finally { } -> TRY-Element
+    let catchVar = null, catchBody = null, fin = [], extra = 0;
     while (T[this.p] && (T[this.p].v === 'catch' || T[this.p].v === 'finally')) {
-      if (T[this.p].v === 'catch') { this.p++; hadCatch = true; this.group(); this.body(end); }
-      else { this.p++; fin = this.body(end); }
+      if (T[this.p].v === 'catch') {
+        this.p++;
+        const g = this.group();
+        const b = this.body(end);
+        if (catchBody) { extra++; continue; }
+        catchVar = g[0] && g[0].t === 'id' ? g[0].v : null;
+        catchBody = b;
+      } else { this.p++; fin = this.body(end); }
     }
-    const out = body.concat(fin);
-    if (hadCatch && out.length) addComment(out[0], 'try/catch: Fehlerbehandlung wird im Struktogramm nicht dargestellt');
-    return out;
+    const el = mk.try(catchVar || 'fehler', body, catchBody || [], fin);
+    if (extra) addComment(el, `${extra} weitere catch-Zweige wurden nicht übernommen`);
+    return [el];
   }
 
   /* ------------------------------------------------------------ */
