@@ -2,7 +2,7 @@
   "name": "struktogramm",
   "displayName": "Struktogramm – Code ⇄ Nassi-Shneiderman",
   "description": "Struktogramme (Nassi-Shneiderman-Diagramme) im Stil von Structorizer: Code in Struktogramme umwandeln, grafisch bearbeiten, Schritt für Schritt ausführen und daraus Code erzeugen – mit eigener Engine oder dem Original-Structorizer (18 Zielsprachen, Import von C, Java, Pascal, COBOL). Liest und schreibt .nsd-Dateien; Export als SVG, PNG, JSON, XML und token-sparender KI-Pseudocode.",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "publisher": "local",
   "license": "MIT",
   "repository": {
@@ -152,7 +152,7 @@
       "editor/title": [
         {
           "command": "struktogramm.preview",
-          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact)$/",
+          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact|kotlin|rust)$/ || resourceExtname =~ /^\\.(kt|kts|rs)$/",
           "group": "navigation"
         },
         {
@@ -174,7 +174,7 @@
       "editor/context": [
         {
           "command": "struktogramm.fromCode",
-          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact)$/ || resourceExtname =~ /^\\.(pas|dpr|pp|lpr|cob|cbl|cobol|pde)$/",
+          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact|kotlin|rust)$/ || resourceExtname =~ /^\\.(pas|dpr|pp|lpr|cob|cbl|cobol|pde|kt|kts|rs)$/",
           "group": "z_struktogramm@1"
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "command": "struktogramm.preview",
-          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact)$/",
+          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact|kotlin|rust)$/ || resourceExtname =~ /^\\.(kt|kts|rs)$/",
           "group": "z_struktogramm@3"
         }
       ],
@@ -196,7 +196,7 @@
         },
         {
           "command": "struktogramm.fromCode",
-          "when": "resourceExtname =~ /^\\.(py|java|c|h|cpp|cc|cxx|hpp|cs|js|mjs|cjs|jsx|ts|tsx|pas|dpr|pp|lpr|cob|cbl|cobol|pde)$/",
+          "when": "resourceExtname =~ /^\\.(py|java|c|h|cpp|cc|cxx|hpp|cs|js|mjs|cjs|jsx|ts|tsx|kt|kts|rs|pas|dpr|pp|lpr|cob|cbl|cobol|pde)$/",
           "group": "z_struktogramm@1"
         },
         {
@@ -325,7 +325,7 @@
         "struktogramm.defaultTargetLanguage": {
           "type": "string",
           "default": "",
-          "description": "Zielsprache für „Code aus Struktogramm erzeugen“. Leer = jedes Mal nachfragen. Eigene Übersetzung: python, java, c, cpp, csharp, javascript, pascal. Original-Structorizer: structorizer:Python, structorizer:Java, structorizer:Basic … (Generatorname)."
+          "description": "Zielsprache für „Code aus Struktogramm erzeugen“. Leer = jedes Mal nachfragen. Eigene Übersetzung: python, java, c, cpp, csharp, javascript, pascal, kotlin, rust. Original-Structorizer: structorizer:Python, structorizer:Java, structorizer:Basic … (Generatorname)."
         },
         "struktogramm.importEngine": {
           "type": "string",
@@ -335,7 +335,7 @@
           ],
           "default": "eigene",
           "enumDescriptions": [
-            "Eigener Parser (schnell, ohne Java, kann auch Python, C++, C#, JavaScript)",
+            "Eigener Parser (schnell, ohne Java, kann auch Python, C++, C#, JavaScript, TypeScript, Kotlin, Rust)",
             "Original-Structorizer-Parser für C- und Java-Dateien (Pascal/COBOL/Processing nutzen ihn immer)"
           ],
           "description": "Womit „Struktogramm aus Code erzeugen“ C- und Java-Dateien einliest."

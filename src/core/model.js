@@ -57,7 +57,7 @@ function defaultElement(kind) {
     case 'jump': return mk.jump('leave');
     case 'alternative': return mk.alternative('Bedingung');
     case 'case': return mk.case('Ausdruck', ['1', '2', 'default'], [[], [], []]);
-    case 'for': return mk.for('for i = 1 to 10');
+    case 'for': return mk.for('for i := 1 to 10');
     case 'foreach': return mk.for('foreach x in liste');
     case 'while': return mk.while('while Bedingung');
     case 'repeat': return mk.repeat('until Bedingung');

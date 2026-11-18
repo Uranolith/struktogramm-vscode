@@ -54,14 +54,14 @@
   ];
 
   const HINTS = {
-    instruction: 'Eine Anweisung pro Zeile.\nZuweisung: x = 5     Deklaration: int x = 0\nEingabe: INPUT "Zahl: ", x     Ausgabe: OUTPUT "Summe: ", s\nVergleiche: ==  !=  <  >  <=  >=     Logik: and  or  not',
-    alternative: 'Bedingung, z.B.  x > 3 and y != 0',
+    instruction: 'Eine Anweisung pro Zeile.\nZuweisung: x := 5     Deklaration: var x: int := 0\nEingabe: INPUT "Zahl: ", x     Ausgabe: OUTPUT "Summe: ", s\nVergleiche: =  <>  <  >  <=  >=     Logik: and  or  not',
+    alternative: 'Bedingung, z.B.  x > 3 and y <> 0',
     case: '1. Zeile: Ausdruck (z.B. note)\nweitere Zeilen: je ein Fall, mehrere Werte mit Komma (z.B. 1, 2)\nletzte Zeile: default  –  oder  %  für „kein Sonst-Zweig“',
-    for: 'Zählschleife:  for i = 1 to 10   oder   for i = 10 to 0 by -2\nDurchlaufschleife:  foreach x in liste',
+    for: 'Zählschleife:  for i := 1 to 10   oder   for i := 10 to 0 by -2\nDurchlaufschleife:  foreach x in liste',
     while: 'Kopfgesteuerte Schleife:  while x > 0',
-    repeat: 'Fußgesteuerte Schleife (Abbruchbedingung):  until x == 0',
+    repeat: 'Fußgesteuerte Schleife (Abbruchbedingung):  until x = 0',
     forever: 'Endlosschleife – verlassen mit einem Sprung „leave“. Text optional.',
-    call: 'Aufruf eines Unterprogramms:  ausgabe(a, b)   oder   x = summe(a, b)',
+    call: 'Aufruf eines Unterprogramms:  ausgabe(a, b)   oder   x := summe(a, b)',
     jump: 'leave (Schleife verlassen)  ·  return x  ·  exit 0  ·  throw "Fehler"',
     parallel: 'Anzahl paralleler Zweige',
     root: 'Hauptprogramm: Name.  Unterprogramm: Signatur, z.B.  summe(a: int, b: int): int',
@@ -683,13 +683,13 @@
   // [Wort, Beschreibung, Leerzeichen anhängen, eher am Zeilenanfang]
   const KEYWORDS = [
     ['INPUT', 'Eingabe', 1, 1], ['OUTPUT', 'Ausgabe', 1, 1], ['var', 'Deklaration  var x: int', 1, 1], ['const', 'Konstante', 1, 1],
-    ['for', 'Zählschleife  for i = 1 to n', 1, 1], ['foreach', 'Durchlaufschleife  foreach x in liste', 1, 1],
+    ['for', 'Zählschleife  for i := 1 to n', 1, 1], ['foreach', 'Durchlaufschleife  foreach x in liste', 1, 1],
     ['while', 'Kopfschleife', 1, 1], ['until', 'Fußschleife (Abbruchbedingung)', 1, 1],
     ['leave', 'Schleife verlassen', 0, 1], ['return', 'Rückgabe', 1, 1], ['exit', 'Programm beenden', 1, 1],
     ['continue', 'nächster Schleifendurchlauf', 0, 1], ['throw', 'Fehler auslösen', 1, 1],
     ['to', 'for … to …', 1, 0], ['downto', 'for … downto …', 1, 0], ['by', 'Schrittweite', 1, 0], ['in', 'foreach … in …', 1, 0],
     ['and', 'logisches Und', 1, 0], ['or', 'logisches Oder', 1, 0], ['not', 'logisches Nicht', 1, 0],
-    ['div', 'ganzzahlige Division', 1, 0], ['mod', 'Divisionsrest', 1, 0], ['true', 'wahr', 0, 0], ['false', 'falsch', 0, 0],
+    ['mod', 'Divisionsrest', 1, 0], ['true', 'wahr', 0, 0], ['false', 'falsch', 0, 0],
   ];
   const TYPE_WORDS = ['int', 'double', 'float', 'string', 'boolean', 'char'];
   const KIND_LABEL = { var: 'Variable', func: 'Unterprogramm', builtin: 'Funktion', kw: 'Schlüsselwort', type: 'Datentyp' };
@@ -760,7 +760,7 @@
      *  - nach "var x:"  → nur Datentypen
      *  - nach "var "    → nichts (neuer Name)
      *  - nach "INPUT"   → nur Variablen
-     *  - nach einem Operanden + Leerzeichen → Operatoren (and, or, div, mod; bei for: to/by, foreach: in)
+     *  - nach einem Operanden + Leerzeichen → Operatoren (and, or, mod; bei for: to/by, foreach: in)
      *  - sonst (Ausdruck) → Variablen, Funktionen, true/false/not
      */
     function contextOf(lineBefore) {
@@ -792,9 +792,9 @@
         if (/^foreach\s+[\p{L}_][\p{L}\p{N}_]*$/iu.test(t)) return { items: kws('in') };
         if (/^for\b/i.test(t) && /(=|<-|:=)/.test(t)) {
           if (!/\b(to|downto)\b/i.test(t)) return { items: kws('to', 'downto') };
-          if (!/\bby\b/i.test(t)) return { items: uniq([...kws('by'), ...kws('div', 'mod')]) };
+          if (!/\bby\b/i.test(t)) return { items: uniq([...kws('by'), ...kws('mod')]) };
         }
-        return { items: kws('and', 'or', 'div', 'mod') };
+        return { items: kws('and', 'or', 'mod') };
       }
       return { items: expr() };
     }

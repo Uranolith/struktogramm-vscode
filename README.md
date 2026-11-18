@@ -2,14 +2,55 @@
 
 Struktogramm-Editor im Stil von **Structorizer**, direkt in VS Code.
 
+> **Experimenteller Build.** Die Extension ist noch nicht im VS-Code-Marketplace. Installiert wird sie
+> aus einer `.vsix`-Datei (siehe [Installation](#installation)).
+
+## Installation
+Voraussetzung: VS Code 1.80 oder neuer. Java 11+ wird nur für die optionalen Original-Structorizer-Funktionen gebraucht.
+
+### Aus einer fertigen `.vsix`-Datei
+1. Die Datei `struktogramm-<version>.vsix` herunterladen, z.B. von der
+   [Releases-Seite](https://github.com/Uranolith/struktogramm-vscode/releases) des Repositorys.
+2. In VS Code installieren, auf einem dieser Wege:
+   - Ansicht **Erweiterungen** (Strg+Umschalt+X) → Menü **⋯** oben rechts → **Aus VSIX installieren …** →
+     Datei auswählen.
+   - Oder im Terminal:
+     ```
+     code --install-extension struktogramm-<version>.vsix
+     ```
+3. VS Code neu laden, wenn es dazu auffordert (Befehl *Developer: Reload Window*).
+
+Eine neuere Version wird genauso installiert; sie ersetzt die alte. Deinstallieren geht über die Ansicht
+**Erweiterungen** → *Struktogramm* → **Deinstallieren**, oder mit
+`code --uninstall-extension local.struktogramm`.
+
+Weil die Extension nicht aus dem Marketplace kommt, aktualisiert VS Code sie nicht automatisch.
+
+### Selbst bauen
+Benötigt Git und Python 3; Node.js/npm sind nicht nötig.
+```
+git clone https://github.com/Uranolith/struktogramm-vscode.git
+cd struktogramm-vscode
+python build-vsix.py
+code --install-extension struktogramm-<version>.vsix
+```
+`build-vsix.py` legt die Datei `struktogramm-<version>.vsix` im Projektordner an.
+
+### Ohne Installation ausprobieren
+Den Projektordner in VS Code öffnen und **F5** drücken. Es startet ein zweites VS-Code-Fenster
+(*Extension Development Host*), in dem die Extension direkt aus dem Quellcode läuft.
+
 ## Funktionen
-- **Code → Struktogramm**: Python, Java, C, C++, C#, JavaScript, TypeScript
+- **Code → Struktogramm**: Python, Java, C, C++, C#, JavaScript, TypeScript, Kotlin, Rust
   (Rechtsklick im Editor → *Struktogramm aus Code erzeugen*; mit Markierung nur der markierte Teil).
   Jede Funktion wird ein eigenes Diagramm, `main` bzw. Code auf oberster Ebene wird das Hauptprogramm.
 - **Live-Vorschau**: Symbol oben rechts im Code-Editor – das Struktogramm aktualisiert sich beim Tippen.
 - **Grafischer Editor** für `.nsd`-Dateien: Elemente einfügen, bearbeiten (Doppelklick), ziehen,
   kopieren/einfügen, Kontextmenü, Farben, Kommentare, Rückgängig.
-- **Struktogramm → Code**: Python, Java, C, C++, C#, JavaScript (Node.js), Pascal.
+- **Struktogramm → Code**: Python, Java, C, C++, C#, JavaScript (Node.js), Pascal, Kotlin, Rust.
+  - Kotlin: `readln()` für Eingaben, String-Templates für Ausgaben, `IntArray`/`intArrayOf`, `when`, `downTo`/`step`.
+  - Rust: `println!`, eine kleine `read_line()`-Hilfsfunktion für Eingaben, `Vec`, `match`, `loop`;
+    ganze Zahlen werden in Rechnungen mit Kommazahlen automatisch als `2.0` geschrieben.
 - **Ausführen** (wie der Structorizer-Executor): ▶ Ausführen, ⏭ Einzelschritt, ⏸ Pause, ⏹ Stopp,
   Tempo einstellbar, Haltepunkte (F9 oder Rechtsklick), Ein-/Ausgabe in der Konsole unten,
   Variablen und Aufrufstapel daneben, Unterprogramme und Rekursion. Fehler werden am Element rot markiert.
@@ -22,25 +63,35 @@ Struktogramm-Editor im Stil von **Structorizer**, direkt in VS Code.
     für C/Java gibt es *Struktogramm aus Code erzeugen (Structorizer-Parser)*.
   - *Im Original-Structorizer öffnen* startet die Structorizer-Oberfläche mit dem Diagramm.
 - **Export** als SVG oder PNG.
-- **Structorizer-kompatibel**: liest und schreibt `.nsd` (XML). Dateien mit mehreren Diagrammen
-  können per *Diagramme einzeln als Structorizer-Dateien speichern* aufgeteilt werden.
+- **Structorizer-kompatibel**: liest und schreibt `.nsd` (XML) in Structorizer-Schreibweise. Eine Datei mit
+  einem Diagramm öffnet der Structorizer direkt. Dateien mit mehreren Diagrammen (z.B. nach einem
+  Code-Import mit Funktionen) kann der Structorizer nicht lesen. Teile sie mit *Diagramme einzeln als
+  Structorizer-Dateien speichern* auf.
 
 ## Schreibweise im Struktogramm
-Zuweisungen werden mit `=` geschrieben, Vergleiche mit `==` und `!=`. Für den Original-Structorizer
-wird automatisch in dessen Schreibweise (`<-`) umgewandelt.
+Die Diagramme verwenden die Schreibweise des Original-Structorizers: Zuweisung `:=`, Vergleich `=` und `<>`.
+Eine `.nsd`-Datei mit einem Diagramm lässt sich daher unverändert im Structorizer öffnen.
+
+Andere Schreibweisen werden beim Speichern automatisch umgestellt: `x = 5` und `x <- 5` werden zu `x := 5`,
+`==` wird zu `=`, `!=` zu `<>`. Das gilt für Eingaben im Editor, für Code-Importe und für Dateien älterer
+Versionen dieser Extension.
+
+Geteilt wird immer mit `/`. Zwischen zwei ganzen Zahlen rechnet `/` ganzzahlig (`7 / 2` ergibt `3`).
+Ein `div` aus importiertem Code wird zu `/`.
+
 | Element | Beispiel |
 |---|---|
-| Zuweisung | `x = 5` (alte Structorizer-Schreibweise `x <- 5` wird ebenfalls verstanden) |
-| Deklaration | `int x = 0` · `var x: int` |
+| Zuweisung | `x := 5` |
+| Deklaration | `var x: int` · `var x: int := 0` · `const MAX := 10` |
 | Eingabe / Ausgabe | `INPUT "Zahl: ", x` · `OUTPUT "Summe: ", s` |
-| Bedingung | `x > 3 and y != 0` · Vergleich `x == 0` |
-| Zählschleife | `for i = 1 to 10 by 2` · `foreach x in liste` |
-| Kopf-/Fußschleife | `while x > 0` · `until x == 0` |
+| Bedingung | `x > 3 and y <> 0` · Vergleich `x = 0` |
+| Zählschleife | `for i := 1 to 10 by 2` · `foreach x in liste` |
+| Kopf-/Fußschleife | `while x > 0` · `until x = 0` |
 | Fallauswahl | 1. Zeile Ausdruck, dann je Fall eine Zeile, letzte Zeile `default` (oder `%`) |
 | Sprung | `leave` · `return x` · `exit 0` |
 
 Schlüsselwörter (blau, fett), Funktionsaufrufe (dunkelgelb, fett), Datentypen (petrol), Zeichenketten (rot),
-Operatoren (lila, fett: Zuweisung `=`, Vergleiche `==` `!=` `<` `>` `≤` `≥`, Rechnen `+ - * / %` `div` `mod`) werden im Diagramm farbig
+Operatoren (lila, fett: Zuweisung `:=`, Vergleiche `=` `<>` `<` `>` `≤` `≥`, Rechnen `+ - * / %` `mod`) werden im Diagramm farbig
 dargestellt; abschalten mit der Einstellung `struktogramm.highlightKeywords`.
 
 ## Hell / Dunkel
@@ -65,8 +116,8 @@ KI-kompakt nutzt Einrückung mit einem Leerzeichen statt Klammern/Tags und ist e
 ```
 PROGRAM rechner
 INPUT "Zahl: ", zahl
-for i = 1 to zahl
- s = s + i
+for i := 1 to zahl
+ s := s + i
 if ist_prim(zahl)
  OUTPUT zahl, " ist prim"
 else
@@ -91,14 +142,16 @@ Im Bearbeiten-Dialog schlägt die Autovervollständigung passend zur Stelle vor 
 | nach `var name:` | nur Datentypen (`int`, `double`, `string` …) – Liste öffnet sich von selbst |
 | nach `var ` | nichts (neuer Name) |
 | nach `INPUT` | nur Variablen |
-| in Ausdrücken (`x = …`, `OUTPUT …`, Bedingungen) | Variablen, Unterprogramme, Funktionen wie `int()`, `sqrt()`, `true`/`false`/`not` |
-| nach einem Wert + Leerzeichen | `and`, `or`, `div`, `mod` – in Zählschleifen `to`/`by`, bei `foreach` `in` |
+| in Ausdrücken (`x := …`, `OUTPUT …`, Bedingungen) | Variablen, Unterprogramme, Funktionen wie `int()`, `sqrt()`, `true`/`false`/`not` |
+| nach einem Wert + Leerzeichen | `and`, `or`, `mod` – in Zählschleifen `to`/`by`, bei `foreach` `in` |
 | Sprung / Zählschleife / Fußschleife | `leave`, `return`, `exit` … / `for`, `foreach` / `until` |
 
 ## Grenzen
 Es ist kein vollständiger Compiler: Klassen, Ausnahmen (`try/catch`), Zeiger und Bibliotheksaufrufe
 werden vereinfacht oder unverändert übernommen. Variablentypen werden – wo nötig – geschätzt.
 String-Verkettung mit `+` lässt sich nicht nach C übersetzen.
+Bei Kotlin und Rust werden Klassen, `impl`-Blöcke, Lambdas/Closures und Ownership vereinfacht; im erzeugten
+Rust-Code werden Zeichenketten und Arrays bei Funktionsaufrufen mit `.clone()` übergeben.
 
 ## Lizenz
 Diese Extension steht unter der MIT-Lizenz. Structorizer (© Bob Fisch, Kay Gürtzig u.a.) ist ein

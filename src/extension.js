@@ -521,7 +521,7 @@ function activate(context) {
     vscode.commands.registerCommand('struktogramm.newFile', () => newFile()),
     vscode.commands.registerCommand('struktogramm.preview', () => {
       const ed = vscode.window.activeTextEditor;
-      if (!ed || !supportedLanguage(ed.document.languageId, ed.document.fileName)) { vscode.window.showWarningMessage('Bitte eine Python-, Java-, C-, C++-, C#-, JavaScript- oder TypeScript-Datei öffnen.'); return; }
+      if (!ed || !supportedLanguage(ed.document.languageId, ed.document.fileName)) { vscode.window.showWarningMessage('Bitte eine Python-, Java-, C-, C++-, C#-, JavaScript-, TypeScript-, Kotlin- oder Rust-Datei öffnen.'); return; }
       preview.show(ed);
     }),
     vscode.commands.registerCommand('struktogramm.exportSvg', () => { const d = activeEditorDoc(); if (d) exportSvg(d); }),

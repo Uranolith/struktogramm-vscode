@@ -358,7 +358,7 @@ class Interpreter {
   *forLoop(el, path) {
     const text = (el.text || []).join(' ');
     const f = P.parseForText(text);
-    if (!f) throw new ExecError(`Schleifenkopf nicht verstanden: „${text}“ (erwartet z.B. for i = 1 to 10)`, path);
+    if (!f) throw new ExecError(`Schleifenkopf nicht verstanden: „${text}“ (erwartet z.B. for i := 1 to 10)`, path);
     if (f.kind === 'count') {
       let v = yield* this.eval(f.start, path);
       const end = yield* this.eval(f.end, path);
@@ -729,7 +729,7 @@ class Interpreter {
       case 'sum': return (a[0] || []).reduce((x, y) => x + num(y), 0);
       case 'odd': return a[0] % 2 !== 0;
       case 'sqr': return mkNum(a[0] * a[0], isFloat(args[0]));
-      case 'inc': case 'dec': throw new ExecError(`${name}() bitte als Zuweisung schreiben (x = x + 1)`, path);
+      case 'inc': case 'dec': throw new ExecError(`${name}() bitte als Zuweisung schreiben (x := x + 1)`, path);
       case 'print': case 'println': throw new ExecError('Für Ausgaben bitte OUTPUT verwenden', path);
       default: throw new ExecError(`Unbekannte Funktion „${name}“ – ist das Unterprogramm als eigenes Diagramm angelegt?`, path);
     }

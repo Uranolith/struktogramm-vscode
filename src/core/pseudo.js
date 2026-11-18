@@ -191,7 +191,126 @@ const MATH_FUNCS = {
   floor: { java: 'Math.floor', csharp: 'Math.Floor', javascript: 'Math.floor', python: 'math.floor', c: 'floor', cpp: 'floor', pascal: 'floor' },
   ceil: { java: 'Math.ceil', csharp: 'Math.Ceiling', javascript: 'Math.ceil', python: 'math.ceil', c: 'ceil', cpp: 'ceil', pascal: 'ceil' },
 };
-const CFAM = new Set(['java', 'c', 'cpp', 'csharp', 'javascript', 'typescript']);
+const CFAM = new Set(['java', 'c', 'cpp', 'csharp', 'javascript', 'typescript', 'kotlin', 'rust']);
+const MODERN = new Set(['kotlin', 'rust']);
+const MODERN_FN = new Set(['sqrt', 'pow', 'floor', 'ceil', 'abs', 'round', 'random', 'int', 'float', 'str', 'length', 'len']);
+const SIMPLE_CHAIN = /^[\p{L}_][\p{L}\p{N}_.]*(\[[^\]]*\]|\([^()]*\))?$/u;
+
+/**
+ * Kotlin/Rust: eingebaute Funktionen mit Typumwandlung (beide Sprachen wandeln Int nicht automatisch in Double).
+ * args: [{src: Pseudocode, out: übersetzt}]
+ */
+function modernFn(l, args, lang, ctx) {
+  const kt = lang === 'kotlin';
+  const a = args[0] || { src: '', out: '' };
+  const typeOf = (arg) => (ctx.exprType ? normType(ctx.exprType(arg.src)) : inferType(arg.src));
+  const wrap = (s) => (SIMPLE_CHAIN.test(s) ? s : `(${s})`);
+  const dbl = (arg) => {
+    const s = arg.out;
+    if (/^-?\d+$/.test(s)) return kt ? s + '.0' : `${s}.0_f64`;
+    if (/^-?\d+\.\d+$/.test(s)) return kt ? s : `${s}_f64`;
+    if (typeOf(arg) === 'double') return kt ? s : wrap(s);
+    return kt ? `${wrap(s)}.toDouble()` : `(${wrap(s)} as f64)`;
+  };
+  if (kt) {
+    switch (l) {
+      case 'sqrt': case 'floor': case 'ceil': return `Math.${l}(${dbl(a)})`;
+      case 'pow': return `Math.pow(${dbl(a)}, ${dbl(args[1] || a)})`;
+      case 'abs': return `Math.abs(${a.out})`;
+      case 'round': return `Math.round(${dbl(a)}).toInt()`;
+      case 'random': return 'Math.random()';
+      case 'int': return `${wrap(a.out)}.toInt()`;
+      case 'float': return `${wrap(a.out)}.toDouble()`;
+      case 'str': return `${wrap(a.out)}.toString()`;
+      default: { // length / len
+        const t = typeOf(a);
+        return `${wrap(a.out)}.${t === 'string' ? 'length' : 'size'}`;
+      }
+    }
+  }
+  switch (l) {
+    case 'sqrt': case 'floor': case 'ceil': return `${dbl(a)}.${l}()`;
+    case 'pow': return `${dbl(a)}.powf(${dbl(args[1] || a)})`;
+    case 'abs': return /^-?\d+$/.test(a.out) ? `(${a.out}_i32).abs()` : `${wrap(a.out)}.abs()`;
+    case 'round': return `(${dbl(a)}.round() as i32)`;
+    case 'random': if (ctx.needs) ctx.needs.add('random'); return 'random()';
+    case 'int': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<i32>().unwrap()` : `(${wrap(a.out)} as i32)`;
+    case 'float': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<f64>().unwrap()` : `(${wrap(a.out)} as f64)`;
+    case 'str': return `${wrap(a.out)}.to_string()`;
+    default: return `(${wrap(a.out)}.len() as i32)`;
+  }
+}
+
+/**
+ * Kotlin/Rust: ganzzahlige Literale in Ausdrücken mit Kommazahlen als Kommazahl schreiben
+ * (d * 2 -> d * 2.0, d == 12 -> d == 12.0). Indizes und Funktionsargumente bleiben unverändert.
+ */
+function promoteFloats(toks, ctx) {
+  const res = toks.map((t) => ({ ...t }));
+  const typeOf = (a, b) => {
+    if (b <= a) return null;
+    const txt = joinTokens(res.slice(a, b));
+    try { return normType(ctx.exprType ? ctx.exprType(txt) : inferType(txt)); } catch (e) { return null; }
+  };
+  const isLogic = (t) => ['and', 'or', 'xor'].includes(lc(t)) || t.v === '&&' || t.v === '||';
+  const topIdx = (a, b, pred) => {
+    const r = [];
+    let depth = 0;
+    for (let k = a; k < b; k++) {
+      const t = res[k];
+      if (t.t === 'op' && OPEN[t.v]) depth++;
+      else if (t.t === 'op' && CLOSE[t.v]) depth--;
+      else if (depth === 0 && pred(t)) r.push(k);
+    }
+    return r;
+  };
+  const promoteRange = (a, b) => {
+    for (let k = a; k < b; k++) {
+      const t = res[k];
+      if (t.t === 'op' && t.v === '(') {
+        const c = matchClose(res, k);
+        if (c < 0 || c > b) return;
+        const isCall = k > a && res[k - 1].t === 'id';
+        if (!isCall) promoteRange(k + 1, c);
+        k = c;
+        continue;
+      }
+      if (t.t === 'op' && (t.v === '[' || t.v === '{')) { const c = matchClose(res, k); if (c < 0) return; k = c; continue; }
+      if (t.t === 'num' && /^\d+$/.test(t.v)) t.v += '.0';
+    }
+  };
+  const visit = (a, b) => {
+    const logic = topIdx(a, b, isLogic);
+    if (logic.length) {
+      let s = a;
+      for (const k of logic.concat([b])) { visit(s, k); s = k + 1; }
+      return;
+    }
+    let s = a;
+    while (s < b && lc(res[s]) === 'not') s++;
+    if (s < b && res[s].v === '(' && matchClose(res, s) === b - 1) { visit(s + 1, b - 1); return; }
+    const rel = topIdx(s, b, (t) => REL_OPS.has(t.v));
+    if (rel.length === 1) {
+      const k = rel[0];
+      if (typeOf(s, k) === 'double' || typeOf(k + 1, b) === 'double') { promoteRange(s, k); promoteRange(k + 1, b); }
+      return;
+    }
+    if (!rel.length && typeOf(s, b) === 'double') promoteRange(s, b);
+  };
+  visit(0, res.length);
+  return res;
+}
+
+/** Kotlin/Rust: neues Array "new int[n]" */
+function modernNewArray(elType, size, lang) {
+  const n = normType(elType);
+  if (lang === 'kotlin') {
+    const typed = { int: 'IntArray', double: 'DoubleArray', boolean: 'BooleanArray', char: 'CharArray' }[n];
+    return typed ? `${typed}(${size})` : `Array(${size}) { ${n === 'string' ? '""' : '0'} }`;
+  }
+  const def = { int: '0', double: '0.0', boolean: 'false', char: "' '", string: 'String::new()' }[n] || '0';
+  return `vec![${def}; ${/^\d+$/.test(size) ? size : `(${size}) as usize`}]`;
+}
 
 /** Operand-Ende nach "not" bestimmen (bis and/or/Klammer zu/Komma auf gleicher Ebene) */
 function operandEnd(toks, i) {
@@ -248,12 +367,21 @@ function translateExpr(text, lang, ctx = {}) {
 }
 
 function mapToks(toks, lang, ctx) {
+  if (MODERN.has(lang)) toks = promoteFloats(toks, ctx);
   const out = [];
   const c = CFAM.has(lang);
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i];
     const l = lc(t);
     const nt = { ...t };
+    // Rust: Indizes müssen usize sein  a[i] -> a[i as usize]
+    if (lang === 'rust' && t.t === 'op' && t.v === '[' && out.length && (out[out.length - 1].t === 'id' || [')', ']'].includes(out[out.length - 1].v))) {
+      const close = matchClose(toks, i);
+      const r = joinTokens(mapToks(toks.slice(i + 1, close < 0 ? toks.length : close), lang, ctx));
+      out.push({ ...t, ws: false }, { t: 'id', v: /^\d+$/.test(r) ? r : (SIMPLE_CHAIN.test(r) ? `${r} as usize` : `(${r}) as usize`), ws: false }, { t: 'op', v: ']', ws: false });
+      i = close < 0 ? toks.length : close;
+      continue;
+    }
     if (t.t === 'op') {
       if (t.v === '=' || t.v === '==' || t.v === '===') nt.v = lang === 'pascal' ? '=' : lang === 'javascript' ? '===' : '==';
       else if (t.v === '<>' || t.v === '!=' || t.v === '!==') nt.v = lang === 'pascal' ? '<>' : lang === 'javascript' ? '!==' : '!=';
@@ -273,13 +401,45 @@ function mapToks(toks, lang, ctx) {
     if (t.t === 'str') {
       if (lang === 'pascal') nt.v = requote(t, "'");
       else if (c && t.v[0] === "'" && !(t.v.length === 3 || (t.v.length === 4 && t.v[1] === '\\'))) nt.v = requote(t, '"');
+      if (lang === 'kotlin' && nt.v[0] === '"') nt.v = nt.v.replace(/(^|[^\\])\$/g, '$1\\$');
       out.push(nt);
       continue;
     }
     if (t.t === 'id') {
       if (l === 'and') { nt.v = c ? '&&' : 'and'; nt.t = c ? 'op' : 'id'; nt.ws = true; }
       else if (l === 'or') { nt.v = c ? '||' : 'or'; nt.t = c ? 'op' : 'id'; nt.ws = true; }
-      else if (l === 'xor') { nt.v = lang === 'pascal' ? 'xor' : '^'; nt.ws = true; }
+      else if (l === 'xor') { nt.v = lang === 'pascal' || lang === 'kotlin' ? 'xor' : '^'; nt.ws = true; }
+      else if (MODERN.has(lang) && l === 'new' && toks[i + 1] && toks[i + 1].t === 'id' && toks[i + 2] && toks[i + 2].v === '[') {
+        const c = matchClose(toks, i + 2);
+        const size = joinTokens(mapToks(toks.slice(i + 3, c < 0 ? toks.length : c), lang, ctx));
+        out.push({ t: 'id', v: modernNewArray(toks[i + 1].v, size, lang), ws: t.ws });
+        i = c < 0 ? toks.length : c;
+        continue;
+      } else if (MODERN.has(lang) && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.') &&
+          (MODERN_FN.has(l) || (ctx.funcs && ctx.funcs.has(t.v)))) {
+        const close = matchClose(toks, i + 1);
+        const argToks = splitTop(toks.slice(i + 2, close < 0 ? toks.length : close), ',').filter((x) => x.length);
+        const args = argToks.map((x) => ({ src: joinTokens(x), out: joinTokens(mapToks(x, lang, ctx)), toks: x }));
+        let v;
+        if (ctx.funcs && ctx.funcs.has(t.v)) {
+          // eigene Funktion: Argumente an Parametertypen anpassen
+          const sig = ctx.funcs.get(t.v);
+          v = `${t.v}(${args.map((x, k) => {
+            const prm = sig.params[k];
+            const pt = prm && normType(prm.type || prm.inferredType);
+            if (pt === 'double' && /^-?\d+$/.test(x.out)) return x.out + '.0';
+            if (lang === 'rust' && pt === 'string' && isStringLiteral(x.src)) return `String::from(${x.out})`;
+            if (lang === 'rust' && x.toks.length === 1 && x.toks[0].t === 'id' && ctx.typeOf) {
+              const vt = normType(ctx.typeOf(x.toks[0].v));
+              if (vt === 'string' || (vt && vt.endsWith('[]'))) return x.out + '.clone()';
+            }
+            return x.out;
+          }).join(', ')})`;
+        } else v = modernFn(l, args, lang, ctx);
+        out.push({ t: 'id', v, ws: t.ws });
+        i = close < 0 ? toks.length : close;
+        continue;
+      }
       else if (l === 'div') { nt.v = lang === 'pascal' ? 'div' : lang === 'python' ? '//' : '/'; nt.t = lang === 'pascal' ? 'id' : 'op'; nt.ws = true; }
       else if (l === 'mod') { nt.v = lang === 'pascal' ? 'mod' : '%'; nt.t = lang === 'pascal' ? 'id' : 'op'; nt.ws = true; }
       else if (l === 'true' || l === 'false' || l === 'wahr' || l === 'falsch') {
@@ -287,7 +447,7 @@ function mapToks(toks, lang, ctx) {
         nt.v = lang === 'python' ? (val ? 'True' : 'False') : (val ? 'true' : 'false');
         if (lang === 'c' && ctx.needs) ctx.needs.add('stdbool');
       } else if (l === 'null' || l === 'nil' || l === 'none') {
-        nt.v = lang === 'python' ? 'None' : lang === 'pascal' ? 'nil' : lang === 'c' ? 'NULL' : lang === 'cpp' ? 'nullptr' : 'null';
+        nt.v = lang === 'python' || lang === 'rust' ? 'None' : lang === 'pascal' ? 'nil' : lang === 'c' ? 'NULL' : lang === 'cpp' ? 'nullptr' : 'null';
       } else if (l === 'not') {
         if (c) {
           const end = operandEnd(toks, i + 1);
@@ -480,9 +640,13 @@ function normType(t) {
   if (!t) return null;
   const s = String(t).trim();
   const low = s.toLowerCase().replace(/\s+/g, ' ');
-  if (/^(int|integer|long|short|byte|longint|unsigned int|unsigned|long long|unsigned long|size_t|int32|int64)$/.test(low)) return 'int';
-  if (/^(double|float|real|single|number|decimal|long double|extended)$/.test(low)) return 'double';
-  if (/^(string|str|char\s*\*|const char\s*\*|std::string|ansistring)$/.test(low)) return 'string';
+  if (/^(int|integer|long|short|byte|longint|unsigned int|unsigned|long long|unsigned long|size_t|int32|int64|[iu](8|16|32|64|128|size)|uint|ulong)$/.test(low)) return 'int';
+  if (/^(double|float|real|single|number|decimal|long double|extended|f32|f64)$/.test(low)) return 'double';
+  if (/^(string|str|&\s*str|char\s*\*|const char\s*\*|std::string|ansistring|charsequence)$/.test(low)) return 'string';
+  const kArr = { intarray: 'int[]', longarray: 'int[]', doublearray: 'double[]', floatarray: 'double[]', booleanarray: 'boolean[]', chararray: 'char[]' }[low];
+  if (kArr) return kArr;
+  const gen = /^(?:vec|array|list|mutablelist|arraylist)\s*<\s*(.+)\s*>$/.exec(low);
+  if (gen) return (normType(gen[1]) || gen[1]) + '[]';
   if (/^(boolean|bool)$/.test(low)) return 'boolean';
   if (low === 'char') return 'char';
   const arr = /^(.*?)\s*\[\s*\]$/.exec(s);

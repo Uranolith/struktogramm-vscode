@@ -57,7 +57,7 @@ function toJsonObject(doc) {
   return {
     format: 'struktogramm',
     version: 1,
-    notation: { assign: '=', compare: '==', notEqual: '!=', input: 'INPUT', output: 'OUTPUT' },
+    notation: { assign: ':=', compare: '=', notEqual: '<>', input: 'INPUT', output: 'OUTPUT' },
     diagrams: (doc.roots || []).map((r) => {
       const d = { kind: ROOT_KIND[r.rootType] || r.rootType, signature: (r.text || []).join(' ').trim() };
       const cm = (r.comment || []).filter((c) => String(c).trim());
@@ -106,7 +106,7 @@ function xmlNode(o, ind) {
 
 function toXml(doc) {
   const j = toJsonObject(doc);
-  let s = '<?xml version="1.0" encoding="UTF-8"?>\n<!-- Struktogramm (Nassi-Shneiderman). Zuweisung "=", Vergleich "==". -->\n<struktogramm version="1">\n';
+  let s = '<?xml version="1.0" encoding="UTF-8"?>\n<!-- Struktogramm (Nassi-Shneiderman). Zuweisung ":=", Vergleich "=" und "<>" (Structorizer-Schreibweise). -->\n<struktogramm version="1">\n';
   for (const d of j.diagrams) {
     s += `  <diagram kind="${d.kind}" signature="${xesc(d.signature)}">\n`;
     if (d.comment) s += `    <comment>${tesc(d.comment)}</comment>\n`;
@@ -118,7 +118,7 @@ function toXml(doc) {
 
 /* ------------------------------------------------------------ KI-kompakt */
 
-const COMPACT_HEADER = '# NSD pseudocode. 1 space indent = nesting. "=" assign, "==" compare. # = comment';
+const COMPACT_HEADER = '# NSD pseudocode (Structorizer syntax). 1 space indent = nesting. ":=" assign, "=" "<>" compare. # = comment';
 
 function compactSeq(seq, ind, out) {
   for (const el of seq || []) compactEl(el, ind, out);

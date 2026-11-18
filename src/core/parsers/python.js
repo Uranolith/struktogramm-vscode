@@ -329,7 +329,7 @@ class PyParser {
     if (aug > 0) {
       const target = this.exprToks(toks.slice(0, aug));
       let op = toks[aug].v.slice(0, -1);
-      if (op === '//') op = 'div';
+      if (op === '//') op = '/';
       const rhs = toks.slice(aug + 1);
       const r = this.exprToks(rhs);
       return [mk.instruction(`${target} <- ${target} ${op} ${rhs.length > 1 && op !== '+' ? '(' + r + ')' : r}`)];
@@ -496,7 +496,7 @@ class PyParser {
       if (t.t === 'op') {
         if (t.v === '==') nt.v = '=';
         else if (t.v === '!=') nt.v = '<>';
-        else if (t.v === '//') { nt.v = 'div'; nt.t = 'id'; nt.ws = true; }
+        else if (t.v === '//') { nt.v = '/'; nt.t = 'op'; nt.ws = true; }
       } else if (t.t === 'id') {
         if (t.v === 'True') nt.v = 'true';
         else if (t.v === 'False') nt.v = 'false';

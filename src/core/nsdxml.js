@@ -4,7 +4,8 @@
  * Eine Datei mit genau einem Diagramm ist ein normales Structorizer-<root>.
  * Mehrere Diagramme werden in <roots> ... </roots> zusammengefasst (Erweiterung dieser Extension).
  */
-const { mk } = require('./model');
+const { mk, clone } = require('./model');
+const { normalize } = require('./style');
 
 /* ------------------------------ XML-Parser ------------------------------ */
 function decodeEntities(s) {
@@ -165,8 +166,9 @@ function fromNsd(text) {
   const doc = parseXml(text);
   const top = doc.children.find((c) => c.name === 'root' || c.name === 'roots');
   if (!top) throw new Error('Keine Struktogramm-Datei: <root> fehlt');
-  if (top.name === 'root') return { roots: [readRoot(top)] };
-  return { roots: top.children.filter((c) => c.name === 'root').map(readRoot) };
+  // immer Structorizer-Schreibweise (x := 5, if x = 0) – auch für Dateien älterer Versionen
+  if (top.name === 'root') return normalize({ roots: [readRoot(top)] });
+  return normalize({ roots: top.children.filter((c) => c.name === 'root').map(readRoot) });
 }
 
 /* ------------------------------ Schreiben ------------------------------- */
@@ -221,6 +223,7 @@ function writeRoot(r, ind, withNs) {
 
 /** Dokument -> XML-Text */
 function toNsd(doc) {
+  doc = normalize(clone(doc));
   const head = '<?xml version="1.0" encoding="UTF-8"?>\n';
   if (doc.roots.length === 1) return head + writeRoot(doc.roots[0], '', true);
   return head + '<roots xmlns:nsd="https://structorizer.fisch.lu">\n' + doc.roots.map((r) => writeRoot(r, '\t', true)).join('') + '</roots>\n';
@@ -228,7 +231,7 @@ function toNsd(doc) {
 
 /** Einzelnes Diagramm als eigenständige Structorizer-Datei */
 function rootToNsd(root) {
-  return '<?xml version="1.0" encoding="UTF-8"?>\n' + writeRoot(root, '', true);
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + writeRoot(normalize({ roots: [clone(root)] }).roots[0], '', true);
 }
 
 module.exports = { fromNsd, toNsd, rootToNsd, parseCommaText, toCommaText, parseXml };

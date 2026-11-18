@@ -14,6 +14,8 @@ const TARGETS = {
   csharp: { label: 'C#', ext: 'cs', languageId: 'csharp' },
   javascript: { label: 'JavaScript (Node.js)', ext: 'js', languageId: 'javascript' },
   pascal: { label: 'Pascal (Free Pascal)', ext: 'pas', languageId: 'pascal' },
+  kotlin: { label: 'Kotlin', ext: 'kt', languageId: 'kotlin' },
+  rust: { label: 'Rust', ext: 'rs', languageId: 'rust' },
 };
 
 const TYPE_MAP = {
@@ -23,6 +25,8 @@ const TYPE_MAP = {
   csharp: { int: 'int', double: 'double', string: 'string', boolean: 'bool', char: 'char' },
   pascal: { int: 'integer', double: 'real', string: 'string', boolean: 'boolean', char: 'char' },
   python: { int: 'int', double: 'float', string: 'str', boolean: 'bool', char: 'str' },
+  kotlin: { int: 'Int', double: 'Double', string: 'String', boolean: 'Boolean', char: 'Char' },
+  rust: { int: 'i32', double: 'f64', string: 'String', boolean: 'bool', char: 'char' },
 };
 
 const SIMPLE_IDENT = P.IDENT_RE;
@@ -1052,6 +1056,510 @@ class PasGen extends BaseGen {
   }
 }
 
+/* ==================================================================== */
+/* Gemeinsames für Kotlin und Rust                                       */
+/* ==================================================================== */
+const IDENT_ONLY = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+const isArrayLit = (v) => { const t = P.ptoks(String(v).trim()); return t.length >= 2 && (require('./tokenizer').isWrapped(t, '{') || require('./tokenizer').isWrapped(t, '[')); };
+const arrayItems = (v) => require('./tokenizer').splitTop(P.ptoks(String(v).trim()).slice(1, -1), ',').filter((p) => p.length).map(joinTokens);
+
+/** Namen, die in einer Routine Werte zugewiesen bekommen (Parameter brauchen dann var/mut) */
+function assignedNames(root) {
+  const set = new Set();
+  walk(root.children, (el) => {
+    for (const l of linesOf(el)) {
+      const c = P.classifyLine(l);
+      if (c.kind === 'assign') c.target.split(',').forEach((t) => set.add(t.trim().replace(/\[.*$/, '')));
+      else if (c.kind === 'input') c.vars.forEach((v) => set.add(v.trim()));
+    }
+  });
+  return set;
+}
+
+/** "a" + x + "b"  ->  Teile, wenn eine Zeichenkette verkettet wird (sonst null) */
+function concatParts(text) {
+  const { splitTop } = require('./tokenizer');
+  const toks = P.ptoks(text);
+  const terms = splitTop(toks, '+');
+  if (terms.length < 2 || !terms.some((t) => t.length === 1 && t[0].t === 'str')) return null;
+  if (findTop(toks, (t) => P.REL_OPS.has(t.v) || ['and', 'or', 'not'].includes(String(t.v).toLowerCase())) >= 0) return null;
+  return terms.map((t) => (t.length === 1 && t[0].t === 'str' ? { lit: P.literalInner(t[0].v) } : { expr: joinTokens(t) }));
+}
+
+/* ==================================================================== */
+/* Kotlin                                                                */
+/* ==================================================================== */
+class KtGen extends CGen {
+  comment(text) { return '// ' + text; }
+
+  typeName(t) {
+    const n = P.normType(t);
+    if (!n) return 'Int';
+    if (n.endsWith('[]')) {
+      const b = P.normType(n.slice(0, -2));
+      return { int: 'IntArray', double: 'DoubleArray', boolean: 'BooleanArray', char: 'CharArray' }[b] || `Array<${this.typeName(b)}>`;
+    }
+    return TYPE_MAP.kotlin[n] || n;
+  }
+
+  defaultValue(t) {
+    const n = P.normType(t);
+    if (n && n.endsWith('[]')) {
+      const b = P.normType(n.slice(0, -2));
+      return { int: 'IntArray(0)', double: 'DoubleArray(0)', boolean: 'BooleanArray(0)', char: 'CharArray(0)' }[b] || 'arrayOf()';
+    }
+    return { int: '0', double: '0.0', string: '""', boolean: 'false', char: "' '" }[n] || '0';
+  }
+
+  /** Kotlin-String-Literal-Inhalt: "$" maskieren */
+  lit(s) { return String(s).replace(/(^|[^\\])\$/g, '$1\\$'); }
+
+  /** String-Template aus Teilen */
+  tmpl(parts) {
+    let s = '';
+    parts.forEach((p, k) => {
+      if (p.lit != null) { s += this.lit(p.lit); return; }
+      const e = super.x(p.expr);
+      const next = parts[k + 1];
+      const nextStartsIdent = next && next.lit != null && /^[\p{L}\p{N}_]/u.test(next.lit);
+      s += IDENT_ONLY.test(e) && !nextStartsIdent ? '$' + e : '${' + e + '}';
+    });
+    return '"' + s + '"';
+  }
+
+  x(text) {
+    const parts = this.cur ? concatParts(text) : null;
+    if (parts) return this.tmpl(parts);
+    return super.x(text);
+  }
+
+  /** Wert passend zum Zieltyp (Array-Literal, 5 -> 5.0 bei Double) */
+  val(type, expr) {
+    const n = P.normType(type) || this.exprType(expr);
+    if (isArrayLit(expr)) {
+      const items = arrayItems(expr);
+      const et = n && n.endsWith('[]') ? P.normType(n.slice(0, -2)) : (items.length ? P.normType(this.exprType(items[0])) : 'int');
+      const fn = { int: 'intArrayOf', double: 'doubleArrayOf', boolean: 'booleanArrayOf', char: 'charArrayOf' }[et] || 'arrayOf';
+      return `${fn}(${items.map((i) => this.val(et, i)).join(', ')})`;
+    }
+    let r = this.x(expr);
+    if (n === 'double' && /^-?\d+$/.test(r)) r += '.0';
+    return r;
+  }
+
+  targetType(target) {
+    const m = /^([\p{L}_][\p{L}\p{N}_]*)\s*\[/u.exec(target);
+    if (m) { const t = P.normType(this.typeOf(m[1])); return t && t.endsWith('[]') ? t.slice(0, -2) : null; }
+    return this.typeOf(target.trim());
+  }
+
+  newArray(elType, size) {
+    const n = P.normType(elType);
+    const typed = { int: 'IntArray', double: 'DoubleArray', boolean: 'BooleanArray', char: 'CharArray' }[n];
+    return typed ? `${typed}(${size})` : `Array(${size}) { ${this.defaultValue(n)} }`;
+  }
+
+  declLine(name, type, init, isConst) {
+    const kw = isConst ? 'val' : 'var';
+    const arr = /^(.*?)\[(.*)\]$/.exec(name);
+    if (arr) return `${kw} ${arr[1]} = ${this.newArray(type, this.x(arr[2]) || '0')}`;
+    if (init == null) return `${kw} ${name}: ${this.typeName(type)} = ${this.defaultValue(type)}`;
+    return `${kw} ${name}${type ? ': ' + this.typeName(type) : ''} = ${init}`;
+  }
+
+  stmt(c, ind, el) {
+    switch (c.kind) {
+      case 'empty': return [];
+      case 'decl':
+        return c.decls.map((d) => {
+          this.cur.declared.add(d.name);
+          const t = c.type || this.typeOf(d.name);
+          if (d.suffix) return ind + this.declLine(d.name + d.suffix, c.type || 'int', null, c.isConst);
+          return ind + this.declLine(d.name, t, d.init != null ? this.val(t, d.init) : null, c.isConst);
+        });
+      case 'assign': {
+        if (c.target.includes(',') && !/[[(]/.test(c.target)) return this.tupleAssign(c, ind);
+        const n = c.target.trim();
+        const t = this.targetType(n);
+        if (this.cur.inline.get(el) && this.cur.inline.get(el).has(n) && !this.cur.declared.has(n)) {
+          this.cur.declared.add(n);
+          return [ind + this.declLine(n, t, this.val(t, c.expr))];
+        }
+        return [ind + `${this.x(n)} = ${this.val(t, c.expr)}`];
+      }
+      case 'input': {
+        const out = [];
+        if (c.prompt) out.push(ind + `print(${this.x(c.prompt)})`);
+        if (!c.vars.length) { out.push(ind + 'readln()'); return out; }
+        c.vars.forEach((v) => {
+          const t = P.normType(this.targetType(v)) || 'string';
+          const rd = { int: 'readln().toInt()', double: 'readln().toDouble()', boolean: 'readln().toBoolean()', char: 'readln()[0]' }[t] || 'readln()';
+          const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
+          if (decl) this.cur.declared.add(v);
+          out.push(ind + (decl ? `var ${v}: ${this.typeName(t)} = ${rd}` : `${this.x(v)} = ${rd}`));
+        });
+        return out;
+      }
+      case 'output': {
+        const parts = this.outParts(c.items);
+        if (!parts.length) return [ind + 'println()'];
+        if (parts.length === 1 && parts[0].expr != null) return [ind + `println(${this.x(parts[0].expr)})`];
+        return [ind + `println(${this.tmpl(parts)})`];
+      }
+      case 'return':
+        if (this.curIsMain) return c.expr && c.expr.trim() !== '0' ? this.stmt({ kind: 'exit', expr: c.expr }, ind, el) : [ind + 'return'];
+        return [ind + (c.expr ? `return ${this.val(this.retType(this.curSig), c.expr)}` : 'return')];
+      case 'exit': this.needs.add('exit'); return [ind + `exitProcess(${c.expr ? this.x(c.expr) : '0'})`];
+      case 'leave': return [ind + 'break'];
+      case 'continue': return [ind + 'continue'];
+      case 'throw': {
+        const e = this.x(c.expr);
+        return [ind + (P.isStringLiteral(c.expr) ? `throw RuntimeException(${e})` : `throw RuntimeException(${e}.toString())`)];
+      }
+      default: return [ind + this.x(c.expr)];
+    }
+  }
+
+  tupleAssign(c, ind) {
+    const targets = c.target.split(',').map((s) => s.trim());
+    const vals = require('./tokenizer').splitTop(P.ptoks(c.expr), ',').map(joinTokens);
+    if (vals.length !== targets.length) return [ind + this.comment(`TODO: ${c.target} = ${c.expr}`)];
+    const out = vals.map((v, k) => ind + `val _t${k} = ${this.val(this.targetType(targets[k]), v)}`);
+    targets.forEach((t, k) => {
+      if (!this.cur.declared.has(t) && !this.cur.hoist.has(t) && !this.cur.explicit.has(t) && !this.cur.params.has(t)) {
+        this.cur.declared.add(t);
+        out.push(ind + `var ${t} = _t${k}`);
+      } else out.push(ind + `${t} = _t${k}`);
+    });
+    return out;
+  }
+
+  caseEl(el, ind) {
+    const I = this.I;
+    const out = [ind + `when (${this.x(el.text[0] || '')}) {`];
+    for (const b of this.caseInfo(el)) {
+      const head = b.isDefault ? 'else' : b.values.map((v) => this.x(v)).join(', ');
+      const body = this.seq(b.body, ind + I + I);
+      if (!body.length) out.push(ind + I + `${head} -> {}`);
+      else out.push(ind + I + `${head} -> {`, ...body, ind + I + '}');
+    }
+    out.push(ind + '}');
+    return out;
+  }
+
+  forEl(el, ind) {
+    const text = linesOf(el).join(' ');
+    const f = P.parseForText(text);
+    const body = this.seq(el.body, ind + this.I);
+    if (!f) return [ind + this.comment(`TODO: Schleife "${text}" bitte manuell übersetzen`), ind + 'while (true) {', ...body, ind + this.I + 'break', ind + '}'];
+    if (f.kind === 'each') return [ind + `for (${f.var} in ${this.x(f.coll)}) {`, ...body, ind + '}'];
+    const step = f.step.replace(/\s+/g, '');
+    const neg = step.startsWith('-');
+    const abs = neg ? step.slice(1).replace(/^\((.*)\)$/, '$1') : step;
+    const start = this.x(f.start);
+    let range;
+    if (!neg) {
+      const m = /^(.*?)\s*-\s*1$/.exec(f.end);
+      range = m && !/[<>=]/.test(m[1]) ? `${start} until ${this.x(m[1])}` : `${start}..${this.x(f.end)}`;
+      if (step !== '1') range += ` step ${this.x(step)}`;
+    } else {
+      range = `${start} downTo ${this.x(f.end)}` + (abs !== '1' ? ` step ${this.x(abs)}` : '');
+    }
+    return [ind + `for (${this.x(f.var)} in ${range}) {`, ...body, ind + '}'];
+  }
+
+  whileEl(cond, body, ind) {
+    return [ind + `while (${cond === 'true' ? 'true' : this.x(cond)}) {`, ...this.seq(body, ind + this.I), ind + '}'];
+  }
+
+  repeatEl(cond, body, ind) {
+    return [ind + 'do {', ...this.seq(body, ind + this.I), ind + `} while (${this.x(P.negateCond(cond))})`];
+  }
+
+  routine(root) {
+    const I = this.I;
+    const sig = this.sigs.get(root);
+    const isMain = root.rootType === 'program';
+    const info = this.analyze(root, isMain ? { ...sig, params: [] } : sig);
+    this.cur = info; this.curIsMain = isMain; this.curSig = sig;
+    const assigned = assignedNames(root);
+    const shadow = isMain ? [] : sig.params.filter((p) => assigned.has(p.name)).map((p) => I + `var ${p.name} = ${p.name}`);
+    const hoisted = [...info.hoist].map((n) => I + this.declLine(n, info.types.get(n), null));
+    for (const n of info.hoist) info.declared.add(n);
+    const body = this.seq(root.children, I);
+    const ret = isMain ? null : this.retType(sig);
+    const params = isMain ? [] : sig.params.map((p) => `${p.name}: ${this.typeName(p.type || p.inferredType || 'int')}`);
+    const doc = (root.comment || []).filter((s) => s.trim()).map((s) => this.comment(s));
+    const head = isMain ? 'fun main() {' : `fun ${sig.name}(${params.join(', ')})${ret ? ': ' + this.typeName(ret) : ''} {`;
+    return { lines: [...doc, head, ...shadow, ...hoisted, ...body, '}'], isMain };
+  }
+
+  run() {
+    const roots = this.doc.roots;
+    const mainRoot = roots.find((r) => r.rootType === 'program');
+    const gen = [];
+    if (mainRoot) gen.push(this.routine(mainRoot));
+    for (const r of roots) if (r !== mainRoot) gen.push(this.routine(r));
+    const out = [this.comment(`Erzeugt aus Struktogramm "${(mainRoot || roots[0]).text.join(' ')}"`)];
+    if (this.needs.has('exit')) out.push('import kotlin.system.exitProcess');
+    out.push('');
+    gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
+    return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
+  }
+}
+
+/* ==================================================================== */
+/* Rust                                                                  */
+/* ==================================================================== */
+class RsGen extends BaseGen {
+  comment(text) { return '// ' + text; }
+
+  typeName(t) {
+    const n = P.normType(t);
+    if (!n) return 'i32';
+    if (n.endsWith('[]')) return `Vec<${this.typeName(n.slice(0, -2))}>`;
+    return TYPE_MAP.rust[n] || n;
+  }
+
+  defaultValue(t) {
+    const n = P.normType(t);
+    if (n && n.endsWith('[]')) return 'Vec::new()';
+    return { int: '0', double: '0.0', string: 'String::new()', boolean: 'false', char: "' '" }[n] || '0';
+  }
+
+  /** Inhalt für Formatstrings: { und } verdoppeln */
+  fmtLit(s) { return String(s).replace(/\{/g, '{{').replace(/\}/g, '}}'); }
+
+  fmt(parts) {
+    let f = '';
+    const args = [];
+    for (const p of parts) {
+      if (p.lit != null) f += this.fmtLit(p.lit);
+      else { f += '{}'; args.push(super.x(p.expr)); }
+    }
+    return { f: '"' + f + '"', args };
+  }
+
+  x(text) {
+    const parts = this.cur ? concatParts(text) : null;
+    if (parts) { const { f, args } = this.fmt(parts); return `format!(${[f, ...args].join(', ')})`; }
+    return super.x(text);
+  }
+
+  /** Bedingung ohne äußere Klammern */
+  bare(text) {
+    const s = this.x(text);
+    const toks = require('./tokenizer').tokenize(s, 'c');
+    return require('./tokenizer').isWrapped(toks) ? s.slice(1, -1).trim() : s;
+  }
+
+  val(type, expr) {
+    const n = P.normType(type) || P.normType(this.exprType(expr));
+    if (isArrayLit(expr)) {
+      const items = arrayItems(expr);
+      const et = n && n.endsWith('[]') ? P.normType(n.slice(0, -2)) : (items.length ? P.normType(this.exprType(items[0])) : 'int');
+      return `vec![${items.map((i) => this.val(et, i)).join(', ')}]`;
+    }
+    let r = this.x(expr);
+    if (n === 'double' && /^-?\d+$/.test(r)) r += '.0';
+    if (n === 'string' && P.isStringLiteral(expr)) r = `String::from(${r})`;
+    else if (n === 'string' && IDENT_ONLY.test(String(expr).trim())) r += '.clone()';
+    else if (n && n.endsWith('[]') && IDENT_ONLY.test(String(expr).trim())) r += '.clone()';
+    return r;
+  }
+
+  targetType(target) {
+    const m = /^([\p{L}_][\p{L}\p{N}_]*)\s*\[/u.exec(target);
+    if (m) { const t = P.normType(this.typeOf(m[1])); return t && t.endsWith('[]') ? t.slice(0, -2) : null; }
+    return this.typeOf(target.trim());
+  }
+
+  letLine(name, type, init, isConst) {
+    const kw = isConst ? 'let' : 'let mut';
+    const arr = /^(.*?)\[(.*)\]$/.exec(name);
+    if (arr) {
+      const size = this.x(arr[2]) || '0';
+      return `${kw} ${arr[1]}: Vec<${this.typeName(type)}> = vec![${this.defaultValue(type)}; ${/^\d+$/.test(size) ? size : `(${size}) as usize`}];`;
+    }
+    if (init == null) return `${kw} ${name}: ${this.typeName(type)} = ${this.defaultValue(type)};`;
+    return `${kw} ${name}${type ? ': ' + this.typeName(type) : ''} = ${init};`;
+  }
+
+  stmt(c, ind, el) {
+    switch (c.kind) {
+      case 'empty': return [];
+      case 'decl':
+        return c.decls.map((d) => {
+          this.cur.declared.add(d.name);
+          const t = c.type || this.typeOf(d.name);
+          if (d.suffix) return ind + this.letLine(d.name + d.suffix, c.type || 'int', null, c.isConst);
+          return ind + this.letLine(d.name, t, d.init != null ? this.val(t, d.init) : null, c.isConst);
+        });
+      case 'assign': {
+        const n = c.target.trim();
+        if (n.includes(',') && !/[[(]/.test(n)) {
+          const targets = n.split(',').map((s) => s.trim());
+          const vals = require('./tokenizer').splitTop(P.ptoks(c.expr), ',').map(joinTokens);
+          if (vals.length !== targets.length) return [ind + this.comment(`TODO: ${c.target} = ${c.expr}`)];
+          const rhs = `(${vals.map((v, k) => this.val(this.targetType(targets[k]), v)).join(', ')})`;
+          if (targets.every((t) => !this.cur.declared.has(t) && !this.cur.params.has(t) && !this.cur.hoist.has(t))) {
+            targets.forEach((t) => this.cur.declared.add(t));
+            return [ind + `let (${targets.map((t) => 'mut ' + t).join(', ')}) = ${rhs};`];
+          }
+          return [ind + `(${targets.join(', ')}) = ${rhs};`];
+        }
+        const t = this.targetType(n);
+        if (this.cur.inline.get(el) && this.cur.inline.get(el).has(n) && !this.cur.declared.has(n)) {
+          this.cur.declared.add(n);
+          return [ind + this.letLine(n, t, this.val(t, c.expr))];
+        }
+        return [ind + `${this.x(n)} = ${this.val(t, c.expr)};`];
+      }
+      case 'input': {
+        const out = [];
+        this.needs.add('input');
+        if (c.prompt) out.push(ind + (P.isStringLiteral(c.prompt) ? `print!("${this.fmtLit(P.literalInner(P.ptoks(c.prompt)[0].v))}");` : `print!("{}", ${this.x(c.prompt)});`));
+        if (!c.vars.length) { out.push(ind + 'read_line();'); return out; }
+        c.vars.forEach((v) => {
+          const t = P.normType(this.targetType(v)) || 'string';
+          const rd = { int: 'read_line().parse::<i32>().unwrap()', double: 'read_line().parse::<f64>().unwrap()', boolean: 'read_line().parse::<bool>().unwrap()', char: 'read_line().chars().next().unwrap()' }[t] || 'read_line()';
+          const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
+          if (decl) this.cur.declared.add(v);
+          out.push(ind + (decl ? `let mut ${v}: ${this.typeName(t)} = ${rd};` : `${this.x(v)} = ${rd};`));
+        });
+        return out;
+      }
+      case 'output': {
+        const parts = this.outParts(c.items);
+        if (!parts.length) return [ind + 'println!();'];
+        const { f, args } = this.fmt(parts);
+        return [ind + `println!(${[f, ...args].join(', ')});`];
+      }
+      case 'return':
+        if (this.curIsMain) return c.expr && c.expr.trim() !== '0' ? this.stmt({ kind: 'exit', expr: c.expr }, ind, el) : [ind + 'return;'];
+        return [ind + (c.expr ? `return ${this.val(this.retType(this.curSig), c.expr)};` : 'return;')];
+      case 'exit': return [ind + `std::process::exit(${c.expr ? this.x(c.expr) : '0'});`];
+      case 'leave': return [ind + 'break;'];
+      case 'continue': return [ind + 'continue;'];
+      case 'throw': return [ind + `panic!("{}", ${this.x(c.expr)});`];
+      default: return [ind + this.x(c.expr) + ';'];
+    }
+  }
+
+  ifEl(el, ind) {
+    const out = [];
+    let cond = this.cond(el.text, ['if', 'wenn', 'falls']);
+    let t = el.qTrue, f = el.qFalse;
+    if (!t.length && f.length) { cond = P.negateCond(cond); [t, f] = [f, t]; }
+    out.push(ind + `if ${this.bare(cond)} {`, ...this.seq(t, ind + this.I));
+    while (f.length === 1 && f[0].type === 'alternative' && !f[0].disabled && !(f[0].comment || []).some((s) => s.trim()) && f[0].qTrue.length) {
+      out.push(ind + `} else if ${this.bare(this.cond(f[0].text, ['if', 'wenn', 'falls']))} {`, ...this.seq(f[0].qTrue, ind + this.I));
+      f = f[0].qFalse;
+    }
+    if (f.length) out.push(ind + '} else {', ...this.seq(f, ind + this.I));
+    out.push(ind + '}');
+    return out;
+  }
+
+  caseEl(el, ind) {
+    const I = this.I;
+    const disc = el.text[0] || '';
+    let d = this.x(disc);
+    if (P.normType(this.exprType(disc)) === 'string') d = IDENT_ONLY.test(d) ? `${d}.as_str()` : `(${d}).as_str()`;
+    const out = [ind + `match ${d} {`];
+    let hasDefault = false;
+    for (const b of this.caseInfo(el)) {
+      if (b.isDefault) hasDefault = true;
+      const head = b.isDefault ? '_' : b.values.map((v) => this.x(v)).join(' | ');
+      const body = this.seq(b.body, ind + I + I);
+      if (!body.length) out.push(ind + I + `${head} => {}`);
+      else out.push(ind + I + `${head} => {`, ...body, ind + I + '}');
+    }
+    if (!hasDefault) out.push(ind + I + '_ => {}');
+    out.push(ind + '}');
+    return out;
+  }
+
+  forEl(el, ind) {
+    const text = linesOf(el).join(' ');
+    const f = P.parseForText(text);
+    const body = this.seq(el.body, ind + this.I);
+    if (!f) return [ind + this.comment(`TODO: Schleife "${text}" bitte manuell übersetzen`), ind + 'loop {', ...body, ind + this.I + 'break;', ind + '}'];
+    if (f.kind === 'each') {
+      const ct = P.normType(this.exprType(f.coll));
+      const c = isArrayLit(f.coll) ? this.val(null, f.coll) : this.x(f.coll);
+      return [ind + `for ${f.var} in ${ct === 'string' ? `${c}.chars()` : isArrayLit(f.coll) ? c : `${c}.clone()`} {`, ...body, ind + '}'];
+    }
+    const usize = (s) => (/^\d+$/.test(s) ? s : `(${s}) as usize`);
+    const step = f.step.replace(/\s+/g, '');
+    const neg = step.startsWith('-');
+    const abs = neg ? step.slice(1).replace(/^\((.*)\)$/, '$1') : step;
+    const start = this.x(f.start);
+    let range;
+    if (!neg) {
+      const m = /^(.*?)\s*-\s*1$/.exec(f.end);
+      range = m && !/[<>=]/.test(m[1]) ? `${start}..${this.x(m[1])}` : `${start}..=${this.x(f.end)}`;
+      if (step !== '1') range = `(${range}).step_by(${usize(this.x(step))})`;
+    } else {
+      range = `(${this.x(f.end)}..=${start}).rev()` + (abs !== '1' ? `.step_by(${usize(this.x(abs))})` : '');
+    }
+    return [ind + `for ${this.x(f.var)} in ${range} {`, ...body, ind + '}'];
+  }
+
+  whileEl(cond, body, ind) {
+    if (cond === 'true') return [ind + 'loop {', ...this.seq(body, ind + this.I), ind + '}'];
+    return [ind + `while ${this.bare(cond)} {`, ...this.seq(body, ind + this.I), ind + '}'];
+  }
+
+  repeatEl(cond, body, ind) {
+    const I = this.I;
+    return [ind + 'loop {', ...this.seq(body, ind + I), ind + I + `if ${this.bare(cond)} {`, ind + I + I + 'break;', ind + I + '}', ind + '}'];
+  }
+
+  routine(root) {
+    const I = this.I;
+    const sig = this.sigs.get(root);
+    const isMain = root.rootType === 'program';
+    const info = this.analyze(root, isMain ? { ...sig, params: [] } : sig);
+    this.cur = info; this.curIsMain = isMain; this.curSig = sig;
+    const assigned = assignedNames(root);
+    const hoisted = [...info.hoist].map((n) => I + this.letLine(n, info.types.get(n), null));
+    for (const n of info.hoist) info.declared.add(n);
+    const body = this.seq(root.children, I);
+    const ret = isMain ? null : this.retType(sig);
+    const params = isMain ? [] : sig.params.map((p) => `${assigned.has(p.name) ? 'mut ' : ''}${p.name}: ${this.typeName(p.type || p.inferredType || 'int')}`);
+    const doc = (root.comment || []).filter((s) => s.trim()).map((s) => '/// ' + s);
+    const head = isMain ? 'fn main() {' : `fn ${sig.name}(${params.join(', ')})${ret ? ' -> ' + this.typeName(ret) : ''} {`;
+    return { lines: [...doc, head, ...hoisted, ...body, '}'], isMain };
+  }
+
+  run() {
+    const roots = this.doc.roots;
+    const mainRoot = roots.find((r) => r.rootType === 'program');
+    const gen = [];
+    if (mainRoot) gen.push(this.routine(mainRoot));
+    for (const r of roots) if (r !== mainRoot) gen.push(this.routine(r));
+    const out = [
+      this.comment(`Erzeugt aus Struktogramm "${(mainRoot || roots[0]).text.join(' ')}"`),
+      '#![allow(unused_mut, unused_variables, unused_assignments, unused_parens, non_snake_case)]',
+      '',
+    ];
+    gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
+    if (this.needs.has('input')) {
+      out.push('', '/// Eine Zeile von der Tastatur lesen (ohne Zeilenumbruch)', 'fn read_line() -> String {',
+        '    use std::io::Write;', '    std::io::stdout().flush().unwrap();', '    let mut s = String::new();',
+        '    std::io::stdin().read_line(&mut s).unwrap();', '    s.trim().to_string()', '}');
+    }
+    if (this.needs.has('random')) {
+      out.push('', '/// Einfache Zufallszahl zwischen 0 und 1 (ohne externe Crates)', 'fn random() -> f64 {',
+        '    use std::time::{SystemTime, UNIX_EPOCH};', '    let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos();',
+        '    (n % 1_000_000) as f64 / 1_000_000.0', '}');
+    }
+    if (!mainRoot) out.push('', 'fn main() {}');
+    return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
+  }
+}
+
 function toClassName(n) {
   const s = String(n || 'Programm').replace(/[^\p{L}\p{N}_]/gu, '_');
   const c = s.charAt(0).toUpperCase() + s.slice(1);
@@ -1066,7 +1574,7 @@ function toClassName(n) {
 function generateCode(doc, lang, opts = {}) {
   if (!TARGETS[lang]) throw new Error('Unbekannte Zielsprache: ' + lang);
   if (!doc.roots.length) return '';
-  const G = lang === 'python' ? PyGen : lang === 'pascal' ? PasGen : CGen;
+  const G = { python: PyGen, pascal: PasGen, kotlin: KtGen, rust: RsGen }[lang] || CGen;
   return new G(doc, lang, opts).run();
 }
 
