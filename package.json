@@ -1,0 +1,383 @@
+{
+  "name": "struktogramm",
+  "displayName": "Struktogramm – Code ⇄ Nassi-Shneiderman",
+  "description": "Struktogramme (Nassi-Shneiderman-Diagramme) im Stil von Structorizer: Code in Struktogramme umwandeln, grafisch bearbeiten, Schritt für Schritt ausführen und daraus Code erzeugen – mit eigener Engine oder dem Original-Structorizer (18 Zielsprachen, Import von C, Java, Pascal, COBOL). Liest und schreibt .nsd-Dateien; Export als SVG, PNG, JSON, XML und token-sparender KI-Pseudocode.",
+  "version": "0.6.3",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Visualization",
+    "Education",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "struktogramm",
+    "nassi-shneiderman",
+    "structorizer",
+    "nsd",
+    "flowchart",
+    "ausführen",
+    "debugger",
+    "pascal",
+    "cobol"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "struktogramm.editor",
+        "displayName": "Struktogramm-Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.nsd"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "struktogramm.fromCode",
+        "title": "Struktogramm aus Code erzeugen",
+        "category": "Struktogramm",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "struktogramm.preview",
+        "title": "Struktogramm-Vorschau (live)",
+        "category": "Struktogramm",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "struktogramm.toCode",
+        "title": "Code aus Struktogramm erzeugen",
+        "category": "Struktogramm",
+        "icon": "$(code)"
+      },
+      {
+        "command": "struktogramm.newFile",
+        "title": "Neues Struktogramm",
+        "category": "Struktogramm"
+      },
+      {
+        "command": "struktogramm.exportSvg",
+        "title": "Als SVG-Bild exportieren",
+        "category": "Struktogramm"
+      },
+      {
+        "command": "struktogramm.exportPng",
+        "title": "Als PNG-Bild exportieren",
+        "category": "Struktogramm"
+      },
+      {
+        "command": "struktogramm.exportSingle",
+        "title": "Diagramme einzeln als Structorizer-Dateien speichern",
+        "category": "Struktogramm"
+      },
+      {
+        "command": "struktogramm.fromCodeStructorizer",
+        "title": "Struktogramm aus Code erzeugen (Structorizer-Parser)",
+        "category": "Struktogramm"
+      },
+      {
+        "command": "struktogramm.run",
+        "title": "Struktogramm ausführen / fortsetzen",
+        "category": "Struktogramm",
+        "icon": "$(play)"
+      },
+      {
+        "command": "struktogramm.step",
+        "title": "Struktogramm: Einzelschritt",
+        "category": "Struktogramm",
+        "icon": "$(debug-step-over)"
+      },
+      {
+        "command": "struktogramm.stop",
+        "title": "Struktogramm: Ausführung beenden",
+        "category": "Struktogramm",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "struktogramm.openInStructorizer",
+        "title": "Im Original-Structorizer öffnen",
+        "category": "Struktogramm"
+      },
+      {
+        "command": "struktogramm.setupStructorizer",
+        "title": "Structorizer herunterladen / einrichten",
+        "category": "Struktogramm"
+      },
+      {
+        "command": "struktogramm.export",
+        "title": "Exportieren …",
+        "category": "Struktogramm",
+        "icon": "$(export)"
+      },
+      {
+        "command": "struktogramm.export.json",
+        "title": "Als JSON exportieren",
+        "category": "Struktogramm"
+      },
+      {
+        "command": "struktogramm.export.xml",
+        "title": "Als XML exportieren",
+        "category": "Struktogramm"
+      },
+      {
+        "command": "struktogramm.export.aiClip",
+        "title": "KI-kompakt in die Zwischenablage kopieren",
+        "category": "Struktogramm",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "struktogramm.pause",
+        "title": "Struktogramm: Ausführung anhalten",
+        "category": "Struktogramm",
+        "icon": "$(debug-pause)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "struktogramm.preview",
+          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact)$/",
+          "group": "navigation"
+        },
+        {
+          "command": "struktogramm.run",
+          "when": "activeCustomEditorId == struktogramm.editor",
+          "group": "navigation@0"
+        },
+        {
+          "command": "struktogramm.toCode",
+          "when": "activeCustomEditorId == struktogramm.editor",
+          "group": "navigation"
+        },
+        {
+          "command": "struktogramm.export",
+          "when": "activeCustomEditorId == struktogramm.editor",
+          "group": "navigation@9"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "struktogramm.fromCode",
+          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact)$/ || resourceExtname =~ /^\\.(pas|dpr|pp|lpr|cob|cbl|cobol|pde)$/",
+          "group": "z_struktogramm@1"
+        },
+        {
+          "command": "struktogramm.fromCodeStructorizer",
+          "when": "resourceExtname =~ /^\\.(c|java|pas|dpr|pp|lpr|cob|cbl|cobol|pde)$/",
+          "group": "z_struktogramm@2"
+        },
+        {
+          "command": "struktogramm.preview",
+          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact)$/",
+          "group": "z_struktogramm@3"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "struktogramm.run",
+          "when": "resourceExtname == .nsd",
+          "group": "z_struktogramm@0"
+        },
+        {
+          "command": "struktogramm.fromCode",
+          "when": "resourceExtname =~ /^\\.(py|java|c|h|cpp|cc|cxx|hpp|cs|js|mjs|cjs|jsx|ts|tsx|pas|dpr|pp|lpr|cob|cbl|cobol|pde)$/",
+          "group": "z_struktogramm@1"
+        },
+        {
+          "command": "struktogramm.toCode",
+          "when": "resourceExtname == .nsd",
+          "group": "z_struktogramm@2"
+        },
+        {
+          "command": "struktogramm.openInStructorizer",
+          "when": "resourceExtname == .nsd",
+          "group": "z_struktogramm@3"
+        },
+        {
+          "command": "struktogramm.export",
+          "when": "resourceExtname == .nsd",
+          "group": "z_struktogramm@4"
+        },
+        {
+          "command": "struktogramm.export.aiClip",
+          "when": "resourceExtname == .nsd",
+          "group": "z_struktogramm@5"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "struktogramm.exportSvg",
+          "when": "activeCustomEditorId == struktogramm.editor"
+        },
+        {
+          "command": "struktogramm.exportPng",
+          "when": "activeCustomEditorId == struktogramm.editor"
+        },
+        {
+          "command": "struktogramm.exportSingle",
+          "when": "activeCustomEditorId == struktogramm.editor"
+        },
+        {
+          "command": "struktogramm.export",
+          "when": "activeCustomEditorId == struktogramm.editor"
+        },
+        {
+          "command": "struktogramm.export.json",
+          "when": "activeCustomEditorId == struktogramm.editor"
+        },
+        {
+          "command": "struktogramm.export.xml",
+          "when": "activeCustomEditorId == struktogramm.editor"
+        },
+        {
+          "command": "struktogramm.export.aiClip",
+          "when": "activeCustomEditorId == struktogramm.editor"
+        },
+        {
+          "command": "struktogramm.run",
+          "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+        },
+        {
+          "command": "struktogramm.step",
+          "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+        },
+        {
+          "command": "struktogramm.pause",
+          "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+        },
+        {
+          "command": "struktogramm.stop",
+          "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Struktogramm",
+      "properties": {
+        "struktogramm.trueLabel": {
+          "type": "string",
+          "default": "ja",
+          "description": "Beschriftung des Ja-Zweigs einer Verzweigung (z.B. ja, wahr, W, T)."
+        },
+        "struktogramm.falseLabel": {
+          "type": "string",
+          "default": "nein",
+          "description": "Beschriftung des Nein-Zweigs einer Verzweigung (z.B. nein, falsch, F)."
+        },
+        "struktogramm.prettyOperators": {
+          "type": "boolean",
+          "default": true,
+          "description": "Operatoren im Diagramm hübsch darstellen (!= als ≠, <= als ≤, >= als ≥; alte Schreibweise <- als ←)."
+        },
+        "struktogramm.theme": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "light",
+            "dark"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "Wie VS Code: dunkles Diagramm bei dunklem Farbschema, sonst hell",
+            "Immer hell (weißer Hintergrund)",
+            "Immer dunkel"
+          ],
+          "description": "Farbschema des Struktogramms im Editor und in der Vorschau."
+        },
+        "struktogramm.exportTheme": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "editor",
+            "light",
+            "dark"
+          ],
+          "default": "ask",
+          "enumDescriptions": [
+            "Bei jedem Export nachfragen",
+            "Wie im Editor angezeigt",
+            "Immer hell (weißer Hintergrund, gut zum Drucken)",
+            "Immer dunkel"
+          ],
+          "description": "Farbschema beim Export als SVG- oder PNG-Bild."
+        },
+        "struktogramm.highlightKeywords": {
+          "type": "boolean",
+          "default": true,
+          "description": "Schlüsselwörter (INPUT, OUTPUT, var, for, while, and …), Funktionsaufrufe, Datentypen, Zeichenketten sowie Zuweisungs-, Vergleichs- und Rechenoperatoren im Diagramm farbig darstellen."
+        },
+        "struktogramm.defaultTargetLanguage": {
+          "type": "string",
+          "default": "",
+          "description": "Zielsprache für „Code aus Struktogramm erzeugen“. Leer = jedes Mal nachfragen. Eigene Übersetzung: python, java, c, cpp, csharp, javascript, pascal. Original-Structorizer: structorizer:Python, structorizer:Java, structorizer:Basic … (Generatorname)."
+        },
+        "struktogramm.importEngine": {
+          "type": "string",
+          "enum": [
+            "eigene",
+            "structorizer"
+          ],
+          "default": "eigene",
+          "enumDescriptions": [
+            "Eigener Parser (schnell, ohne Java, kann auch Python, C++, C#, JavaScript)",
+            "Original-Structorizer-Parser für C- und Java-Dateien (Pascal/COBOL/Processing nutzen ihn immer)"
+          ],
+          "description": "Womit „Struktogramm aus Code erzeugen“ C- und Java-Dateien einliest."
+        },
+        "struktogramm.structorizer.jarPath": {
+          "type": "string",
+          "default": "",
+          "description": "Pfad zur Structorizer.jar oder zum Structorizer-Ordner. Leer = automatisch heruntergeladene Version verwenden."
+        },
+        "struktogramm.structorizer.javaPath": {
+          "type": "string",
+          "default": "java",
+          "description": "Java-Programm (mindestens Version 11), mit dem Structorizer gestartet wird."
+        },
+        "struktogramm.structorizer.exportOptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Zusätzliche Schalter für den Structorizer-Export, z.B. \"-b\" (Klammern in eigener Zeile), \"-c\" (Anweisungen als Kommentar), \"-t\" (ohne Übersetzung)."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "struktogramm.run",
+        "key": "f5",
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+      },
+      {
+        "command": "struktogramm.step",
+        "key": "f10",
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+      },
+      {
+        "command": "struktogramm.step",
+        "key": "f11",
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+      },
+      {
+        "command": "struktogramm.pause",
+        "key": "f6",
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+      },
+      {
+        "command": "struktogramm.stop",
+        "key": "shift+f5",
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+      }
+    ]
+  }
+}

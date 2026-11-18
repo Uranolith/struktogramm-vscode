@@ -1,0 +1,606 @@
+'use strict';
+/**
+ * Der neutrale Struktogramm-Pseudocode (Structorizer-Stil):
+ *   Zuweisung   x <- 5   (auch :=)
+ *   Vergleich   =  <>  <  >  <=  >=      Logik: and or not
+ *   Ein/Ausgabe INPUT "Text", x      OUTPUT "Summe: ", s
+ *   Schleifen   for i <- 1 to 10 by 2 | foreach x in liste | while x > 0 | until x = 0
+ *   Sprünge     return x | leave | exit 0 | throw e
+ *   Deklaration int x <- 5 | var x: int | const PI <- 3.14
+ */
+const { tokenize, joinTokens, splitTop, findTop, isWrapped, matchClose, tok, OPEN, CLOSE } = require('./tokenizer');
+
+const INPUT_KW = ['input', 'eingabe', 'read', 'readln', 'lies', 'lese', 'einlesen'];
+const OUTPUT_KW = ['output', 'ausgabe', 'print', 'write', 'writeln', 'schreibe', 'drucke'];
+const REL_OPS = new Set(['=', '==', '===', '<>', '!=', '!==', '<', '>', '<=', '>=']);
+const TYPE_WORDS = new Set(['int', 'integer', 'long', 'short', 'byte', 'double', 'float', 'real', 'number', 'char',
+  'boolean', 'bool', 'string', 'str', 'void', 'unsigned', 'signed', 'longint', 'single', 'decimal', 'auto']);
+const ASSIGN_OPS = new Set(['+=', '-=', '*=', '/=', '%=']);
+const IDENT_RE = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+
+function ptoks(text) { return tokenize(String(text || ''), 'pseudo'); }
+const lc = (t) => (t && t.t === 'id' ? t.v.toLowerCase() : null);
+
+/** Liegt in toks[i..] ein Typ (int, String, List<Integer>, int[], char*)? Rückgabe: Endindex oder -1 */
+function typeEnd(toks, i, strict) {
+  const t = toks[i];
+  if (!t || t.t !== 'id') return -1;
+  let j = i + 1;
+  while (toks[j] && (toks[j].v === '.' || toks[j].v === '::') && toks[j + 1] && toks[j + 1].t === 'id') j += 2;
+  while (toks[j] && toks[j].t === 'id' && TYPE_WORDS.has(toks[j - 1].v) && TYPE_WORDS.has(toks[j].v)) j++;
+  let generic = false, array = false;
+  if (toks[j] && toks[j].v === '<') {
+    let depth = 0;
+    for (; j < toks.length; j++) {
+      const v = toks[j].v;
+      if (v === '<') depth++;
+      else if (v === '>') depth--;
+      else if (v === '>>') depth -= 2;
+      else if (v === '>>>') depth -= 3;
+      else if (v === ';' || v === '=' || v === '<-' || v === '(' || v === '{') return -1;
+      if (depth <= 0) { j++; break; }
+    }
+    if (depth > 0) return -1;
+    generic = true;
+  }
+  while (toks[j] && toks[j].v === '[' && toks[j + 1] && toks[j + 1].v === ']') { j += 2; array = true; }
+  while (toks[j] && (toks[j].v === '*' || toks[j].v === '&' || toks[j].v === '?')) { j++; array = true; }
+  if (strict) {
+    const known = TYPE_WORDS.has(t.v.toLowerCase()) || /^[A-Z]/.test(t.v) || generic || array;
+    if (!known) return -1;
+  }
+  return j;
+}
+
+/**
+ * Eine Zeile Pseudocode klassifizieren.
+ * @returns {{kind:string, [k:string]:any}}
+ */
+function classifyLine(line) {
+  const s = String(line || '').trim();
+  if (!s) return { kind: 'empty' };
+  let toks = ptoks(s);
+  while (toks.length && toks[toks.length - 1].v === ';') toks.pop();
+  if (!toks.length) return { kind: 'empty' };
+  const first = lc(toks[0]);
+
+  if (first && (INPUT_KW.includes(first) || OUTPUT_KW.includes(first))) {
+    let rest = toks.slice(1);
+    if (rest[0] && rest[0].v === ':') rest = rest.slice(1);
+    const isCall = rest.length && isWrapped(rest);
+    // "print(x)" nur als Ausgabe werten, wenn das Wort kein Bezeichner-Teil ist (z.B. print.x)
+    if (!(rest[0] && (rest[0].v === '.' || rest[0].v === '=' || rest[0].v === '<-'))) {
+      if (isCall) rest = rest.slice(1, -1);
+      if (INPUT_KW.includes(first)) {
+        let prompt = null;
+        if (rest[0] && rest[0].t === 'str') { prompt = rest[0].v; rest = rest.slice(1); if (rest[0] && rest[0].v === ',') rest = rest.slice(1); }
+        const vars = rest.length ? splitTop(rest, ',').map(joinTokens).filter(Boolean) : [];
+        return { kind: 'input', prompt, vars };
+      }
+      const items = rest.length ? splitTop(rest, ',').map(joinTokens).filter(Boolean) : [];
+      return { kind: 'output', items };
+    }
+  }
+  if (first === 'return' || first === 'zurück' || first === 'rückgabe') return { kind: 'return', expr: joinTokens(toks.slice(1)) };
+  if (first === 'exit' || first === 'halt' || first === 'ende') {
+    let rest = toks.slice(1);
+    if (isWrapped(rest)) rest = rest.slice(1, -1);
+    return { kind: 'exit', expr: joinTokens(rest) };
+  }
+  if ((first === 'leave' || first === 'break' || first === 'verlassen') && toks.length <= 2) return { kind: 'leave' };
+  if (first === 'continue' && toks.length === 1) return { kind: 'continue' };
+  if (first === 'throw' || first === 'raise') return { kind: 'throw', expr: joinTokens(toks.slice(1)) };
+
+  // Deklarationen
+  const decl = parseDecl(toks);
+  if (decl) return decl;
+
+  // Zuweisungen
+  let k = findTop(toks, (t) => t.v === '<-' || t.v === ':=');
+  if (k < 0) k = findTop(toks, (t) => t.v === '=');
+  if (k > 0 && (toks[k].v !== '=' || isLvalue(toks.slice(0, k)))) {
+    return { kind: 'assign', target: joinTokens(toks.slice(0, k)), expr: joinTokens(toks.slice(k + 1)) };
+  }
+  k = findTop(toks, (t) => ASSIGN_OPS.has(t.v));
+  if (k > 0 && isLvalue(toks.slice(0, k))) {
+    const target = joinTokens(toks.slice(0, k));
+    const rhs = toks.slice(k + 1);
+    const op = toks[k].v[0];
+    const rtxt = joinTokens(rhs);
+    const needParen = rhs.length > 1 && op !== '+';
+    return { kind: 'assign', target, expr: `${target} ${op === '%' ? 'mod' : op} ${needParen ? '(' + rtxt + ')' : rtxt}` };
+  }
+  if (toks.length === 2 && (toks[1].v === '++' || toks[1].v === '--') && toks[0].t === 'id') {
+    return { kind: 'assign', target: toks[0].v, expr: `${toks[0].v} ${toks[1].v[0]} 1` };
+  }
+  if (toks.length === 2 && (toks[0].v === '++' || toks[0].v === '--') && toks[1].t === 'id') {
+    return { kind: 'assign', target: toks[1].v, expr: `${toks[1].v} ${toks[0].v[0]} 1` };
+  }
+  return { kind: 'expr', expr: joinTokens(toks) };
+}
+
+function isLvalue(toks) {
+  if (!toks.length) return false;
+  // Tupel a, b
+  const parts = splitTop(toks, ',');
+  return parts.every((p) => {
+    if (!p.length || p[0].t !== 'id') return false;
+    let i = 1;
+    while (i < p.length) {
+      if (p[i].v === '.' && p[i + 1] && p[i + 1].t === 'id') i += 2;
+      else if (p[i].v === '[') { const c = matchClose(p, i); if (c < 0) return false; i = c + 1; }
+      else return false;
+    }
+    return true;
+  });
+}
+
+function parseDecl(toks) {
+  let i = 0, isConst = false;
+  const f = lc(toks[0]);
+  if (f === 'var' || f === 'dim' || f === 'let' || f === 'const' || f === 'konst') {
+    isConst = f === 'const' || f === 'konst';
+    i = 1;
+    if (!toks[i] || toks[i].t !== 'id') return null;
+    // var x: int <- 5 | dim x as int | const x <- 5 | var x, y: int
+    const assignIdx = findTop(toks, (t) => t.v === '<-' || t.v === ':=' || t.v === '=', i);
+    const head = assignIdx < 0 ? toks.slice(i) : toks.slice(i, assignIdx);
+    const init = assignIdx < 0 ? null : joinTokens(toks.slice(assignIdx + 1));
+    let type = null, namesToks = head;
+    const colon = findTop(head, (t) => t.v === ':' || lc(t) === 'as');
+    if (colon >= 0) { type = joinTokens(head.slice(colon + 1)); namesToks = head.slice(0, colon); }
+    else {
+      // const int X <- 5
+      const te = typeEnd(head, 0, true);
+      if (te > 0 && head[te] && head[te].t === 'id') { type = joinTokens(head.slice(0, te)); namesToks = head.slice(te); }
+    }
+    const names = splitTop(namesToks, ',').map(joinTokens).filter(Boolean);
+    if (!names.length || !names.every((n) => IDENT_RE.test(n))) return null;
+    return { kind: 'decl', type, isConst, decls: names.map((name, j) => ({ name, init: j === names.length - 1 ? init : null })) };
+  }
+  if (f === 'final') { isConst = true; i = 1; }
+  const te = typeEnd(toks, i, true);
+  if (te < 0 || !toks[te] || toks[te].t !== 'id') return null;
+  const after = toks[te + 1];
+  if (after && !['<-', ':=', '=', ',', '['].includes(after.v)) return null;
+  const type = joinTokens(toks.slice(i, te));
+  if (['return', 'new', 'not', 'and', 'or', 'foreach', 'for', 'while', 'until'].includes(type.toLowerCase())) return null;
+  const decls = [];
+  for (const part of splitTop(toks.slice(te), ',')) {
+    if (!part.length || part[0].t !== 'id') return null;
+    let j = 1, suffix = '';
+    while (part[j] && part[j].v === '[') { const c = matchClose(part, j); if (c < 0) return null; suffix += joinTokens(part.slice(j, c + 1)); j = c + 1; }
+    let init = null;
+    if (part[j]) {
+      if (!['<-', ':=', '='].includes(part[j].v)) return null;
+      init = joinTokens(part.slice(j + 1));
+    }
+    decls.push({ name: part[0].v, suffix, init });
+  }
+  return { kind: 'decl', type: type.toLowerCase() === 'auto' ? null : type, isConst, decls };
+}
+
+/* ------------------------------------------------------------------ */
+/* Übersetzung Pseudocode -> Zielsprache                               */
+/* ------------------------------------------------------------------ */
+
+const MATH_FUNCS = {
+  sqrt: { java: 'Math.sqrt', csharp: 'Math.Sqrt', javascript: 'Math.sqrt', python: 'math.sqrt', c: 'sqrt', cpp: 'sqrt', pascal: 'sqrt' },
+  abs: { java: 'Math.abs', csharp: 'Math.Abs', javascript: 'Math.abs', python: 'abs', c: 'abs', cpp: 'abs', pascal: 'abs' },
+  pow: { java: 'Math.pow', csharp: 'Math.Pow', javascript: 'Math.pow', python: 'pow', c: 'pow', cpp: 'pow', pascal: 'power' },
+  floor: { java: 'Math.floor', csharp: 'Math.Floor', javascript: 'Math.floor', python: 'math.floor', c: 'floor', cpp: 'floor', pascal: 'floor' },
+  ceil: { java: 'Math.ceil', csharp: 'Math.Ceiling', javascript: 'Math.ceil', python: 'math.ceil', c: 'ceil', cpp: 'ceil', pascal: 'ceil' },
+};
+const CFAM = new Set(['java', 'c', 'cpp', 'csharp', 'javascript', 'typescript']);
+
+/** Operand-Ende nach "not" bestimmen (bis and/or/Klammer zu/Komma auf gleicher Ebene) */
+function operandEnd(toks, i) {
+  let depth = 0;
+  for (let k = i; k < toks.length; k++) {
+    const t = toks[k];
+    if (t.t === 'op' && OPEN[t.v]) depth++;
+    else if (t.t === 'op' && CLOSE[t.v]) { if (depth === 0) return k; depth--; }
+    else if (depth === 0) {
+      const l = lc(t);
+      if (l === 'and' || l === 'or' || l === 'xor' || t.v === '&&' || t.v === '||' || t.v === ',' || t.v === '?' || t.v === ':') return k;
+    }
+  }
+  return toks.length;
+}
+
+function isSimpleOperand(toks) {
+  if (toks.length <= 1) return true;
+  if (isWrapped(toks)) return true;
+  // Aufruf / Memberzugriff ohne Operatoren
+  let k = 0;
+  while (k < toks.length) {
+    const t = toks[k];
+    if (t.t === 'op' && (t.v === '(' || t.v === '[')) { k = matchClose(toks, k) + 1; if (k <= 0) return false; continue; }
+    if (t.t === 'op' && t.v !== '.') return false;
+    k++;
+  }
+  return true;
+}
+
+function requote(strTok, quote) {
+  const v = strTok.v;
+  const q = v[0];
+  if (q !== '"' && q !== "'") return v;
+  const inner = v.slice(1, -1);
+  if (q === quote) return v;
+  let body = inner;
+  if (q === "'") body = body.replace(/\\'/g, "'");
+  if (quote === '"') body = body.replace(/(^|[^\\])"/g, '$1\\"');
+  if (quote === "'") body = body.replace(/\\"/g, '"').replace(/'/g, "''");
+  return quote + body + quote;
+}
+
+/**
+ * Ausdruck aus Pseudocode in Zielsprache übersetzen.
+ * @param {string} text
+ * @param {string} lang java|c|cpp|csharp|javascript|python|pascal
+ * @param {{needs?:Set<string>}} ctx
+ */
+function translateExpr(text, lang, ctx = {}) {
+  if (text == null) return '';
+  const toks = ptoks(text);
+  return joinTokens(mapToks(toks, lang, ctx));
+}
+
+function mapToks(toks, lang, ctx) {
+  const out = [];
+  const c = CFAM.has(lang);
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    const l = lc(t);
+    const nt = { ...t };
+    if (t.t === 'op') {
+      if (t.v === '=' || t.v === '==' || t.v === '===') nt.v = lang === 'pascal' ? '=' : lang === 'javascript' ? '===' : '==';
+      else if (t.v === '<>' || t.v === '!=' || t.v === '!==') nt.v = lang === 'pascal' ? '<>' : lang === 'javascript' ? '!==' : '!=';
+      else if (t.v === '&&') nt.v = c ? '&&' : 'and';
+      else if (t.v === '||') nt.v = c ? '||' : 'or';
+      else if (t.v === '!' ) {
+        if (!c) { nt.v = 'not'; nt.t = 'id'; }
+      } else if (t.v === '%') nt.v = lang === 'pascal' ? 'mod' : '%';
+      else if (t.v === '//' && lang !== 'python') nt.v = lang === 'pascal' ? 'div' : '/';
+      else if (t.v === '/' && ctx.intDiv && (lang === 'python' || lang === 'pascal')) { nt.v = lang === 'pascal' ? 'div' : '//'; if (lang === 'pascal') { nt.t = 'id'; nt.ws = true; } }
+      else if (t.v === '<-' || t.v === ':=') nt.v = lang === 'pascal' ? ':=' : '=';
+      if (nt.t === 'id' && out.length && !t.ws) nt.ws = true;
+      if (t.v === '!' && !c) { const nx = toks[i + 1]; if (nx) toks[i + 1] = { ...nx, ws: true }; }
+      out.push(nt);
+      continue;
+    }
+    if (t.t === 'str') {
+      if (lang === 'pascal') nt.v = requote(t, "'");
+      else if (c && t.v[0] === "'" && !(t.v.length === 3 || (t.v.length === 4 && t.v[1] === '\\'))) nt.v = requote(t, '"');
+      out.push(nt);
+      continue;
+    }
+    if (t.t === 'id') {
+      if (l === 'and') { nt.v = c ? '&&' : 'and'; nt.t = c ? 'op' : 'id'; nt.ws = true; }
+      else if (l === 'or') { nt.v = c ? '||' : 'or'; nt.t = c ? 'op' : 'id'; nt.ws = true; }
+      else if (l === 'xor') { nt.v = lang === 'pascal' ? 'xor' : '^'; nt.ws = true; }
+      else if (l === 'div') { nt.v = lang === 'pascal' ? 'div' : lang === 'python' ? '//' : '/'; nt.t = lang === 'pascal' ? 'id' : 'op'; nt.ws = true; }
+      else if (l === 'mod') { nt.v = lang === 'pascal' ? 'mod' : '%'; nt.t = lang === 'pascal' ? 'id' : 'op'; nt.ws = true; }
+      else if (l === 'true' || l === 'false' || l === 'wahr' || l === 'falsch') {
+        const val = l === 'true' || l === 'wahr';
+        nt.v = lang === 'python' ? (val ? 'True' : 'False') : (val ? 'true' : 'false');
+        if (lang === 'c' && ctx.needs) ctx.needs.add('stdbool');
+      } else if (l === 'null' || l === 'nil' || l === 'none') {
+        nt.v = lang === 'python' ? 'None' : lang === 'pascal' ? 'nil' : lang === 'c' ? 'NULL' : lang === 'cpp' ? 'nullptr' : 'null';
+      } else if (l === 'not') {
+        if (c) {
+          const end = operandEnd(toks, i + 1);
+          const operand = toks.slice(i + 1, end);
+          const inner = mapToks(operand, lang, ctx);
+          out.push({ ...t, t: 'op', v: '!', ws: t.ws });
+          if (isSimpleOperand(operand)) { if (inner[0]) inner[0] = { ...inner[0], ws: false }; out.push(...inner); }
+          else { out.push(tok('(', 'op', false)); if (inner[0]) inner[0] = { ...inner[0], ws: false }; out.push(...inner, tok(')', 'op', false)); }
+          i = end - 1;
+          continue;
+        }
+        nt.v = 'not';
+      } else if (MATH_FUNCS[l] && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
+        nt.v = MATH_FUNCS[l][lang] || t.v;
+        if (ctx.needs && (lang === 'python' && nt.v.startsWith('math.'))) ctx.needs.add('math');
+        if (ctx.needs && (lang === 'c' || lang === 'cpp') && l !== 'abs') ctx.needs.add('math');
+        if (ctx.needs && lang === 'pascal' && l === 'power') ctx.needs.add('math');
+      } else if (l === 'random' && toks[i + 1] && toks[i + 1].v === '(') {
+        nt.v = { java: 'Math.random', javascript: 'Math.random', python: 'random.random', c: 'rand', cpp: 'rand', pascal: 'random', csharp: 'new Random().NextDouble' }[lang] || t.v;
+        if (ctx.needs && lang === 'python') ctx.needs.add('random');
+      } else if ((l === 'int' || l === 'float' || l === 'str' || l === 'round') && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
+        const close = matchClose(toks, i + 1);
+        const arg = joinTokens(mapToks(toks.slice(i + 2, close < 0 ? toks.length : close), lang, ctx));
+        const simple = /^[\p{L}\p{N}_.]+$/u.test(arg);
+        const a = simple ? arg : '(' + arg + ')';
+        const CAST = {
+          int: { java: `(int) ${a}`, c: `(int) ${a}`, cpp: `(int) ${a}`, csharp: `(int) ${a}`, javascript: `Math.trunc(${arg})`, pascal: `trunc(${arg})`, python: `int(${arg})` },
+          float: { java: `(double) ${a}`, c: `(double) ${a}`, cpp: `(double) ${a}`, csharp: `(double) ${a}`, javascript: `Number(${arg})`, pascal: `(${arg})`, python: `float(${arg})` },
+          str: { java: `String.valueOf(${arg})`, c: arg, cpp: `to_string(${arg})`, csharp: `Convert.ToString(${arg})`, javascript: `String(${arg})`, pascal: `IntToStr(${arg})`, python: `str(${arg})` },
+          round: { java: `Math.round(${arg})`, c: `round(${arg})`, cpp: `round(${arg})`, csharp: `Math.Round(${arg})`, javascript: `Math.round(${arg})`, pascal: `round(${arg})`, python: `round(${arg})` },
+        }[l];
+        if (ctx.needs && l === 'str' && lang === 'pascal') ctx.needs.add('sysutils');
+        if (ctx.needs && l === 'round' && (lang === 'c' || lang === 'cpp')) ctx.needs.add('math');
+        out.push({ t: 'id', v: CAST[lang] || t.v, ws: t.ws });
+        i = close < 0 ? toks.length : close;
+        continue;
+      } else if (l === 'length' || l === 'len') {
+        if (toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
+          const close = matchClose(toks, i + 1);
+          const arg = joinTokens(mapToks(toks.slice(i + 2, close), lang, ctx));
+          const repl = { java: `${arg}.length`, javascript: `${arg}.length`, csharp: `${arg}.Length`, python: `len(${arg})`, pascal: `length(${arg})`, cpp: `${arg}.size()`, c: `strlen(${arg})` }[lang];
+          if (repl) { out.push({ t: 'id', v: repl, ws: t.ws }); i = close; continue; }
+        }
+      }
+      out.push(nt);
+      continue;
+    }
+    out.push(nt);
+  }
+  if (lang === 'pascal') return pascalParens(out);
+  return out;
+}
+
+/** In Pascal müssen Vergleiche bei and/or geklammert werden. */
+function pascalParens(toks) {
+  // rekursiv in Klammergruppen
+  const res = [];
+  for (let i = 0; i < toks.length; i++) {
+    if (toks[i].v === '(') {
+      const c = matchClose(toks, i);
+      if (c > i) { res.push(toks[i], ...pascalParens(toks.slice(i + 1, c)), toks[c]); i = c; continue; }
+    }
+    res.push(toks[i]);
+  }
+  const isLogic = (t) => t.t === 'id' && ['and', 'or', 'xor'].includes(t.v.toLowerCase());
+  const parts = splitTop(res, isLogic);
+  // "not a > b" -> "not (a > b)"
+  const fixNot = (part) => {
+    if (part[0] && lc(part[0]) === 'not' && findTop(part, (t) => REL_OPS.has(t.v)) > 0 && !isWrapped(part.slice(1))) {
+      const rest = part.slice(1); if (rest[0]) rest[0] = { ...rest[0], ws: false };
+      return [part[0], tok('(', 'op', true), ...rest, tok(')', 'op', false)];
+    }
+    return part;
+  };
+  if (parts.length < 2) return fixNot(res);
+  const topSeps = [];
+  { let depth = 0; for (const t of res) { if (OPEN[t.v]) depth++; else if (CLOSE[t.v]) depth--; else if (depth === 0 && isLogic(t)) topSeps.push(t); } }
+  const out = [];
+  parts.forEach((p, k) => {
+    let part = fixNot(p);
+    const hasRel = findTop(part, (t) => REL_OPS.has(t.v)) >= 0;
+    if (hasRel && !isWrapped(part)) {
+      const inner = part.slice(); if (inner[0]) inner[0] = { ...inner[0], ws: false };
+      part = [tok('(', 'op', true), ...inner, tok(')', 'op', false)];
+    }
+    out.push(...part);
+    if (k < topSeps.length) out.push({ ...topSeps[k], ws: true });
+  });
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Hilfsfunktionen                                                     */
+/* ------------------------------------------------------------------ */
+
+const INVERT = { '=': '<>', '==': '!=', '<>': '=', '!=': '==', '<': '>=', '>': '<=', '<=': '>', '>=': '<' };
+
+/** Bedingung (Pseudocode) logisch negieren */
+function negateCond(text) {
+  const toks = ptoks(text);
+  if (!toks.length) return 'false';
+  if (lc(toks[0]) === 'not' && toks.length > 1) {
+    const rest = toks.slice(1);
+    if (isWrapped(rest)) return joinTokens(rest.slice(1, -1));
+    if (rest.length === 1) return rest[0].v;
+  }
+  if (toks.length === 1) {
+    const l = lc(toks[0]);
+    if (l === 'true') return 'false';
+    if (l === 'false') return 'true';
+    return 'not ' + toks[0].v;
+  }
+  const logic = findTop(toks, (t) => ['and', 'or', 'xor'].includes(lc(t)) || t.v === '&&' || t.v === '||' || t.v === '?');
+  if (logic < 0) {
+    const rels = [];
+    let depth = 0;
+    toks.forEach((t, k) => { if (OPEN[t.v]) depth++; else if (CLOSE[t.v]) depth--; else if (depth === 0 && REL_OPS.has(t.v)) rels.push(k); });
+    if (rels.length === 1) {
+      const k = rels[0];
+      const nt = toks.slice();
+      nt[k] = { ...toks[k], v: INVERT[toks[k].v] || toks[k].v };
+      return joinTokens(nt);
+    }
+  }
+  if (isWrapped(toks)) return 'not ' + joinTokens(toks);
+  return 'not (' + joinTokens(toks) + ')';
+}
+
+/** "n - 1" + 1 -> "n";  "10" - 1 -> "9" */
+function addConst(expr, delta) {
+  const e = String(expr).trim();
+  if (delta === 0) return e;
+  if (/^-?\d+$/.test(e)) return String(parseInt(e, 10) + delta);
+  const m = /^(.*?)\s*([+-])\s*(\d+)$/.exec(e);
+  if (m && !/[<>=]|\band\b|\bor\b/.test(m[1])) {
+    const v = (m[2] === '+' ? 1 : -1) * parseInt(m[3], 10) + delta;
+    if (v === 0) return m[1];
+    return `${m[1]} ${v > 0 ? '+' : '-'} ${Math.abs(v)}`;
+  }
+  return `${e} ${delta > 0 ? '+' : '-'} ${Math.abs(delta)}`;
+}
+
+/** for-Text zerlegen */
+function parseForText(text) {
+  let toks = ptoks(text);
+  if (!toks.length) return null;
+  let l = lc(toks[0]);
+  if (l === 'foreach' || l === 'für' && lc(toks[1]) === 'jedes' || (l === 'for' && lc(toks[1]) === 'each')) {
+    toks = toks.slice(l === 'foreach' ? 1 : 2);
+    const k = findTop(toks, (t) => lc(t) === 'in' || lc(t) === 'of' || t.v === ':');
+    if (k < 0) return null;
+    return { kind: 'each', var: joinTokens(toks.slice(0, k)), coll: joinTokens(toks.slice(k + 1)) };
+  }
+  if (l === 'for' || l === 'für' || l === 'zähle' || l === 'von') toks = toks.slice(1);
+  if (isWrapped(toks)) toks = toks.slice(1, -1);
+  const asg = findTop(toks, (t) => t.v === '<-' || t.v === ':=' || t.v === '=' || lc(t) === 'from' || lc(t) === 'von');
+  const toK = findTop(toks, (t) => lc(t) === 'to' || lc(t) === 'bis' || lc(t) === 'downto');
+  if (asg > 0 && toK > asg) {
+    const byK = findTop(toks, (t) => lc(t) === 'by' || lc(t) === 'step' || lc(t) === 'schritt', toK);
+    const down = lc(toks[toK]) === 'downto';
+    let step = byK > 0 ? joinTokens(toks.slice(byK + 1)) : (down ? '-1' : '1');
+    if (/^\(\s*-\s*\d+\s*\)$/.test(step)) step = step.replace(/[()\s]/g, '');
+    return {
+      kind: 'count',
+      var: joinTokens(toks.slice(0, asg)),
+      start: joinTokens(toks.slice(asg + 1, toK)),
+      end: joinTokens(toks.slice(toK + 1, byK > 0 ? byK : toks.length)),
+      step: step.replace(/^-\s+/, '-'),
+    };
+  }
+  const inK = findTop(toks, (t) => lc(t) === 'in');
+  if (inK > 0) return { kind: 'each', var: joinTokens(toks.slice(0, inK)), coll: joinTokens(toks.slice(inK + 1)) };
+  return null;
+}
+
+/** Schlüsselwort am Anfang entfernen (while/solange, until/bis) */
+function stripKeyword(text, kws) {
+  let s = String(text || '').trim();
+  const toks = ptoks(s);
+  if (toks.length && kws.includes(lc(toks[0]))) s = joinTokens(toks.slice(1));
+  // abschließendes "do"
+  s = s.replace(/\s+do$/i, '').trim();
+  const t2 = ptoks(s);
+  if (isWrapped(t2)) s = joinTokens(t2.slice(1, -1));
+  return s;
+}
+
+/** Typnamen vereinheitlichen */
+function normType(t) {
+  if (!t) return null;
+  const s = String(t).trim();
+  const low = s.toLowerCase().replace(/\s+/g, ' ');
+  if (/^(int|integer|long|short|byte|longint|unsigned int|unsigned|long long|unsigned long|size_t|int32|int64)$/.test(low)) return 'int';
+  if (/^(double|float|real|single|number|decimal|long double|extended)$/.test(low)) return 'double';
+  if (/^(string|str|char\s*\*|const char\s*\*|std::string|ansistring)$/.test(low)) return 'string';
+  if (/^(boolean|bool)$/.test(low)) return 'boolean';
+  if (low === 'char') return 'char';
+  const arr = /^(.*?)\s*\[\s*\]$/.exec(s);
+  if (arr) { const b = normType(arr[1]); return (b || arr[1]) + '[]'; }
+  return s;
+}
+
+/** Ausdruckstyp abschätzen (int/double/string/boolean/char oder null) */
+function inferType(expr, varTypes = new Map(), funcs = new Map()) {
+  const toks = ptoks(expr);
+  if (!toks.length) return null;
+  if (toks.length === 1 && toks[0].t === 'str') return (toks[0].v.length === 3 && toks[0].v[0] === "'") ? 'char' : 'string';
+  if (findTop(toks, (t) => REL_OPS.has(t.v) || ['and', 'or', 'not', 'xor'].includes(lc(t)) || t.v === '&&' || t.v === '||' || t.v === '!') >= 0) return 'boolean';
+  if (toks.length === 1 && ['true', 'false', 'wahr', 'falsch'].includes(lc(toks[0]))) return 'boolean';
+  if (toks[0].v === '{' || toks[0].v === '[') {
+    const inner = toks.slice(1, -1);
+    const parts = splitTop(inner, ',');
+    const et = parts.length && parts[0].length ? inferType(joinTokens(parts[0]), varTypes, funcs) : null;
+    return et ? et + '[]' : null;
+  }
+  let res = null;
+  const rank = { int: 1, double: 2, string: 3 };
+  const bump = (t) => { if (t && rank[t] && (!res || rank[t] > rank[res])) res = t; };
+  let unknown = false;
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t.t === 'str') bump('string');
+    else if (t.t === 'num') bump(/[.eE]/.test(t.v) && !/^0[xX]/.test(t.v) ? 'double' : 'int');
+    else if (t.t === 'id') {
+      const l = t.v.toLowerCase();
+      if (toks[i + 1] && toks[i + 1].v === '(') {
+        const close = matchClose(toks, i + 1);
+        if (funcs.has(t.v) && funcs.get(t.v).returnType) bump(normType(funcs.get(t.v).returnType));
+        else if (['sqrt', 'pow', 'random', 'float', 'floor', 'ceil'].includes(l)) bump('double');
+        else if (['len', 'length', 'int', 'round', 'abs', 'ord', 'trunc'].includes(l)) bump('int');
+        else if (['str', 'input', 'chr', 'tostring'].includes(l)) bump('string');
+        else unknown = true;
+        i = close;
+        continue;
+      }
+      if (toks[i - 1] && toks[i - 1].v === '.') continue;
+      if (['div', 'mod'].includes(l)) continue;
+      if (varTypes.has(t.v)) {
+        const vt = normType(varTypes.get(t.v));
+        if (vt && vt.endsWith('[]') && toks[i + 1] && toks[i + 1].v === '[') { bump(vt.slice(0, -2)); i = matchClose(toks, i + 1); continue; }
+        if (vt === 'char') bump('string'); else bump(vt);
+        if (!rank[vt] && vt !== 'char') unknown = true;
+      } else unknown = true;
+    } else if (t.v === '/' && res === 'int') { /* Ganzzahldivision bleibt int */ }
+  }
+  if (res === 'string') return 'string';
+  if (unknown && res !== 'double') return res === 'int' && toks.length > 1 ? null : (unknown ? null : res);
+  return res;
+}
+
+/**
+ * Signatur aus Root-Text lesen.
+ * Formen: "main" | "summe(a, b)" | "summe(a: int, b: int): int" | "int summe(int a, int b)"
+ */
+function parseSignature(text) {
+  const s = (Array.isArray(text) ? text.join(' ') : String(text || '')).trim();
+  const toks = ptoks(s);
+  const open = toks.findIndex((t) => t.v === '(');
+  if (open < 0) {
+    const name = toks.length ? toks[toks.length - 1].v : 'main';
+    return { name: sanitizeIdent(name), params: [], returnType: null, hasParens: false };
+  }
+  const close = matchClose(toks, open);
+  const name = open > 0 ? toks[open - 1].v : 'unbenannt';
+  let returnType = open > 1 ? joinTokens(toks.slice(0, open - 1)) : null;
+  const after = close >= 0 ? toks.slice(close + 1) : [];
+  if (after.length && (after[0].v === ':' || after[0].v === '->')) returnType = joinTokens(after.slice(1));
+  if (returnType && /^(void|procedure|function|sub|def)$/i.test(returnType)) returnType = null;
+  const inner = toks.slice(open + 1, close < 0 ? toks.length : close);
+  const params = [];
+  for (const part of splitTop(inner, (t) => t.v === ',' || t.v === ';')) {
+    if (!part.length) continue;
+    let p = part;
+    const eq = findTop(p, (t) => t.v === '=' || t.v === '<-');
+    if (eq >= 0) p = p.slice(0, eq);
+    p = p.filter((t) => !['var', 'const', 'final', 'ref', 'out', 'in', 'params', '...', '*', '**'].includes(t.v));
+    const colon = findTop(p, (t) => t.v === ':' || lc(t) === 'as');
+    if (colon >= 0) {
+      const names = splitTop(p.slice(0, colon), ',');
+      const type = joinTokens(p.slice(colon + 1));
+      for (const n of names) params.push({ name: joinTokens(n), type });
+    } else if (p.length === 1) {
+      params.push({ name: p[0].v, type: null });
+    } else {
+      // C-Stil: Typ Name [ [] ]
+      let k = p.length - 1, suffix = '';
+      while (k > 0 && p[k].v === ']') { suffix += '[]'; k -= 2; }
+      params.push({ name: p[k].v, type: joinTokens(p.slice(0, k)) + suffix });
+    }
+  }
+  return { name: sanitizeIdent(name), params, returnType, hasParens: true };
+}
+
+function sanitizeIdent(n) {
+  const s = String(n || '').replace(/[^\p{L}\p{N}_]/gu, '_');
+  return /^\p{N}/u.test(s) ? '_' + s : (s || 'unbenannt');
+}
+
+/** Inhalt eines String-Literals (ohne Anführungszeichen) */
+function literalInner(v) {
+  const q = v[0];
+  if (q !== '"' && q !== "'" && q !== '`') return v;
+  let inner = v.slice(1, v.endsWith(q) && v.length > 1 ? -1 : undefined);
+  if (q === "'") inner = inner.replace(/\\'/g, "'").replace(/(^|[^\\])"/g, '$1\\"');
+  return inner;
+}
+
+function isStringLiteral(text) {
+  const toks = ptoks(text);
+  return toks.length === 1 && toks[0].t === 'str';
+}
+
+module.exports = {
+  classifyLine, translateExpr, negateCond, addConst, parseForText, stripKeyword, normType, inferType,
+  parseSignature, literalInner, isStringLiteral, ptoks, IDENT_RE, REL_OPS, INPUT_KW, OUTPUT_KW, typeEnd, requote,
+};
