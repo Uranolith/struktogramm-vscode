@@ -7,16 +7,21 @@ Diese Anleitung beschreibt drei Wege, von einfach bis öffentlich:
 3. [Im VS Code Marketplace veröffentlichen](#3-im-vs-code-marketplace-veröffentlichen) – auffindbar in VS Code, mit automatischen Updates.
    Optional zusätzlich auf [Open VSX](#4-zusätzlich-auf-open-vsx-veröffentlichen-optional) (VSCodium, Cursor, Gitpod …).
 
-**Stand des Projekts (Version 0.8.1, Anzeigename „Struktograf“):**
+**Stand:** Version 0.8.1 ist seit dem 19.11.2026 im VS Code Marketplace veröffentlicht:
+<https://marketplace.visualstudio.com/items?itemName=Uranolith.struktogramm> (Kennung `Uranolith.struktogramm`,
+Anzeigename „Struktograf – Nassi-Shneiderman-Struktogramme“, gekennzeichnet als *Preview*).
+Für neue Versionen siehe [3.3 Updates](#33-updates).
+
+**Projekt-Checkliste:**
 
 | Punkt | Stand | Für den Marketplace |
 |---|---|---|
-| `publisher` in `package.json` | `Uranolith` | ok – Publisher im Marketplace-Portal mit genau dieser ID anlegen |
+| `publisher` in `package.json` | `Uranolith` | ok – Publisher im Portal angelegt |
 | Icon | `media/icon.png` (256×256, Quelle `docs/icon.svg`) | ok |
 | Lizenz | MIT, Datei `LICENSE` vorhanden | ok |
 | `repository`, `bugs`, `homepage` | eingetragen | ok |
 | README | vorhanden | ok – wird die Seite im Marketplace |
-| GitHub-Repository | **privat** | sollte öffentlich sein (Links aus dem Marketplace) |
+| GitHub-Repository | **privat** | sollte öffentlich sein – sonst führen die Links der Marketplace-Seite (Quellcode, Issues, Releases) ins Leere |
 | Node.js, `vsce`, `ovsx` | installiert (Node.js LTS per winget, Werkzeuge mit `npm install -g @vscode/vsce ovsx`) | ok |
 | Paket bauen | `vsce package` (prüft das Paket, keine Warnungen) | ok – `build-vsix.py` bleibt als Notlösung ohne Node.js |
 
@@ -176,8 +181,15 @@ Nach dem Hochladen prüft der Marketplace die Extension automatisch; meist ist s
 
 ### 3.3 Updates
 
+Ablauf für jede neue Version (Befehle in PowerShell im Projektordner):
+
 1. Version in `package.json` erhöhen (z.B. `0.8.1` → `0.8.2`) – der Marketplace nimmt keine Version zweimal an.
-2. Neu bauen und hochladen (Variante A) oder in einem Schritt:
+2. Paket bauen und prüfen: `vsce package`.
+3. Im [Publisher-Portal](https://marketplace.visualstudio.com/manage/publishers/Uranolith) bei *Struktograf* über
+   **⋯ → Update** die neue `.vsix` hochladen.
+4. Commit, Push und optional ein GitHub-Release mit derselben `.vsix` (`gh release create v0.8.2 struktogramm-0.8.2.vsix …`).
+
+Alternativ Schritt 1–3 in einem Befehl (nach einmaligem `vsce login Uranolith`):
    ```
    npx @vscode/vsce publish patch
    ```

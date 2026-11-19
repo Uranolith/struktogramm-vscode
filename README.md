@@ -2,43 +2,23 @@
 
 Struktogramm-Editor im Stil von **Structorizer**, direkt in VS Code.
 
-> **Experimenteller Build.** Die Extension ist noch nicht im VS-Code-Marketplace. Installiert wird sie
-> aus einer `.vsix`-Datei (siehe [Installation](#installation)).
+> **Preview.** Die Extension ist im
+> [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Uranolith.struktogramm)
+> veröffentlicht, befindet sich aber noch in aktiver Entwicklung.
 
 ## Installation
 Voraussetzung: VS Code 1.80 oder neuer. Java 11+ wird nur für die optionalen Original-Structorizer-Funktionen gebraucht.
 
-### Aus einer fertigen `.vsix`-Datei
-1. Die Datei `struktogramm-<version>.vsix` herunterladen, z.B. von der
-   [Releases-Seite](https://github.com/Uranolith/struktogramm-vscode/releases) des Repositorys.
-2. In VS Code installieren, auf einem dieser Wege:
-   - Ansicht **Erweiterungen** (Strg+Umschalt+X) → Menü **⋯** oben rechts → **Aus VSIX installieren …** →
-     Datei auswählen.
-   - Oder im Terminal:
-     ```
-     code --install-extension struktogramm-<version>.vsix
-     ```
-3. VS Code neu laden, wenn es dazu auffordert (Befehl *Developer: Reload Window*).
+- In VS Code die Ansicht **Erweiterungen** öffnen (Strg+Umschalt+X), nach **Struktograf** suchen und
+  **Installieren** klicken.
+- Oder im Terminal:
+  ```
+  code --install-extension Uranolith.struktogramm
+  ```
+- Oder über die [Marketplace-Seite](https://marketplace.visualstudio.com/items?itemName=Uranolith.struktogramm).
 
-Eine neuere Version wird genauso installiert; sie ersetzt die alte. Deinstallieren geht über die Ansicht
-**Erweiterungen** → *Struktogramm* → **Deinstallieren**, oder mit
-`code --uninstall-extension Uranolith.struktogramm`.
-
-Weil die Extension nicht aus dem Marketplace kommt, aktualisiert VS Code sie nicht automatisch.
-
-### Selbst bauen
-Benötigt Git und Python 3; Node.js/npm sind nicht nötig.
-```
-git clone https://github.com/Uranolith/struktogramm-vscode.git
-cd struktogramm-vscode
-python build-vsix.py
-code --install-extension struktogramm-<version>.vsix
-```
-`build-vsix.py` legt die Datei `struktogramm-<version>.vsix` im Projektordner an.
-
-### Ohne Installation ausprobieren
-Den Projektordner in VS Code öffnen und **F5** drücken. Es startet ein zweites VS-Code-Fenster
-(*Extension Development Host*), in dem die Extension direkt aus dem Quellcode läuft.
+Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterungen** → *Struktograf* →
+**Deinstallieren** oder mit `code --uninstall-extension Uranolith.struktogramm`.
 
 ## Funktionen
 - **Code → Struktogramm**: Python, Java, C, C++, C#, JavaScript, TypeScript, Kotlin, Rust
