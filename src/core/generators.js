@@ -30,6 +30,18 @@ const TYPE_MAP = {
 };
 
 const SIMPLE_IDENT = P.IDENT_RE;
+
+/** genaue Typnamen je Zielsprache (Schlüssel: P.canonType) */
+const EXACT_TYPES = {
+  java: { int: 'int', long: 'long', short: 'short', byte: 'byte', float: 'float', double: 'double', char: 'char', string: 'String', boolean: 'boolean' },
+  csharp: { int: 'int', long: 'long', short: 'short', byte: 'byte', float: 'float', double: 'double', char: 'char', string: 'string', boolean: 'bool' },
+  c: { int: 'int', long: 'long long', short: 'short', byte: 'unsigned char', float: 'float', double: 'double', char: 'char', string: 'char*', boolean: 'bool' },
+  cpp: { int: 'int', long: 'long long', short: 'short', byte: 'unsigned char', float: 'float', double: 'double', char: 'char', string: 'string', boolean: 'bool' },
+  kotlin: { int: 'Int', long: 'Long', short: 'Short', byte: 'Byte', float: 'Float', double: 'Double', char: 'Char', string: 'String', boolean: 'Boolean' },
+  rust: { int: 'i32', long: 'i64', short: 'i16', byte: 'u8', float: 'f32', double: 'f64', char: 'char', string: 'String', boolean: 'bool' },
+  pascal: { int: 'integer', long: 'int64', short: 'smallint', byte: 'byte', float: 'single', double: 'double', char: 'char', string: 'string', boolean: 'boolean' },
+  python: { int: 'int', long: 'int', short: 'int', byte: 'int', float: 'float', double: 'float', char: 'str', string: 'str', boolean: 'bool' },
+};
 const identsOf = (text) => P.ptoks(text).filter((t, i, a) => t.t === 'id' && !(a[i - 1] && a[i - 1].v === '.')).map((t) => t.v);
 
 function linesOf(el) {
@@ -115,6 +127,16 @@ class BaseGen {
     const types = new Map();
     const explicit = new Set();
     const params = new Set();
+    // ausdrücklich angegebene Typen genau so (float bleibt float, long bleibt long)
+    const rawTypes = new Map();
+    for (const p of sig.params) if (P.canonType(p.type)) rawTypes.set(p.name, p.type);
+    walk(root.children, (el) => {
+      if (!['instruction', 'call'].includes(el.type)) return;
+      for (const l of linesOf(el)) {
+        const c = P.classifyLine(l);
+        if (c.kind === 'decl' && c.type && P.canonType(c.type)) for (const d of c.decls) if (!d.suffix) rawTypes.set(d.name, c.type);
+      }
+    });
     for (const p of sig.params) {
       params.add(p.name);
       types.set(p.name, P.normType(p.type) || p.inferredType || (this.inferringParams ? null : this.defaultParamType()));
@@ -228,7 +250,7 @@ class BaseGen {
       if (!types.get(v)) types.set(v, 'string');
     });
     for (const n of all) if (!types.has(n)) types.set(n, null);
-    return { types, explicit, params, inline, hoist, forDecl, all, declared: new Set(), fnTypes };
+    return { types, rawTypes, explicit, params, inline, hoist, forDecl, all, declared: new Set(), fnTypes };
   }
 
   defaultParamType() { return 'int'; }
@@ -259,7 +281,72 @@ class BaseGen {
     return any ? (t || 'int') : null;
   }
 
-  retType(sig) { return P.normType(sig.returnType) || sig.inferredReturn || null; }
+  retType(sig) { return (sig.returnType && P.canonType(sig.returnType) ? sig.returnType : P.normType(sig.returnType)) || sig.inferredReturn || null; }
+
+  /** genauer Typ einer Variable (wie deklariert) oder der vereinheitlichte */
+  declType(name) {
+    const raw = this.cur && this.cur.rawTypes && this.cur.rawTypes.get(name);
+    return raw || (this.cur ? this.cur.types.get(name) : null);
+  }
+
+  /** Typname in der Zielsprache für einen ausdrücklich angegebenen einfachen Typ (oder null) */
+  exactType(t) {
+    const c = P.canonType(t);
+    return c && EXACT_TYPES[this.lang] ? EXACT_TYPES[this.lang][c] || null : null;
+  }
+
+  /**
+   * Wert an einen engeren Zieltyp anpassen (Java/C#/Kotlin/Rust wandeln nicht von selbst):
+   * float x := 1.5 -> 1.5f,  float x := a * 2 -> (float) (a * 2),  Kotlin .toFloat(),  Rust as f32
+   */
+  narrow(type, code) {
+    const c = P.canonType(type);
+    if (!c || code == null) return code;
+    const L = this.lang;
+    const v = String(code).trim();
+    const isNum = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(v);
+    const isInt = /^-?\d+$/.test(v);
+    const wrap = /^[\p{L}_][\p{L}\p{N}_.]*(\([^()]*\))?$/u.test(v) ? v : `(${v})`;
+    if (L === 'java' || L === 'csharp') {
+      if (c === 'float') return isNum ? v.replace(/[fFdD]$/, '') + 'f' : `(float) ${wrap}`;
+      if (c === 'short' || c === 'byte') return isInt ? v : `(${c}) ${wrap}`;
+      if (c === 'long') return isInt ? v + 'L' : v;
+    } else if (L === 'kotlin') {
+      if (c === 'float') return isNum ? v + 'f' : `${wrap}.toFloat()`;
+      if (c === 'long') return isInt ? v : `${wrap}.toLong()`;
+      if (c === 'short') return isInt ? v : `${wrap}.toShort()`;
+      if (c === 'byte') return isInt ? v : `${wrap}.toByte()`;
+      if (c === 'double') return isInt ? v + '.0' : v;
+    } else if (L === 'rust') {
+      const rt = EXACT_TYPES.rust[c];
+      if (c === 'float' || c === 'double') return isInt ? v + '.0' : isNum ? v : this.rustCastOperands(v, rt);
+      if (['long', 'short', 'byte'].includes(c)) return isInt ? v : this.rustCastOperands(v, rt);
+    }
+    return code;
+  }
+
+  /** Rust rechnet nicht mit gemischten Typen: jeden Operanden (Variable, Aufruf) einzeln umwandeln */
+  rustCastOperands(code, rt) {
+    const { tokenize, matchClose, joinTokens } = require('./tokenizer');
+    const T = tokenize(code, 'c');
+    const out = [];
+    const KW = new Set(['as', 'true', 'false', 'if', 'else', 'let', 'mut']);
+    const float = rt === 'f32' || rt === 'f64';
+    for (let i = 0; i < T.length; i++) {
+      const t = T[i];
+      const prev = T[i - 1];
+      if (t.t === 'num' && float && /^\d+$/.test(t.v) && !(prev && prev.v === '[')) { out.push({ ...t, v: t.v + '.0' }); continue; }
+      if (t.t !== 'id' || KW.has(t.v) || (prev && (prev.v === '.' || prev.v === 'as' || prev.v === '::')) || (T[i + 1] && (T[i + 1].v === '.' || T[i + 1].v === '::' || T[i + 1].v === '!'))) { out.push(t); continue; }
+      let end = i;
+      if (T[i + 1] && T[i + 1].v === '(') end = matchClose(T, i + 1);
+      else if (T[i + 1] && T[i + 1].v === '[') end = matchClose(T, i + 1);
+      if (end < 0) { out.push(t); continue; }
+      const operand = joinTokens(T.slice(i, end + 1));
+      out.push({ t: 'id', v: `(${operand} as ${rt})`, ws: t.ws });
+      i = end;
+    }
+    return joinTokens(out);
+  }
 
   typeOf(name) { return this.cur && this.cur.types.get(name); }
 
@@ -509,6 +596,14 @@ class BaseGen {
 class CGen extends BaseGen {
   typeName(t, fallback = 'int') {
     if (this.lang === 'javascript') return 'let';
+    const ex = this.exactType(t);
+    if (ex) {
+      if (ex === 'bool' && this.lang === 'c') this.needs.add('stdbool');
+      if (ex === 'string' && this.lang === 'cpp') this.needs.add('string');
+      return ex;
+    }
+    const arrRaw = /^(.*?)\s*\[\s*\]$/.exec(String(t || ''));
+    if (arrRaw && this.exactType(arrRaw[1])) return this.typeName(arrRaw[1]) + '[]';
     let n = P.normType(t) || null;
     if (!n) {
       if (this.lang === 'java' || this.lang === 'csharp') return fallback === 'var' ? 'var' : TYPE_MAP[this.lang][fallback] || fallback;
@@ -527,6 +622,7 @@ class CGen extends BaseGen {
   /** Deklaration (mit/ohne Initialisierung) */
   declLine(name, type, init, isConst) {
     const L = this.lang;
+    if (init != null && !/\[/.test(name)) init = this.narrow(type, init);
     if (L === 'javascript') {
       let v = init;
       if (v != null && /^\{.*\}$/.test(v.trim())) v = '[' + v.trim().slice(1, -1) + ']';
@@ -570,6 +666,7 @@ class CGen extends BaseGen {
         if (L === 'c' && this.cur.charArrays.has(n) && P.isStringLiteral(c.expr)) { this.needs.add('string'); return [ind + `strcpy(${n}, ${this.x(c.expr)});`]; }
         let v = this.x(c.expr);
         if (L === 'javascript' && /^\{.*\}$/.test(v)) v = '[' + v.slice(1, -1) + ']';
+        if (SIMPLE_IDENT.test(n)) v = this.narrow(this.declType(n), v);
         return [ind + `${this.x(target)} = ${v};`];
       }
       case 'input': return this.inputStmt(c, ind, el);
@@ -578,7 +675,7 @@ class CGen extends BaseGen {
         if (this.curIsMain && (L === 'c' || L === 'cpp')) return [ind + `return ${c.expr ? this.x(c.expr) : '0'};`];
         if (this.curIsMain && c.expr && c.expr.trim() !== '0') return this.stmt({ kind: 'exit', expr: c.expr }, ind, el);
         if (this.curIsMain) return [ind + (L === 'javascript' ? 'process.exit(0);' : 'return;')];
-        return [ind + (c.expr ? `return ${this.x(c.expr)};` : 'return;')];
+        return [ind + (c.expr ? `return ${this.narrow(this.curSig ? this.retType(this.curSig) : null, this.x(c.expr))};` : 'return;')];
       }
       case 'exit': {
         const code = c.expr ? this.x(c.expr) : '0';
@@ -649,15 +746,16 @@ class CGen extends BaseGen {
     }
     c.vars.forEach((v, k) => {
       const t = P.normType(this.typeOf(v)) || 'string';
+      const ct = P.canonType(this.declType(v)) || t; // genauer Typ: float, long …
       const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
       if (decl) this.cur.declared.add(v);
       const tv = this.x(v);
       if (L === 'java') {
         this.needs.add('scanner');
-        const rd = { int: 'scanner.nextInt()', double: 'scanner.nextDouble()', boolean: 'scanner.nextBoolean()', char: 'scanner.next().charAt(0)' }[t] || 'scanner.nextLine()';
+        const rd = { int: 'scanner.nextInt()', long: 'scanner.nextLong()', short: 'scanner.nextShort()', byte: 'scanner.nextByte()', float: 'scanner.nextFloat()', double: 'scanner.nextDouble()', boolean: 'scanner.nextBoolean()', char: 'scanner.next().charAt(0)' }[ct] || 'scanner.nextLine()';
         out.push(ind + (decl ? this.declLine(v, t, rd) : `${tv} = ${rd};`));
       } else if (L === 'csharp') {
-        const rd = { int: 'int.Parse(Console.ReadLine())', double: 'double.Parse(Console.ReadLine())', boolean: 'bool.Parse(Console.ReadLine())', char: 'Console.ReadLine()[0]' }[t] || 'Console.ReadLine()';
+        const rd = { int: 'int.Parse(Console.ReadLine())', long: 'long.Parse(Console.ReadLine())', short: 'short.Parse(Console.ReadLine())', byte: 'byte.Parse(Console.ReadLine())', float: 'float.Parse(Console.ReadLine())', double: 'double.Parse(Console.ReadLine())', boolean: 'bool.Parse(Console.ReadLine())', char: 'Console.ReadLine()[0]' }[ct] || 'Console.ReadLine()';
         out.push(ind + (decl ? this.declLine(v, t, rd) : `${tv} = ${rd};`));
       } else if (L === 'javascript') {
         this.needs.add('prompt');
@@ -669,7 +767,7 @@ class CGen extends BaseGen {
         out.push(ind + `cin >> ${tv};`);
       } else { // C
         if (decl) out.push(ind + this.declLine(v, t, null));
-        const fmt = { int: '%d', double: '%lf', char: ' %c', boolean: '%d' }[t];
+        const fmt = { int: '%d', long: '%lld', short: '%hd', byte: '%hhu', float: '%f', double: '%lf', char: ' %c', boolean: '%d' }[ct];
         if (fmt) out.push(ind + `scanf("${fmt}", &${tv});`);
         else out.push(ind + `scanf("%255s", ${tv});`);
       }
@@ -687,8 +785,13 @@ class CGen extends BaseGen {
       return 'console.log(`' + s + '`);';
     }
     if (L === 'cpp') {
-      const s = parts.map((p) => (p.lit != null ? '"' + p.lit + '"' : (this.needsParens(p.expr) ? '(' + this.x(p.expr) + ')' : this.x(p.expr))));
-      return 'cout << ' + (s.length ? s.join(' << ') + ' << ' : '') + 'endl;';
+      const s = parts.map((p) => {
+        if (p.lit != null) return '"' + p.lit + '"';
+        // byte (unsigned char) als Zahl ausgeben, nicht als Zeichen
+        if (SIMPLE_IDENT.test(p.expr.trim()) && P.canonType(this.declType(p.expr.trim())) === 'byte') return `(int) ${this.x(p.expr)}`;
+        return this.needsParens(p.expr) ? '(' + this.x(p.expr) + ')' : this.x(p.expr);
+      });
+      return 'cout << ' +(s.length ? s.join(' << ') + ' << ' : '') + 'endl;';
     }
     if (L === 'c') {
       let fmt = '';
@@ -697,7 +800,8 @@ class CGen extends BaseGen {
         if (p.lit != null) fmt += p.lit.replace(/%/g, '%%');
         else {
           const t = P.normType(this.exprType(p.expr));
-          const spec = { double: '%g', string: '%s', char: '%c' }[t] || '%d';
+          const ct = SIMPLE_IDENT.test(p.expr.trim()) ? P.canonType(this.declType(p.expr.trim())) : null;
+          const spec = ct === 'long' ? '%lld' : { double: '%g', string: '%s', char: '%c' }[t] || '%d';
           fmt += spec;
           args.push(this.x(p.expr));
         }
@@ -900,6 +1004,7 @@ class CGen extends BaseGen {
     }
     this.cur = info;
     this.curIsMain = isMain;
+    this.curSig = sig;
     const I = this.I;
     const bodyInd = L === 'java' || L === 'csharp' ? I + I : I;
     const head = [];
@@ -1212,6 +1317,8 @@ class PasGen extends BaseGen {
   comment(text) { return '{ ' + text.replace(/[{}]/g, '') + ' }'; }
 
   typeName(t) {
+    const ex = this.exactType(t);
+    if (ex) return ex;
     const n = P.normType(t);
     if (!n) return 'integer';
     if (n.endsWith('[]')) return 'array of ' + this.typeName(n.slice(0, -2));
@@ -1334,7 +1441,7 @@ class PasGen extends BaseGen {
     const byType = new Map();
     for (const n of info.all) {
       if (skip.has(n)) continue;
-      const t = this.typeName(info.types.get(n));
+      const t = this.typeName((info.rawTypes && info.rawTypes.get(n)) || info.types.get(n));
       if (!byType.has(t)) byType.set(t, []);
       byType.get(t).push(n);
     }
@@ -1420,6 +1527,13 @@ class KtGen extends CGen {
   comment(text) { return '// ' + text; }
 
   typeName(t) {
+    const ex = this.exactType(t);
+    if (ex) return ex;
+    const arrRaw = /^(.*?)\s*\[\s*\]$/.exec(String(t || ''));
+    if (arrRaw && P.canonType(arrRaw[1])) {
+      const c = P.canonType(arrRaw[1]);
+      return { int: 'IntArray', long: 'LongArray', short: 'ShortArray', byte: 'ByteArray', float: 'FloatArray', double: 'DoubleArray', boolean: 'BooleanArray', char: 'CharArray' }[c] || `Array<${this.typeName(arrRaw[1])}>`;
+    }
     const n = P.normType(t);
     if (!n) return 'Int';
     if (n.endsWith('[]')) {
@@ -1472,13 +1586,13 @@ class KtGen extends CGen {
     }
     let r = this.x(expr);
     if (n === 'double' && /^-?\d+$/.test(r)) r += '.0';
-    return r;
+    return this.narrow(type, r);
   }
 
   targetType(target) {
     const m = /^([\p{L}_][\p{L}\p{N}_]*)\s*\[/u.exec(target);
     if (m) { const t = P.normType(this.typeOf(m[1])); return t && t.endsWith('[]') ? t.slice(0, -2) : null; }
-    return this.typeOf(target.trim());
+    return this.declType(target.trim());
   }
 
   newArray(elType, size) {
@@ -1491,7 +1605,7 @@ class KtGen extends CGen {
     const kw = isConst ? 'val' : 'var';
     const arr = /^(.*?)\[(.*)\]$/.exec(name);
     if (arr) return `${kw} ${arr[1]} = ${this.newArray(type, this.x(arr[2]) || '0')}`;
-    if (init == null) return `${kw} ${name}: ${this.typeName(type)} = ${this.defaultValue(type)}`;
+    if (init == null) return `${kw} ${name}: ${this.typeName(type)} = ${this.narrow(type, this.defaultValue(type))}`;
     return `${kw} ${name}${type ? ': ' + this.typeName(type) : ''} = ${init}`;
   }
 
@@ -1521,10 +1635,11 @@ class KtGen extends CGen {
         if (!c.vars.length) { out.push(ind + 'readln()'); return out; }
         c.vars.forEach((v) => {
           const t = P.normType(this.targetType(v)) || 'string';
-          const rd = { int: 'readln().toInt()', double: 'readln().toDouble()', boolean: 'readln().toBoolean()', char: 'readln()[0]' }[t] || 'readln()';
+          const ct = P.canonType(this.targetType(v)) || t;
+          const rd = { int: 'readln().toInt()', long: 'readln().toLong()', short: 'readln().toShort()', byte: 'readln().toByte()', float: 'readln().toFloat()', double: 'readln().toDouble()', boolean: 'readln().toBoolean()', char: 'readln()[0]' }[ct] || 'readln()';
           const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
           if (decl) this.cur.declared.add(v);
-          out.push(ind + (decl ? `var ${v}: ${this.typeName(t)} = ${rd}` : `${this.x(v)} = ${rd}`));
+          out.push(ind + (decl ? `var ${v}: ${this.typeName(this.targetType(v) || t)} = ${rd}` : `${this.x(v)} = ${rd}`));
         });
         return out;
       }
@@ -1659,6 +1774,10 @@ class RsGen extends BaseGen {
   comment(text) { return '// ' + text; }
 
   typeName(t) {
+    const ex = this.exactType(t);
+    if (ex) return ex;
+    const arrRaw = /^(.*?)\s*\[\s*\]$/.exec(String(t || ''));
+    if (arrRaw && P.canonType(arrRaw[1])) return `Vec<${this.typeName(arrRaw[1])}>`;
     const n = P.normType(t);
     if (!n) return 'i32';
     if (n.endsWith('[]')) return `Vec<${this.typeName(n.slice(0, -2))}>`;
@@ -1715,13 +1834,13 @@ class RsGen extends BaseGen {
     if (n === 'string' && P.isStringLiteral(expr)) r = `String::from(${r})`;
     else if (n === 'string' && IDENT_ONLY.test(String(expr).trim())) r += '.clone()';
     else if (n && (n.endsWith('[]') || this.recordTypes.has(n)) && IDENT_ONLY.test(String(expr).trim())) r += '.clone()';
-    return r;
+    return this.narrow(type, r);
   }
 
   targetType(target) {
     const m = /^([\p{L}_][\p{L}\p{N}_]*)\s*\[/u.exec(target);
     if (m) { const t = P.normType(this.typeOf(m[1])); return t && t.endsWith('[]') ? t.slice(0, -2) : null; }
-    return this.typeOf(target.trim());
+    return this.declType(target.trim());
   }
 
   letLine(name, type, init, isConst) {
@@ -1772,10 +1891,12 @@ class RsGen extends BaseGen {
         if (!c.vars.length) { out.push(ind + 'read_line();'); return out; }
         c.vars.forEach((v) => {
           const t = P.normType(this.targetType(v)) || 'string';
-          const rd = { int: 'read_line().parse::<i32>().unwrap()', double: 'read_line().parse::<f64>().unwrap()', boolean: 'read_line().parse::<bool>().unwrap()', char: 'read_line().chars().next().unwrap()' }[t] || 'read_line()';
+          const ct = P.canonType(this.targetType(v)) || t;
+          const num = EXACT_TYPES.rust[ct];
+          const rd = ct === 'char' ? 'read_line().chars().next().unwrap()' : ct === 'string' || !num ? 'read_line()' : `read_line().parse::<${num}>().unwrap()`;
           const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
           if (decl) this.cur.declared.add(v);
-          out.push(ind + (decl ? `let mut ${v}: ${this.typeName(t)} = ${rd};` : `${this.x(v)} = ${rd};`));
+          out.push(ind + (decl ? `let mut ${v}: ${this.typeName(this.targetType(v) || t)} = ${rd};` : `${this.x(v)} = ${rd};`));
         });
         return out;
       }

@@ -2,7 +2,7 @@
   "name": "struktogramm",
   "displayName": "Struktogramm – Code ⇄ Nassi-Shneiderman",
   "description": "Struktogramme (Nassi-Shneiderman-Diagramme) im Stil von Structorizer: Code in Struktogramme umwandeln, grafisch bearbeiten, Schritt für Schritt ausführen und daraus Code erzeugen – mit eigener Engine oder dem Original-Structorizer (18 Zielsprachen, Import von C, Java, Pascal, COBOL). Liest und schreibt .nsd-Dateien; Export als SVG, PNG, JSON, XML und token-sparender KI-Pseudocode.",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "publisher": "local",
   "license": "MIT",
   "repository": {

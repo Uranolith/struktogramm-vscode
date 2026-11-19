@@ -768,6 +768,26 @@ function stripKeyword(text, kws) {
   return s;
 }
 
+/**
+ * Genauer Typ (für die Code-Erzeugung): int, long, short, byte, float, double, char, string, boolean – oder null.
+ * Anders als normType bleibt float von double und long von int unterschieden.
+ */
+const CANON = {
+  int: 'int', integer: 'int', int32: 'int', i32: 'int', unsigned: 'int', 'unsigned int': 'int', size_t: 'int', usize: 'int', isize: 'int', u32: 'int',
+  long: 'long', 'long long': 'long', longint: 'long', int64: 'long', i64: 'long', u64: 'long', 'unsigned long': 'long',
+  short: 'short', smallint: 'short', int16: 'short', i16: 'short', u16: 'short',
+  byte: 'byte', u8: 'byte', i8: 'byte', shortint: 'byte',
+  float: 'float', single: 'float', f32: 'float',
+  double: 'double', real: 'double', f64: 'double', number: 'double', extended: 'double', 'long double': 'double', decimal: 'double',
+  char: 'char', string: 'string', str: 'string', 'std::string': 'string', ansistring: 'string', 'char*': 'string', '&str': 'string',
+  boolean: 'boolean', bool: 'boolean',
+};
+function canonType(t) {
+  if (!t) return null;
+  const k = String(t).trim().toLowerCase().replace(/\s+/g, ' ').replace(/\s*\*$/, '*');
+  return CANON[k] || null;
+}
+
 /** Typnamen vereinheitlichen */
 function normType(t) {
   if (!t) return null;
@@ -904,5 +924,5 @@ function isStringLiteral(text) {
 
 module.exports = {
   classifyLine, translateExpr, negateCond, addConst, parseForText, stripKeyword, normType, inferType,
-  parseSignature, literalInner, isStringLiteral, ptoks, IDENT_RE, REL_OPS, INPUT_KW, OUTPUT_KW, typeEnd, requote,
+  parseSignature, literalInner, isStringLiteral, ptoks, IDENT_RE, REL_OPS, INPUT_KW, OUTPUT_KW, typeEnd, requote, canonType,
 };

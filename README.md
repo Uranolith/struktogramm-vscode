@@ -157,8 +157,25 @@ return a + b
 **F5** ausführen / fortsetzen · **F10** (oder F11) Einzelschritt · **F6** anhalten · **Umschalt+F5** beenden ·
 **F9** Haltepunkt. Im Explorer: Rechtsklick auf eine `.nsd` → *Struktogramm ausführen / fortsetzen*.
 
-Enter/F2 bearbeiten · Entf löschen · Strg+↑/↓ verschieben · Pfeiltasten navigieren ·
-Strg+C/X/V · Strg+Mausrad Zoom · Shift+Klick auf Einfüge-Knopf fügt davor ein.
+Der Editor ist vollständig per Tastatur bedienbar; **?** zeigt alle Tastenkürzel.
+
+| Taste | Wirkung |
+|---|---|
+| ↑ / ↓ | vorheriges / nächstes Element (am Blockende weiter hinter dem umgebenden Element) |
+| → / ← | in den ersten Block hinein / zum umgebenden Element |
+| Strg + → / ← | nächster / vorheriger Zweig: Ja/Nein, Fälle, try/catch/finally, parallele Zweige |
+| Pos1 / Ende · Bild ↑ / ↓ | erstes / letztes Element im Block · vorheriges / nächstes Diagramm |
+| Enter / F2 | bearbeiten (im leeren Block: Anweisung einfügen) |
+| Strg+Enter / Einfg | **Einfügen mit Vorschau:** An der Einfügestelle öffnet sich eine Auswahl; Tippen filtert nach Name, Kürzel oder Stichwort (**I** Anweisung, **V** Verzweigung, **F** Fallauswahl, **Z** Zählschleife, **K** Kopfschleife, **U** Fußschleife, **E** Endlosschleife, **A** Aufruf, **S** Sprung, **T** Try, **P** Parallel – oder `if`, `while`, `try` …). Das gewählte Element erscheint gestrichelt als Vorschau im Diagramm. ↑/↓ wählt, **Enter** fügt ein, ein weiteres **Enter** öffnet die Detailbearbeitung, Esc bricht ab. Strg+Umschalt+Enter bzw. Umschalt+Einfg fügt davor ein. |
+| Umschalt+F10 / Menütaste | Kontextmenü (Umschließen, Deaktivieren …) – Menüs mit ↑/↓, Enter, →/←, Esc |
+| Leertaste | Element aktivieren / deaktivieren |
+| Entf · Strg+↑/↓ · Strg+C/X/V | löschen · verschieben · kopieren/ausschneiden/einfügen |
+| Strg + + / − / 0 · Strg+Mausrad | Zoom |
+| Tab | Werkzeugleiste, Diagramm und Ausführungsbereich erreichen; Esc in der Konsoleneingabe springt zurück ins Diagramm |
+
+Die Statusleiste nennt das ausgewählte Element samt Zweig (z.B. „Anweisung: y := 1 · Nein-Zweig“) und wird
+von Screenreadern vorgelesen. Nach dem Einfügen öffnet sich der Bearbeiten-Dialog; nach dem Schließen ist der
+Fokus wieder im Diagramm. Mit der Maus: Shift+Klick auf einen Einfüge-Knopf fügt davor ein.
 
 Im Bearbeiten-Dialog lässt sich der **Elementtyp** wechseln (z.B. Kopfschleife → Fußschleife, Verzweigung →
 Fallauswahl, Anweisung → Aufruf). Enthaltene Elemente bleiben erhalten: Sie wandern in den ersten Block des neuen

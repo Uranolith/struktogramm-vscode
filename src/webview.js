@@ -25,7 +25,7 @@ function webviewHtml(webview, extensionUri, readonly) {
 <title>Struktogramm</title>
 </head>
 <body data-readonly="${readonly ? 1 : 0}">
-<div id="toolbar"></div>
+<div id="toolbar" role="toolbar" aria-label="Struktogramm-Werkzeuge"></div>
 <div id="message" hidden></div>
 <div id="scroller"><div id="canvas"></div><div id="dropmark" hidden></div></div>
 <div id="execpanel" hidden>
@@ -36,7 +36,7 @@ function webviewHtml(webview, extensionUri, readonly) {
     <div id="vars"></div>
   </div>
 </div>
-<div id="statusbar"></div>
+<div id="statusbar" role="status" aria-live="polite"></div>
 <div id="menu" hidden></div>
 <div id="dialog" hidden></div>
 <script nonce="${n}" src="${js}"></script>

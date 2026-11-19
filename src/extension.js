@@ -92,6 +92,18 @@ class NsdEditorProvider {
             await this.applyOp(state, cmd);
             break;
           }
+          case 'previewInsert': {
+            // Vorschau für das Einfügen per Tastatur: Diagramm mit dem neuen Element zeichnen, ohne die Datei zu ändern
+            let model;
+            try { model = fromNsd(document.getText()); } catch (e) { break; }
+            let path = null, svg = '';
+            try {
+              path = apply(model, { op: 'insert', path: msg.path, kind: msg.kind, where: msg.where });
+              svg = render(model).svg;
+            } catch (e) { break; }
+            panel.webview.postMessage({ type: 'preview', token: msg.token, svg, path });
+            break;
+          }
           case 'copy': this.clipboard = msg.element; this.editors.forEach((s) => s.panel.webview.postMessage({ type: 'clipboard', has: true })); break;
           case 'toCode': await toCode(document.uri, this); break;
           case 'exportSvg': await exportSvg(document); break;
@@ -117,7 +129,8 @@ class NsdEditorProvider {
     try { model = fromNsd(document.getText()); } catch (e) { model = { roots: [] }; }
     const sel = apply(model, cmd);
     state.select = sel;
-    state.editNew = cmd.op === 'insert' || cmd.op === 'addRoot' || cmd.op === 'changeType';
+    // Einfügen per Tastatur-Auswahl (noEdit): erst mit einem weiteren Enter bearbeiten
+    state.editNew = (cmd.op === 'insert' && !cmd.noEdit) || cmd.op === 'addRoot' || cmd.op === 'changeType';
     const text = toNsd(model);
     if (text === document.getText()) { state.send(); return; }
     const edit = new vscode.WorkspaceEdit();

@@ -5,6 +5,10 @@
   const READONLY = document.body.dataset.readonly === '1';
   const $ = (id) => document.getElementById(id);
   const toolbar = $('toolbar'), canvas = $('canvas'), scroller = $('scroller'), statusbar = $('statusbar');
+  // Diagrammfläche per Tab erreichbar; Pfeiltasten wählen Elemente
+  scroller.tabIndex = 0;
+  scroller.setAttribute('role', 'application');
+  scroller.setAttribute('aria-label', 'Struktogramm – Pfeiltasten wählen Elemente, Enter bearbeitet, ? zeigt alle Tastenkürzel');
   const menu = $('menu'), dialog = $('dialog'), message = $('message'), dropmark = $('dropmark');
 
   const saved = vscode.getState() || {};
@@ -42,19 +46,21 @@
   };
   const icon = (k) => `<svg class="ico" viewBox="0 0 16 16">${ICONS[k] || ''}</svg>`;
 
+  // [Typ, Name, Beschreibung, Taste zum Einfügen]
   const KINDS = [
-    ['instruction', 'Anweisung', 'Anweisung (Zuweisung, Ein-/Ausgabe)'],
-    ['alternative', 'Verzweigung', 'Verzweigung (if / else)'],
-    ['case', 'Fallauswahl', 'Mehrfachauswahl (switch / case)'],
-    ['for', 'Zählschleife', 'Zählschleife (for)'],
-    ['while', 'Kopfschleife', 'Kopfgesteuerte Schleife (while)'],
-    ['repeat', 'Fußschleife', 'Fußgesteuerte Schleife (repeat until / do while)'],
-    ['forever', 'Endlos', 'Endlosschleife'],
-    ['call', 'Aufruf', 'Unterprogramm-Aufruf'],
-    ['jump', 'Sprung', 'Aussprung (leave, return, exit, throw)'],
-    ['try', 'Try', 'Fehlerbehandlung (try / catch / finally)'],
-    ['parallel', 'Parallel', 'Parallelverarbeitung'],
+    ['instruction', 'Anweisung', 'Anweisung (Zuweisung, Ein-/Ausgabe)', 'i'],
+    ['alternative', 'Verzweigung', 'Verzweigung (if / else)', 'v'],
+    ['case', 'Fallauswahl', 'Mehrfachauswahl (switch / case)', 'f'],
+    ['for', 'Zählschleife', 'Zählschleife (for)', 'z'],
+    ['while', 'Kopfschleife', 'Kopfgesteuerte Schleife (while)', 'k'],
+    ['repeat', 'Fußschleife', 'Fußgesteuerte Schleife (repeat until / do while)', 'u'],
+    ['forever', 'Endlos', 'Endlosschleife', 'e'],
+    ['call', 'Aufruf', 'Unterprogramm-Aufruf', 'a'],
+    ['jump', 'Sprung', 'Aussprung (leave, return, exit, throw)', 's'],
+    ['try', 'Try', 'Fehlerbehandlung (try / catch / finally)', 't'],
+    ['parallel', 'Parallel', 'Parallelverarbeitung', 'p'],
   ];
+  const KIND_BY_KEY = Object.fromEntries(KINDS.map(([k, , , key]) => [key, k]));
 
   const HINTS = {
     instruction: 'Eine Anweisung pro Zeile.\nZuweisung: x := 5     Deklaration: var x: int := 0\nEingabe: INPUT "Zahl: ", x     Ausgabe: OUTPUT "Summe: ", s\nVergleiche: =  <>  <  >  <=  >=     Logik: and  or  not',
@@ -86,12 +92,12 @@
         <button data-x="stop" title="Ausführung beenden (Umschalt+F5)">⏹</button>
         <select id="speed" title="Ausführungstempo"><option value="800">langsam</option><option value="250">mittel</option><option value="40">schnell</option><option value="0">sofort</option></select>
       </span>
-        <span class="group"><button data-a="zoomOut" title="Verkleinern">−</button><span id="zoomLabel"></span><button data-a="zoomIn" title="Vergrößern">+</button></span>
+        <span class="group"><button data-a="zoomOut" title="Verkleinern (Strg+−)" aria-label="Verkleinern">−</button><span id="zoomLabel"></span><button data-a="zoomIn" title="Vergrößern (Strg++)" aria-label="Vergrößern">+</button><button data-a="help" title="Tastenkürzel (?)" aria-label="Tastenkürzel anzeigen">?</button></span>
         <span class="hint">Live-Vorschau – folgt dem aktiven Editor (bei Markierung nur der markierte Teil)</span>`;
       return;
     }
     toolbar.innerHTML = `
-      <span class="group">${KINDS.map(([k, label, title]) => `<button data-kind="${k}" title="${title} einfügen">${icon(k)}<span>${label}</span></button>`).join('')}</span>
+      <span class="group" role="group" aria-label="Element einfügen">${KINDS.map(([k, label, title, key]) => `<button data-kind="${k}" title="${title} einfügen (Tastatur: Strg+Enter, dann ${key.toUpperCase()})" aria-label="${label} einfügen">${icon(k)}<span>${label}</span></button>`).join('')}</span>
       <span class="group">
         <select id="where" title="Wo werden neue Elemente eingefügt?"><option value="after">danach einfügen</option><option value="before">davor einfügen</option></select>
       </span>
@@ -126,7 +132,7 @@
         <button data-x="stop" title="Ausführung beenden (Umschalt+F5)">⏹</button>
         <select id="speed" title="Ausführungstempo"><option value="800">langsam</option><option value="250">mittel</option><option value="40">schnell</option><option value="0">sofort</option></select>
       </span>
-      <span class="group"><button data-a="zoomOut" title="Verkleinern">−</button><span id="zoomLabel"></span><button data-a="zoomIn" title="Vergrößern">+</button></span>`;
+      <span class="group"><button data-a="zoomOut" title="Verkleinern (Strg+−)" aria-label="Verkleinern">−</button><span id="zoomLabel"></span><button data-a="zoomIn" title="Vergrößern (Strg++)" aria-label="Vergrößern">+</button><button data-a="help" title="Tastenkürzel (?)" aria-label="Tastenkürzel anzeigen">?</button></span>`;
     const w = $('where');
     w.value = where;
     w.addEventListener('change', () => { where = w.value; save(); });
@@ -176,6 +182,7 @@
       case 'openText': post({ type: 'openText' }); break;
       case 'structorizer': post({ type: 'openStructorizer' }); break;
       case 'toggleBp': toggleBreakpoint(); break;
+      case 'help': showHelp(); break;
       default: break;
     }
   }
@@ -262,7 +269,7 @@
     set('copy', !!el && !isRoot);
     set('cut', !!el && !isRoot);
     set('paste', hasClipboard);
-    if (!sel) status(doc && doc.roots.length ? 'Element anklicken zum Auswählen · Doppelklick zum Bearbeiten · Ziehen zum Verschieben · Rechtsklick für Menü' : '');
+    if (!sel) status(doc && doc.roots.length ? 'Element anklicken oder Pfeiltaste zum Auswählen · Enter bearbeiten · Strg+Enter einfügen · ? alle Tastenkürzel' : '');
     else if (isEmpty) status('Leerer Zweig ausgewählt – ein neues Element wird hier eingefügt.');
     else if (el) status(`${TYPE_NAMES[el.type] || el.type} ausgewählt · Enter: bearbeiten · Entf: löschen · Strg+↑/↓: verschieben · Pfeiltasten: navigieren`);
   }
@@ -271,6 +278,7 @@
   window.addEventListener('message', (e) => {
     const m = e.data;
     if (m.type === 'update') {
+      closePicker(false); // neues Diagramm ersetzt eine offene Vorschau
       doc = m.doc;
       if (m.symbols) symbols = m.symbols;
       svgText = m.svg || '';
@@ -295,6 +303,7 @@
     } else if (m.type === 'renderPng') renderPng(m.svg, m.id);
     else if (m.type === 'execCommand') execCmd(m.cmd);
     else if (m.type === 'execTurtle') turtleApply(m.ops);
+    else if (m.type === 'preview') { if (picker && m.token === picker.token) showPreview(m.svg, m.path); }
     else if (m.type === 'execReset') {
       $('conout').innerHTML = '';
       $('vars').innerHTML = '';
@@ -484,6 +493,7 @@
     const g = e.target.closest('[data-path]');
     sel = g ? g.dataset.path : null;
     markSelection(false);
+    if (sel) status(describeSel());
     if (!READONLY && g && !g.classList.contains('empty') && !/^roots\/\d+$/.test(sel)) {
       drag = { from: sel, x: e.clientX, y: e.clientY, active: false };
     }
@@ -569,6 +579,7 @@
     }).join('');
     menu.hidden = false;
     positionMenu(menu, x, y);
+    menuActivate(menu, 0);
   }
 
   function positionMenu(m, x, y) {
@@ -579,29 +590,236 @@
 
   function hideMenu() { menu.hidden = true; const s = document.getElementById('submenu'); if (s) s.remove(); }
 
+  /** Untermenü mit Elementarten: Einfügen danach/davor oder Umschließen */
+  function openKindMenu(mode, x, y) {
+    const old = document.getElementById('submenu');
+    if (old) old.remove();
+    const sm = document.createElement('div');
+    sm.id = 'submenu';
+    sm.className = 'menu';
+    sm.setAttribute('role', 'menu');
+    const kinds = mode === 'wrap' ? KINDS.filter(([k]) => ['alternative', 'for', 'while', 'repeat', 'forever', 'try'].includes(k)) : KINDS;
+    const title = { after: 'Danach einfügen', before: 'Davor einfügen', wrap: 'Umschließen mit' }[mode] || '';
+    sm.innerHTML = `<div class="mtitle">${title}</div>` + kinds.map(([k, label, , key]) => `<div class="item" role="menuitem" data-k="${k}" data-key="${key}">${icon(k)}<span>${label}</span><kbd>${key.toUpperCase()}</kbd></div>`).join('');
+    document.body.appendChild(sm);
+    positionMenu(sm, x, y);
+    sm.addEventListener('click', (ev) => {
+      const k = ev.target.closest('.item');
+      if (!k) return;
+      if (mode === 'wrap') op({ op: 'wrap', path: sel, kind: k.dataset.k });
+      else insertKind(k.dataset.k, mode);
+      hideMenu();
+    });
+    menuActivate(sm, 0);
+    return sm;
+  }
+
+  /* --------- Menüs per Tastatur: ↑/↓ wählen, Enter/→ ausführen, ←/Esc zurück, Buchstabe = Kürzel --------- */
+  function menuItems(m) { return [...m.querySelectorAll('.item:not(.disabled)')]; }
+  function menuActivate(m, idx) {
+    const items = menuItems(m);
+    if (!items.length) return;
+    m.querySelectorAll('.item.active').forEach((x) => x.classList.remove('active'));
+    const it = items[(idx + items.length) % items.length];
+    it.classList.add('active');
+    it.scrollIntoView({ block: 'nearest' });
+  }
+  function menuKeys(e) {
+    const sub = document.getElementById('submenu');
+    const m = sub || (!menu.hidden ? menu : null);
+    if (!m) return false;
+    const items = menuItems(m);
+    const cur = items.findIndex((x) => x.classList.contains('active'));
+    const k = e.key;
+    if (k === 'ArrowDown' || k === 'ArrowUp') menuActivate(m, (cur < 0 ? 0 : cur + (k === 'ArrowDown' ? 1 : -1)));
+    else if (k === 'Home' || k === 'End') menuActivate(m, k === 'Home' ? 0 : items.length - 1);
+    else if (k === 'Enter' || k === ' ' || (k === 'ArrowRight' && items[cur] && /^sub:/.test(items[cur].dataset.m || ''))) {
+      if (items[cur]) items[cur].click();
+    } else if (k === 'Escape' || k === 'ArrowLeft') {
+      if (sub && !menu.hidden) sub.remove(); else hideMenu();
+      if (k === 'Escape' && !sub) focusCanvas();
+    } else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const lk = k.toLowerCase();
+      const hit = items.find((x) => x.dataset.key === lk) || items.find((x) => (x.textContent || '').trim().toLowerCase().startsWith(lk));
+      if (hit) { if (sub) hit.click(); else menuActivate(m, items.indexOf(hit)); }
+    } else if (k !== 'Tab') return true; // andere Tasten nicht an das Diagramm weitergeben
+    e.preventDefault();
+    return true;
+  }
+
+  /** Menü an der Position des ausgewählten Elements öffnen (für Tastatur) */
+  function selRect() {
+    const g = nodeFor(sel);
+    const bg = g && (g.querySelector(':scope > rect.bg') || g);
+    const r = bg ? bg.getBoundingClientRect() : scroller.getBoundingClientRect();
+    return { x: r.left + 12, y: r.top + Math.min(r.height, 24) };
+  }
+
+  function focusCanvas() { try { scroller.focus({ preventScroll: true }); } catch (err) { /* egal */ } }
+
+  /* ------------------------------ Einfügen per Tastatur: Inline-Auswahl mit Vorschau ------------------------------ */
+  // Stichwörter für die Suche (zusätzlich zu Name und Tastenkürzel)
+  const KIND_WORDS = {
+    instruction: ['anweisung', 'zuweisung', 'input', 'output', 'eingabe', 'ausgabe', 'befehl', 'var'],
+    alternative: ['verzweigung', 'if', 'wenn', 'falls', 'bedingung'],
+    case: ['fallauswahl', 'switch', 'case', 'auswahl', 'mehrfach'],
+    for: ['zählschleife', 'for', 'foreach', 'zähl'],
+    while: ['kopfschleife', 'while', 'solange', 'kopf'],
+    repeat: ['fußschleife', 'repeat', 'until', 'do', 'fuß', 'bis'],
+    forever: ['endlosschleife', 'loop', 'endlos', 'forever'],
+    call: ['aufruf', 'call', 'funktion', 'unterprogramm', 'prozedur'],
+    jump: ['sprung', 'leave', 'return', 'exit', 'break', 'throw', 'continue'],
+    try: ['try', 'catch', 'finally', 'fehler', 'ausnahme'],
+    parallel: ['parallel', 'thread', 'gleichzeitig'],
+  };
+  let picker = null; // { box, input, list, where, path, items, idx, token, saved }
+
+  function pickerMatches(q) {
+    q = q.trim().toLowerCase();
+    const scored = [];
+    KINDS.forEach(([k, label, title, key], order) => {
+      const words = [label.toLowerCase(), ...KIND_WORDS[k]];
+      let score = -1;
+      if (!q) score = 0;
+      else if (q === key) score = 100;
+      else if (label.toLowerCase().startsWith(q)) score = 80;
+      else if (words.some((w) => w.startsWith(q))) score = 60;
+      else if (words.some((w) => w.includes(q)) || title.toLowerCase().includes(q)) score = 30;
+      if (score >= 0) scored.push({ k, label, title, key, score, order });
+    });
+    return scored.sort((a, b) => b.score - a.score || a.order - b.order);
+  }
+
+  function openPicker(w, initial) {
+    if (READONLY || !sel) return;
+    closePicker(true);
+    const box = document.createElement('div');
+    box.id = 'picker';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-label', 'Element einfügen');
+    box.innerHTML = `<div class="ptitle">${w === 'before' ? 'Davor' : 'Danach'} einfügen – Enter übernimmt, Esc bricht ab</div>
+      <input id="pickerInput" autocomplete="off" spellcheck="false" placeholder="Element suchen: Kopfschleife, if, try …" aria-autocomplete="list" aria-controls="pickerList">
+      <div id="pickerList" class="plist" role="listbox"></div>`;
+    scroller.appendChild(box);
+    picker = { box, input: box.querySelector('input'), list: box.querySelector('.plist'), where: w, path: sel, items: [], idx: 0, token: 0, saved: svgText, previewPath: null };
+    picker.input.value = initial || '';
+    picker.input.addEventListener('input', () => { picker.idx = 0; pickerUpdate(); });
+    picker.input.addEventListener('keydown', pickerKeys);
+    picker.input.addEventListener('blur', () => setTimeout(() => { if (picker && document.activeElement !== picker.input) closePicker(true); }, 150));
+    picker.list.addEventListener('mousedown', (e) => {
+      const it = e.target.closest('.pitem');
+      if (!it) return;
+      e.preventDefault();
+      picker.idx = parseInt(it.dataset.i, 10);
+      pickerCommit();
+    });
+    positionPicker(nodeFor(sel), w);
+    pickerUpdate();
+    picker.input.focus();
+  }
+
+  function pickerUpdate() {
+    const p = picker;
+    p.items = pickerMatches(p.input.value);
+    if (p.idx >= p.items.length) p.idx = Math.max(0, p.items.length - 1);
+    p.list.innerHTML = p.items.length
+      ? p.items.map((it, i) => `<div class="pitem${i === p.idx ? ' active' : ''}" role="option" aria-selected="${i === p.idx}" data-i="${i}">${icon(it.k)}<span>${it.label}</span><kbd>${it.key.toUpperCase()}</kbd></div>`).join('')
+      : '<div class="pempty">kein passendes Element</div>';
+    const cur = p.items[p.idx];
+    status(cur ? `${cur.label} einfügen (${cur.title}) – Enter übernimmt` : 'Kein passendes Element');
+    requestPreview();
+  }
+
+  let previewTimer = null;
+  function requestPreview() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => {
+      if (!picker) return;
+      const cur = picker.items[picker.idx];
+      picker.token++;
+      if (!cur) { showPreview(null); return; }
+      post({ type: 'previewInsert', token: picker.token, path: picker.path, kind: cur.k, where: picker.where });
+    }, 40);
+  }
+
+  /** Vorschau-SVG anzeigen (null = ursprüngliches Diagramm) */
+  function showPreview(svg, path) {
+    if (!picker) return;
+    canvas.innerHTML = svg || picker.saved;
+    applyZoom();
+    picker.previewPath = svg ? path : null;
+    const g = svg && path ? nodeFor(path) : null;
+    if (g) {
+      g.classList.add('preview');
+      positionPicker(g, 'after');
+      const r = g.getBoundingClientRect(), s = scroller.getBoundingClientRect();
+      if (r.top < s.top || r.bottom > s.bottom) g.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    } else {
+      markSelection(false);
+      positionPicker(nodeFor(picker.path), picker.where);
+    }
+  }
+
+  /** Auswahlfeld direkt unter (bzw. über) dem Element platzieren */
+  function positionPicker(g, w) {
+    if (!picker) return;
+    const s = scroller.getBoundingClientRect();
+    const bg = g && (g.querySelector(':scope > rect.bg') || g);
+    const r = bg ? bg.getBoundingClientRect() : { left: s.left + 16, right: s.left + 16, top: s.top + 16, bottom: s.top + 16, width: 0 };
+    // bevorzugt rechts neben dem Element (Diagramm bleibt sichtbar), sonst darunter bzw. darüber
+    const bw = picker.box.offsetWidth || 270;
+    if (r.right + 12 + bw <= s.right - 4) {
+      picker.box.style.left = r.right - s.left + scroller.scrollLeft + 12 + 'px';
+      picker.box.style.top = Math.max(4, r.top - s.top + scroller.scrollTop) + 'px';
+      return;
+    }
+    const top = (w === 'before' ? r.top - picker.box.offsetHeight - 2 : r.bottom + 2) - s.top + scroller.scrollTop;
+    picker.box.style.left = Math.max(4, r.left - s.left + scroller.scrollLeft) + 'px';
+    picker.box.style.top = Math.max(4, top) + 'px';
+  }
+
+  function pickerKeys(e) {
+    const p = picker;
+    if (!p) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (p.items.length) { p.idx = (p.idx + (e.key === 'ArrowDown' ? 1 : -1) + p.items.length) % p.items.length; pickerUpdate(); }
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      pickerCommit();
+    } else if (e.key === 'Escape') {
+      closePicker(true);
+      focusCanvas();
+    } else return;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function pickerCommit() {
+    const p = picker;
+    const cur = p && p.items[p.idx];
+    if (!cur) return;
+    closePicker(false);
+    op({ op: 'insert', path: p.path, kind: cur.k, where: p.where, noEdit: true });
+    status(`${cur.label} eingefügt – Enter öffnet die Bearbeitung`);
+    focusCanvas();
+  }
+
+  /** Auswahl schließen; restore = ursprüngliches Diagramm wieder zeigen */
+  function closePicker(restore) {
+    if (!picker) return;
+    const p = picker;
+    picker = null;
+    clearTimeout(previewTimer);
+    p.box.remove();
+    if (restore) { canvas.innerHTML = svgText; applyZoom(); markSelection(false); markExec(false); }
+  }
+
   menu.addEventListener('click', (e) => {
     const it = e.target.closest('.item');
     if (!it || it.classList.contains('disabled')) return;
     const a = it.dataset.m;
     if (a.startsWith('sub:')) {
-      const mode = a.slice(4);
-      const old = document.getElementById('submenu');
-      if (old) old.remove();
-      const sm = document.createElement('div');
-      sm.id = 'submenu';
-      sm.className = 'menu';
-      const kinds = mode === 'wrap' ? KINDS.filter(([k]) => ['alternative', 'for', 'while', 'repeat', 'forever', 'try'].includes(k)) : KINDS;
-      sm.innerHTML = kinds.map(([k, label]) => `<div class="item" data-k="${k}">${icon(k)}<span>${label}</span></div>`).join('');
-      document.body.appendChild(sm);
       const r = it.getBoundingClientRect();
-      positionMenu(sm, r.right, r.top);
-      sm.addEventListener('click', (ev) => {
-        const k = ev.target.closest('.item');
-        if (!k) return;
-        if (mode === 'wrap') op({ op: 'wrap', path: sel, kind: k.dataset.k });
-        else insertKind(k.dataset.k, mode);
-        hideMenu();
-      });
+      openKindMenu(a.slice(4), r.right, r.top);
       return;
     }
     hideMenu();
@@ -611,59 +829,191 @@
   document.addEventListener('mousedown', (e) => { if (!e.target.closest('#menu') && !e.target.closest('#submenu')) hideMenu(); });
 
   /* ------------------------------ Tastatur ------------------------------ */
-  function siblingPath(path, d) {
-    const parts = path.split('/');
-    const last = parts[parts.length - 1];
-    if (!/^\d+$/.test(last)) return null;
-    parts[parts.length - 1] = String(parseInt(last, 10) + d);
-    return parts.join('/');
+  /** Blöcke eines Elements (Pfad-Schlüssel) */
+  function blockKeys(el) {
+    if (!el) return [];
+    switch (el.type) {
+      case 'root': return ['children'];
+      case 'alternative': return ['qTrue', 'qFalse'];
+      case 'case': case 'parallel': return el.branches.map((_, i) => 'branches/' + i);
+      case 'try': return ['qTry', 'qCatch', 'qFinally'];
+      case 'for': case 'while': case 'repeat': case 'forever': return ['body'];
+      default: return [];
+    }
+  }
+  const BLOCK_NAMES = { qTrue: 'Ja-Zweig', qFalse: 'Nein-Zweig', body: 'Schleifenrumpf', qTry: 'try', qCatch: 'catch', qFinally: 'finally', children: '' };
+
+  /** Pfad zerlegen: {owner: Pfad des Elternelements, key: Block, index (-1 = leerer Block)} */
+  function splitPath(path) {
+    const m = /^(.*)\/(branches\/\d+|children|qTrue|qFalse|body|qTry|qCatch|qFinally)\/(\d+|#)$/.exec(path || '');
+    return m ? { owner: m[1], key: m[2], index: m[3] === '#' ? -1 : parseInt(m[3], 10) } : null;
+  }
+  const isRootPath = (p) => /^roots\/\d+$/.test(p || '');
+  function blockFirst(owner, key) { const p = `${owner}/${key}/0`; return nodeFor(p) ? p : `${owner}/${key}/#`; }
+  function blockLast(owner, key) {
+    const arr = getAt(`${owner}/${key}`);
+    return arr && arr.length ? `${owner}/${key}/${arr.length - 1}` : `${owner}/${key}/#`;
+  }
+  /** nächstes Element nach path – am Blockende weiter hinter dem Elternelement */
+  function nextOut(path) {
+    for (let p = path; ;) {
+      const s = splitPath(p);
+      if (!s) return null;
+      const arr = getAt(`${s.owner}/${s.key}`) || [];
+      if (s.index >= 0 && s.index + 1 < arr.length) return `${s.owner}/${s.key}/${s.index + 1}`;
+      if (isRootPath(s.owner)) return null;
+      p = s.owner;
+    }
   }
 
-  function parentPath(path) {
-    const parts = path.split('/');
-    if (parts.length <= 2) return null;
-    parts.pop(); // Index oder #
-    if (/^\d+$/.test(parts[parts.length - 1]) && parts[parts.length - 2] === 'branches') parts.splice(-2, 2);
-    else parts.pop();
-    return parts.join('/');
+  /** Ziel der Pfeil-/Navigationstasten (oder null) */
+  function navTarget(key, ctrl) {
+    const el = getAt(sel);
+    const s = splitPath(sel);
+    const roots = doc ? doc.roots.length : 0;
+    if (key === 'PageUp' || key === 'PageDown') {
+      const ri = parseInt((/^roots\/(\d+)/.exec(sel) || [0, 0])[1], 10) + (key === 'PageDown' ? 1 : -1);
+      return ri >= 0 && ri < roots ? `roots/${ri}` : null;
+    }
+    if (isRootPath(sel)) {
+      if (key === 'ArrowDown' || key === 'ArrowRight') return blockFirst(sel, 'children');
+      if (key === 'ArrowUp') { const ri = parseInt(sel.split('/')[1], 10); return ri > 0 ? `roots/${ri - 1}` : null; }
+      return null;
+    }
+    if (!s) return null;
+    if (ctrl && (key === 'ArrowRight' || key === 'ArrowLeft')) {
+      // anderer Zweig desselben Elements: Ja/Nein, Fälle, try/catch/finally, parallele Zweige
+      const keys = blockKeys(getAt(s.owner));
+      const k = keys.indexOf(s.key) + (key === 'ArrowRight' ? 1 : -1);
+      return k >= 0 && k < keys.length ? blockFirst(s.owner, keys[k]) : null;
+    }
+    switch (key) {
+      case 'ArrowUp': return s.index > 0 ? `${s.owner}/${s.key}/${s.index - 1}` : s.owner;
+      case 'ArrowDown': return nextOut(sel) || null;
+      case 'ArrowLeft': return s.owner;
+      case 'ArrowRight': { const keys = blockKeys(el); return keys.length ? blockFirst(sel, keys[0]) : null; }
+      case 'Home': return blockFirst(s.owner, s.key);
+      case 'End': return blockLast(s.owner, s.key);
+      default: return null;
+    }
   }
 
-  function firstChildPath(path) {
-    const el = getAt(path);
-    if (!el) return null;
-    const key = el.type === 'root' ? 'children' : el.type === 'alternative' ? 'qTrue' : el.branches ? 'branches/0' : el.body ? 'body' : null;
-    if (!key) return null;
-    const p = `${path}/${key}/0`;
-    return nodeFor(p) ? p : `${path}/${key}/#`;
+  /** Ausgewähltes Element ansagen (Statusleiste, auch für Screenreader) */
+  function describeSel() {
+    if (!sel) return '';
+    const s = splitPath(sel);
+    let where = '';
+    if (s) {
+      const owner = getAt(s.owner);
+      if (owner && owner.type === 'case' && /^branches\//.test(s.key)) {
+        const k = parseInt(s.key.split('/')[1], 10);
+        where = ' · Fall ' + (String((owner.text || [])[k + 1] || '').trim() || k + 1);
+      } else if (owner && owner.type === 'parallel' && /^branches\//.test(s.key)) where = ' · Zweig ' + (parseInt(s.key.split('/')[1], 10) + 1);
+      else if (BLOCK_NAMES[s.key]) where = ' · ' + BLOCK_NAMES[s.key];
+    }
+    if (sel.endsWith('/#')) return 'Leerer Block' + where + ' – Enter: Anweisung einfügen · Strg+Enter: Element auswählen';
+    const el = getAt(sel);
+    if (!el) return '';
+    const text = (el.text || []).filter((l) => String(l).trim()).join(' · ');
+    return `${TYPE_NAMES[el.type] || el.type}${text ? ': ' + text : ''}${where}${el.disabled ? ' (deaktiviert)' : ''}${breakpoints.has(sel) ? ' (Haltepunkt)' : ''}`;
+  }
+
+  /** Übersicht aller Tasten */
+  function showHelp() {
+    const rows = [
+      ['Navigation', ''],
+      ['↑ / ↓', 'vorheriges / nächstes Element (über Blockgrenzen hinweg)'],
+      ['→ / ←', 'in den ersten Block hinein / zum umgebenden Element'],
+      ['Strg + → / ←', 'nächster / vorheriger Zweig (Ja/Nein, Fälle, try/catch/finally)'],
+      ['Pos1 / Ende', 'erstes / letztes Element im Block'],
+      ['Bild ↑ / ↓', 'vorheriges / nächstes Diagramm'],
+      ['Bearbeiten', ''],
+      ['Enter / F2', 'bearbeiten (im leeren Block: Anweisung einfügen)'],
+      ['Strg+Enter / Einfg', 'Einfügen: Auswahl mit Vorschau öffnen, tippen filtert (z.B. K → Kopfschleife, „if“, „try“), ↑/↓ wählen, Enter fügt ein, Esc bricht ab – Strg+Umschalt+Enter bzw. Umschalt+Einfg fügt davor ein'],
+      ['Enter (danach)', 'Detailbearbeitung des eingefügten Elements öffnen'],
+      ['Umschalt+F10 / Menütaste', 'Kontextmenü (Umschließen, Deaktivieren …)'],
+      ['Entf', 'löschen'],
+      ['Strg + ↑ / ↓', 'Element verschieben'],
+      ['Strg + C / X / V', 'kopieren / ausschneiden / einfügen'],
+      ['Leertaste', 'Element aktivieren / deaktivieren'],
+      ['Ausführen', ''],
+      ['F5 / F10 / F6 / Umschalt+F5', 'ausführen / Einzelschritt / anhalten / beenden'],
+      ['F9', 'Haltepunkt'],
+      ['Ansicht', ''],
+      ['Strg + + / − / 0', 'Zoom'],
+      ['Tab', 'Werkzeugleiste und Ausführungsbereich erreichen'],
+      ['?', 'diese Übersicht'],
+    ];
+    dialog.innerHTML = `<div class="box help" role="dialog" aria-label="Tastenkürzel"><h2>Tastenkürzel</h2><div class="hscroll" tabindex="0" aria-label="Liste der Tastenkürzel"><table>${rows.map(([k, d]) => (d ? `<tr><td><kbd>${escapeHtml(k)}</kbd></td><td>${escapeHtml(d)}</td></tr>` : `<tr><th colspan="2">${escapeHtml(k)}</th></tr>`)).join('')}</table></div><div class="buttons"><button id="hClose" class="primary">Schließen</button></div></div>`;
+    dialog.hidden = false;
+    const close = () => { dialog.hidden = true; dialog.innerHTML = ''; focusCanvas(); };
+    $('hClose').onclick = close;
+    $('hClose').focus();
+    const list = dialog.querySelector('.hscroll');
+    dialog.onkeydown = (e) => {
+      if (e.key === 'Escape' || e.key === '?') { close(); e.preventDefault(); }
+      else if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(e.key) && e.target !== list) {
+        const step = e.key.startsWith('Page') ? list.clientHeight * 0.9 : 40;
+        if (e.key === 'Home') list.scrollTop = 0;
+        else if (e.key === 'End') list.scrollTop = list.scrollHeight;
+        else list.scrollTop += e.key === 'ArrowDown' || e.key === 'PageDown' ? step : -step;
+        e.preventDefault();
+      }
+      e.stopPropagation();
+    };
   }
 
   document.addEventListener('keydown', (e) => {
     if (!dialog.hidden) return;
-    if (e.target.closest && e.target.closest('input, textarea, select')) return;
+    if (menuKeys(e)) return;
+    if (e.target.closest && e.target.closest('input, textarea, select')) {
+      // Esc in der Konsoleneingabe: zurück zum Diagramm
+      if (e.key === 'Escape' && e.target.id === 'coninput') { focusCanvas(); e.preventDefault(); }
+      return;
+    }
+    // Werkzeugleiste: normale Tastaturbedienung der Knöpfe
+    if (e.target.closest && e.target.closest('#toolbar, #execpanel') && (e.key === 'Enter' || e.key === ' ')) return;
     const ctrl = e.ctrlKey || e.metaKey;
     if (ctrl && (e.key === '+' || e.key === '=')) { setZoom(zoom * 1.15); e.preventDefault(); return; }
     if (ctrl && e.key === '-') { setZoom(zoom / 1.15); e.preventDefault(); return; }
     if (ctrl && e.key === '0') { setZoom(1); e.preventDefault(); return; }
+    if (e.key === '?') { showHelp(); e.preventDefault(); return; }
     if (e.key === 'Escape') { hideMenu(); return; }
     if (e.key === 'F9') { toggleBreakpoint(); e.preventDefault(); return; }
-    if (READONLY) return;
+    if (READONLY) {
+      if (sel && (e.key.startsWith('Arrow') || ['Home', 'End', 'PageUp', 'PageDown'].includes(e.key))) {
+        const np = navTarget(e.key, ctrl);
+        if (np && nodeFor(np)) { sel = np; markSelection(true); status(describeSel()); e.preventDefault(); }
+      }
+      return;
+    }
     if (ctrl && e.key.toLowerCase() === 'c') { if (copySel()) e.preventDefault(); return; }
     if (ctrl && e.key.toLowerCase() === 'x') { action('cut'); e.preventDefault(); return; }
     if (ctrl && e.key.toLowerCase() === 'v') { action('paste'); e.preventDefault(); return; }
     if (!sel) {
-      if (e.key.startsWith('Arrow') && doc && doc.roots.length) { sel = 'roots/0'; markSelection(true); e.preventDefault(); }
+      if ((e.key.startsWith('Arrow') || e.key === 'Home') && doc && doc.roots.length) { sel = 'roots/0'; markSelection(true); status(describeSel()); e.preventDefault(); }
       return;
     }
-    let np = null;
+    // Kontextmenü / Einfügemenü per Tastatur
+    if ((e.key === 'F10' && e.shiftKey) || e.key === 'ContextMenu') { const r = selRect(); showMenu(r.x, r.y); e.preventDefault(); return; }
+    // Einfg / Buchstabe: Inline-Auswahl mit Vorschau (Umschalt: davor)
+    if (e.key === 'Insert') { openPicker(e.shiftKey && !isRootPath(sel) && !sel.endsWith('/#') ? 'before' : where, ''); e.preventDefault(); return; }
     if (ctrl && e.key === 'ArrowUp') { action('up'); e.preventDefault(); return; }
     if (ctrl && e.key === 'ArrowDown') { action('down'); e.preventDefault(); return; }
+    // Strg+Enter: Einfügen-Auswahl mit Vorschau (Strg+Umschalt+Enter: davor)
+    if (ctrl && e.key === 'Enter') { openPicker(e.shiftKey && !isRootPath(sel) && !sel.endsWith('/#') ? 'before' : where, ''); e.preventDefault(); return; }
     if (e.key === 'Enter' || e.key === 'F2') { if (sel.endsWith('/#')) insertKind('instruction', 'after'); else openDialog(); e.preventDefault(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { action('delete'); e.preventDefault(); return; }
-    if (e.key === 'ArrowUp') np = siblingPath(sel, -1);
-    else if (e.key === 'ArrowDown') np = siblingPath(sel, 1);
-    else if (e.key === 'ArrowLeft') np = parentPath(sel);
-    else if (e.key === 'ArrowRight') np = firstChildPath(sel);
-    if (np && nodeFor(np)) { sel = np; markSelection(true); e.preventDefault(); }
+    if (e.key === ' ' && !sel.endsWith('/#') && !isRootPath(sel)) {
+      const el = getAt(sel);
+      if (el) { op({ op: 'update', path: sel, disabled: !el.disabled }); e.preventDefault(); }
+      return;
+    }
+    if (e.key.startsWith('Arrow') || ['Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) {
+      const np = navTarget(e.key, ctrl);
+      if (np && nodeFor(np)) { sel = np; markSelection(true); status(describeSel()); }
+      e.preventDefault();
+    }
   });
 
   /* ------------------------------ Bearbeiten-Dialog ------------------------------ */
@@ -706,7 +1056,7 @@
     if (isNew && type !== 'instruction') ta.select();
     else ta.setSelectionRange(ta.value.length, ta.value.length);
     const path = sel;
-    const close = () => { dialog.hidden = true; dialog.innerHTML = ''; };
+    const close = () => { dialog.hidden = true; dialog.innerHTML = ''; focusCanvas(); };
     const props = () => {
       // Deklarationen vereinheitlichen: "var x:int" / "var x : int" → "var x: int"
       const fixDecl = (l) => l.replace(/^(\s*(?:var|const|dim)\s+[^:="']*?)\s*:(?!=)\s*(?=\S)/i, '$1: ');
