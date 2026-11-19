@@ -1,4 +1,4 @@
-# Struktogramm – Code ⇄ Nassi-Shneiderman (VS Code)
+# Struktograf – Nassi-Shneiderman-Struktogramme für VS Code
 
 Struktogramm-Editor im Stil von **Structorizer**, direkt in VS Code.
 
@@ -22,7 +22,7 @@ Voraussetzung: VS Code 1.80 oder neuer. Java 11+ wird nur für die optionalen Or
 
 Eine neuere Version wird genauso installiert; sie ersetzt die alte. Deinstallieren geht über die Ansicht
 **Erweiterungen** → *Struktogramm* → **Deinstallieren**, oder mit
-`code --uninstall-extension local.struktogramm`.
+`code --uninstall-extension Uranolith.struktogramm`.
 
 Weil die Extension nicht aus dem Marketplace kommt, aktualisiert VS Code sie nicht automatisch.
 

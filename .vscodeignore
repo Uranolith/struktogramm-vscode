@@ -2,3 +2,5 @@
 test/**
 *.vsix
 build-vsix.py
+docs/**
+.gitignore
