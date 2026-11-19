@@ -6,6 +6,7 @@
  */
 const { tokenize, joinTokens, matchClose, splitTop, findTop, isWrapped } = require('../tokenizer');
 const { mk } = require('../model');
+const { t } = require('../../i18n');
 const { negateCond, addConst, typeEnd } = require('../pseudo');
 const { outputLine, inputLine, litContent, stripTrailingNewline, refine, addComment } = require('./common');
 
@@ -54,14 +55,14 @@ class CParser {
       const prog = refine(body);
       const onlyMainCall = prog.length === 1 && /^main\s*\(\s*\)$/.test(prog[0].text.join(''));
       if (prog.length && !(onlyMainCall && this.roots.some((r) => r.rootType === 'program'))) {
-        this.roots.unshift(mk.root(this.opts.name || 'Hauptprogramm', 'program', prog));
+        this.roots.unshift(mk.root(this.opts.name || t('core.mainProgram'), 'program', prog));
       }
     } else {
       this.members(T.length);
       if (!this.roots.length) {
         this.p = 0;
         const body = this.statementsUntil(T.length);
-        this.roots.push(mk.root(this.opts.name || 'Hauptprogramm', 'program', refine(body)));
+        this.roots.push(mk.root(this.opts.name || t('core.mainProgram'), 'program', refine(body)));
       }
     }
     this.roots.sort((a, b) => (a.rootType === 'program' ? 0 : 1) - (b.rootType === 'program' ? 0 : 1));
@@ -622,8 +623,8 @@ class CParser {
         catchVar = name; catchBody = b;
       } else { this.p++; fin = this.body(end); }
     }
-    const el = mk.try(catchVar || 'fehler', body, catchBody || [], fin);
-    if (extra) addComment(el, `${extra} weitere catch-Zweige wurden nicht übernommen`);
+    const el = mk.try(catchVar || t('core.defErrorVar'), body, catchBody || [], fin);
+    if (extra) addComment(el, t('parse.moreCatch', extra));
     return [el];
   }
 

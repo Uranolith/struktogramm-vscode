@@ -108,7 +108,7 @@ function xmlNode(o, ind) {
 
 function toXml(doc) {
   const j = toJsonObject(doc);
-  let s = '<?xml version="1.0" encoding="UTF-8"?>\n<!-- Struktogramm (Nassi-Shneiderman). Zuweisung ":=", Vergleich "=" und "<>" (Structorizer-Schreibweise). -->\n<struktogramm version="1">\n';
+  let s = '<?xml version="1.0" encoding="UTF-8"?>\n<!-- ' + require('../i18n').t('export.xmlComment') + ' -->\n<struktogramm version="1">\n';
   for (const d of j.diagrams) {
     s += `  <diagram kind="${d.kind}" signature="${xesc(d.signature)}">\n`;
     if (d.comment) s += `    <comment>${tesc(d.comment)}</comment>\n`;

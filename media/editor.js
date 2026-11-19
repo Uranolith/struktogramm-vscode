@@ -4,11 +4,17 @@
   const vscode = acquireVsCodeApi();
   const READONLY = document.body.dataset.readonly === '1';
   const $ = (id) => document.getElementById(id);
+  // Übersetzungen kommen von der Extension (Englisch bzw. Deutsch), Platzhalter {0}, {1} …
+  const L10N = (() => { try { return JSON.parse(document.body.dataset.l10n || '{}'); } catch (e) { return {}; } })();
+  const T = (k, ...a) => {
+    const s = L10N[k] != null ? L10N[k] : k;
+    return a.length ? s.replace(/\{(\d+)\}/g, (m, i) => (a[i] !== undefined ? String(a[i]) : m)) : s;
+  };
   const toolbar = $('toolbar'), canvas = $('canvas'), scroller = $('scroller'), statusbar = $('statusbar');
   // Diagrammfläche per Tab erreichbar; Pfeiltasten wählen Elemente
   scroller.tabIndex = 0;
   scroller.setAttribute('role', 'application');
-  scroller.setAttribute('aria-label', 'Struktogramm – Pfeiltasten wählen Elemente, Enter bearbeitet, ? zeigt alle Tastenkürzel');
+  scroller.setAttribute('aria-label', T('web.canvasLabel'));
   const menu = $('menu'), dialog = $('dialog'), message = $('message'), dropmark = $('dropmark');
 
   const saved = vscode.getState() || {};
@@ -46,93 +52,66 @@
   };
   const icon = (k) => `<svg class="ico" viewBox="0 0 16 16">${ICONS[k] || ''}</svg>`;
 
-  // [Typ, Name, Beschreibung, Taste zum Einfügen]
-  const KINDS = [
-    ['instruction', 'Anweisung', 'Anweisung (Zuweisung, Ein-/Ausgabe)', 'i'],
-    ['alternative', 'Verzweigung', 'Verzweigung (if / else)', 'v'],
-    ['case', 'Fallauswahl', 'Mehrfachauswahl (switch / case)', 'f'],
-    ['for', 'Zählschleife', 'Zählschleife (for)', 'z'],
-    ['while', 'Kopfschleife', 'Kopfgesteuerte Schleife (while)', 'k'],
-    ['repeat', 'Fußschleife', 'Fußgesteuerte Schleife (repeat until / do while)', 'u'],
-    ['forever', 'Endlos', 'Endlosschleife', 'e'],
-    ['call', 'Aufruf', 'Unterprogramm-Aufruf', 'a'],
-    ['jump', 'Sprung', 'Aussprung (leave, return, exit, throw)', 's'],
-    ['try', 'Try', 'Fehlerbehandlung (try / catch / finally)', 't'],
-    ['parallel', 'Parallel', 'Parallelverarbeitung', 'p'],
-  ];
+  // [Typ, Name, Beschreibung, Taste zum Einfügen] – Namen und Tasten je Sprache
+  const KIND_IDS = ['instruction', 'alternative', 'case', 'for', 'while', 'repeat', 'forever', 'call', 'jump', 'try', 'parallel'];
+  const KINDS = KIND_IDS.map((k) => [k, T(`web.kind.${k}`), T(`web.kind.${k}.title`), T(`web.kind.${k}.key`)]);
   const KIND_BY_KEY = Object.fromEntries(KINDS.map(([k, , , key]) => [key, k]));
 
-  const HINTS = {
-    instruction: 'Eine Anweisung pro Zeile.\nZuweisung: x := 5     Deklaration: var x: int := 0\nEingabe: INPUT "Zahl: ", x     Ausgabe: OUTPUT "Summe: ", s\nVergleiche: =  <>  <  >  <=  >=     Logik: and  or  not',
-    alternative: 'Bedingung, z.B.  x > 3 and y <> 0',
-    case: '1. Zeile: Ausdruck (z.B. note)\nweitere Zeilen: je ein Fall, mehrere Werte mit Komma (z.B. 1, 2)\nletzte Zeile: default  –  oder  %  für „kein Sonst-Zweig“',
-    for: 'Zählschleife:  for i := 1 to 10   oder   for i := 10 to 0 by -2\nDurchlaufschleife:  foreach x in liste',
-    while: 'Kopfgesteuerte Schleife:  while x > 0',
-    repeat: 'Fußgesteuerte Schleife (Abbruchbedingung):  until x = 0',
-    forever: 'Endlosschleife – verlassen mit einem Sprung „leave“. Text optional.',
-    call: 'Aufruf eines Unterprogramms:  ausgabe(a, b)   oder   x := summe(a, b)',
-    jump: 'leave (Schleife verlassen)  ·  leave 2 (zwei Schleifen)  ·  return x  ·  exit 0  ·  throw "Fehler"',
-    try: 'Name der Variable, die im catch-Teil die Fehlermeldung enthält, z.B.  fehler',
-    parallel: 'Anzahl paralleler Zweige',
-    root: 'Hauptprogramm: Name.  Unterprogramm: Signatur, z.B.  summe(a: int, b: int): int',
-  };
-  const TYPE_NAMES = { instruction: 'Anweisung', alternative: 'Verzweigung', case: 'Fallauswahl', for: 'Zählschleife', while: 'Kopfschleife', repeat: 'Fußschleife', forever: 'Endlosschleife', call: 'Aufruf', jump: 'Sprung', parallel: 'Parallel', try: 'Try', root: 'Diagramm' };
+  const HINTS = Object.fromEntries([...KIND_IDS, 'root'].map((k) => [k, T(`web.hint.${k}`)]));
+  const TYPE_NAMES = Object.fromEntries([...KIND_IDS, 'root'].map((k) => [k, T(`web.type.${k}`)]));
   const COLORS = ['ffffff', 'ffd6d6', 'ffe8c2', 'fff3a8', 'd6f5d6', 'cfefff', 'd8e2ff', 'eadcff', 'e6e6e6'];
 
   function buildToolbar() {
+    const execGroup = `
+      <span class="group exec">
+        <button data-x="run" class="run" title="${T('web.tb.run.title')}">▶ <span>${T('web.tb.run')}</span></button>
+        <button data-x="step" title="${T('web.tb.step.title')}">⏭ <span>${T('web.tb.step')}</span></button>
+        <button data-x="pause" title="${T('web.tb.pause.title')}" aria-label="${T('web.tb.pause.title')}">⏸</button>
+        <button data-x="stop" title="${T('web.tb.stop.title')}" aria-label="${T('web.tb.stop.title')}">⏹</button>
+        <select id="speed" title="${T('web.tb.speed')}"><option value="800">${T('web.speed.slow')}</option><option value="250">${T('web.speed.medium')}</option><option value="40">${T('web.speed.fast')}</option><option value="0">${T('web.speed.instant')}</option></select>
+      </span>`;
+    const zoomGroup = `<span class="group"><button data-a="zoomOut" title="${T('web.tb.zoomOut.title')}" aria-label="${T('web.tb.zoomOut')}">−</button><span id="zoomLabel"></span><button data-a="zoomIn" title="${T('web.tb.zoomIn.title')}" aria-label="${T('web.tb.zoomIn')}">+</button><button data-a="help" title="${T('web.tb.help.title')}" aria-label="${T('web.tb.help')}">?</button></span>`;
     if (READONLY) {
       toolbar.innerHTML = `
-        <span class="group"><button data-a="saveNsd" class="primary" title="Als .nsd-Datei speichern und im Editor öffnen">Als Struktogramm speichern</button>
-        <button data-a="toCode" title="In eine andere Programmiersprache übersetzen">Code erzeugen …</button></span>
-        <span class="group"><button data-a="export" title="Exportieren: SVG, PNG, JSON, XML oder KI-kompakt">Exportieren …</button></span>
-      <span class="group exec">
-        <button data-x="run" class="run" title="Ausführen bzw. fortsetzen (F5). Ist ein Unterprogramm ausgewählt, wird dieses ausgeführt.">▶ <span>Ausführen</span></button>
-        <button data-x="step" title="Einzelschritt (F10) – das hervorgehobene Element wird ausgeführt">⏭ <span>Schritt</span></button>
-        <button data-x="pause" title="Anhalten (F6)">⏸</button>
-        <button data-x="stop" title="Ausführung beenden (Umschalt+F5)">⏹</button>
-        <select id="speed" title="Ausführungstempo"><option value="800">langsam</option><option value="250">mittel</option><option value="40">schnell</option><option value="0">sofort</option></select>
-      </span>
-        <span class="group"><button data-a="zoomOut" title="Verkleinern (Strg+−)" aria-label="Verkleinern">−</button><span id="zoomLabel"></span><button data-a="zoomIn" title="Vergrößern (Strg++)" aria-label="Vergrößern">+</button><button data-a="help" title="Tastenkürzel (?)" aria-label="Tastenkürzel anzeigen">?</button></span>
-        <span class="hint">Live-Vorschau – folgt dem aktiven Editor (bei Markierung nur der markierte Teil)</span>`;
+        <span class="group"><button data-a="saveNsd" class="primary" title="${T('web.tb.saveNsd.title')}">${T('web.tb.saveNsd')}</button>
+        <button data-a="toCode" title="${T('web.tb.toCodePreview.title')}">${T('web.tb.toCode')}</button></span>
+        <span class="group"><button data-a="export" title="${T('web.tb.export.title')}">${T('web.tb.export')}</button></span>
+        ${execGroup}
+        ${zoomGroup}
+        <span class="hint">${T('web.tb.previewHint')}</span>`;
       return;
     }
     toolbar.innerHTML = `
-      <span class="group" role="group" aria-label="Element einfügen">${KINDS.map(([k, label, title, key]) => `<button data-kind="${k}" title="${title} einfügen (Tastatur: Strg+Enter, dann ${key.toUpperCase()})" aria-label="${label} einfügen">${icon(k)}<span>${label}</span></button>`).join('')}</span>
+      <span class="group" role="group" aria-label="${T('web.tb.insertGroup')}">${KINDS.map(([k, label, title, key]) => `<button data-kind="${k}" title="${escapeHtml(T('web.tb.insertKind.title', title, key.toUpperCase()))}" aria-label="${escapeHtml(T('web.tb.insertKind', label))}">${icon(k)}<span>${label}</span></button>`).join('')}</span>
       <span class="group">
-        <select id="where" title="Wo werden neue Elemente eingefügt?"><option value="after">danach einfügen</option><option value="before">davor einfügen</option></select>
-      </span>
-      <span class="group">
-        <button data-a="edit" title="Bearbeiten (Enter / Doppelklick)">Bearbeiten</button>
-        <button data-a="delete" title="Löschen (Entf)">Löschen</button>
-        <button data-a="up" title="Nach oben (Strg+↑)">↑</button>
-        <button data-a="down" title="Nach unten (Strg+↓)">↓</button>
+        <select id="where" title="${T('web.tb.where')}"><option value="after">${T('web.tb.where.after')}</option><option value="before">${T('web.tb.where.before')}</option></select>
       </span>
       <span class="group">
-        <button data-a="copy" title="Kopieren (Strg+C)">Kopieren</button>
-        <button data-a="cut" title="Ausschneiden (Strg+X)">Ausschneiden</button>
-        <button data-a="paste" title="Einfügen (Strg+V)">Einfügen</button>
+        <button data-a="edit" title="${T('web.tb.edit.title')}">${T('web.tb.edit')}</button>
+        <button data-a="delete" title="${T('web.tb.delete.title')}">${T('web.tb.delete')}</button>
+        <button data-a="up" title="${T('web.tb.up.title')}" aria-label="${T('web.tb.up.title')}">↑</button>
+        <button data-a="down" title="${T('web.tb.down.title')}" aria-label="${T('web.tb.down.title')}">↓</button>
       </span>
       <span class="group">
-        <button data-a="undo" title="Rückgängig">↶</button>
-        <button data-a="redo" title="Wiederholen">↷</button>
+        <button data-a="copy" title="${T('web.tb.copy.title')}">${T('web.tb.copy')}</button>
+        <button data-a="cut" title="${T('web.tb.cut.title')}">${T('web.tb.cut')}</button>
+        <button data-a="paste" title="${T('web.tb.paste.title')}">${T('web.tb.paste')}</button>
       </span>
       <span class="group">
-        <button data-a="addSub" title="Neues Unterprogramm (Funktion) anlegen">+ Unterprogramm</button>
+        <button data-a="undo" title="${T('web.tb.undo')}" aria-label="${T('web.tb.undo')}">↶</button>
+        <button data-a="redo" title="${T('web.tb.redo')}" aria-label="${T('web.tb.redo')}">↷</button>
       </span>
       <span class="group">
-        <button data-a="toCode" class="primary" title="Code erzeugen – mit eigener Übersetzung oder dem Original-Structorizer">Code erzeugen …</button>
-        <button data-a="export" title="Exportieren: SVG, PNG, JSON, XML oder KI-kompakt">Exportieren …</button>
-        
-        <button data-a="structorizer" title="Im Original-Structorizer öffnen (benötigt Java)">Structorizer</button>
+        <button data-a="addSub" title="${T('web.tb.addSub.title')}">${T('web.tb.addSub')}</button>
+        <button data-a="newFile" title="${T('web.tb.newFile.title')}">${T('web.tb.newFile')}</button>
       </span>
-      <span class="group exec">
-        <button data-x="run" class="run" title="Ausführen bzw. fortsetzen (F5). Ist ein Unterprogramm ausgewählt, wird dieses ausgeführt.">▶ <span>Ausführen</span></button>
-        <button data-x="step" title="Einzelschritt (F10) – das hervorgehobene Element wird ausgeführt">⏭ <span>Schritt</span></button>
-        <button data-x="pause" title="Anhalten (F6)">⏸</button>
-        <button data-x="stop" title="Ausführung beenden (Umschalt+F5)">⏹</button>
-        <select id="speed" title="Ausführungstempo"><option value="800">langsam</option><option value="250">mittel</option><option value="40">schnell</option><option value="0">sofort</option></select>
+      <span class="group">
+        <button data-a="toCode" class="primary" title="${T('web.tb.toCode.title')}">${T('web.tb.toCode')}</button>
+        <button data-a="export" title="${T('web.tb.export.title')}">${T('web.tb.export')}</button>
+        <button data-a="structorizer" title="${T('web.tb.structorizer.title')}">Structorizer</button>
       </span>
-      <span class="group"><button data-a="zoomOut" title="Verkleinern (Strg+−)" aria-label="Verkleinern">−</button><span id="zoomLabel"></span><button data-a="zoomIn" title="Vergrößern (Strg++)" aria-label="Vergrößern">+</button><button data-a="help" title="Tastenkürzel (?)" aria-label="Tastenkürzel anzeigen">?</button></span>`;
+      ${execGroup}
+      ${zoomGroup}`;
     const w = $('where');
     w.value = where;
     w.addEventListener('change', () => { where = w.value; save(); });
@@ -183,6 +162,7 @@
       case 'structorizer': post({ type: 'openStructorizer' }); break;
       case 'toggleBp': toggleBreakpoint(); break;
       case 'help': showHelp(); break;
+      case 'newFile': post({ type: 'newFile' }); break;
       default: break;
     }
   }
@@ -194,7 +174,7 @@
     post({ type: 'copy', element: el });
     hasClipboard = true;
     updateButtons();
-    status('Kopiert: ' + (TYPE_NAMES[el.type] || el.type));
+    status(T('web.copied', TYPE_NAMES[el.type] || el.type));
     return true;
   }
 
@@ -269,9 +249,9 @@
     set('copy', !!el && !isRoot);
     set('cut', !!el && !isRoot);
     set('paste', hasClipboard);
-    if (!sel) status(doc && doc.roots.length ? 'Element anklicken oder Pfeiltaste zum Auswählen · Enter bearbeiten · Strg+Enter einfügen · ? alle Tastenkürzel' : '');
-    else if (isEmpty) status('Leerer Zweig ausgewählt – ein neues Element wird hier eingefügt.');
-    else if (el) status(`${TYPE_NAMES[el.type] || el.type} ausgewählt · Enter: bearbeiten · Entf: löschen · Strg+↑/↓: verschieben · Pfeiltasten: navigieren`);
+    if (!sel) status(doc && doc.roots.length ? T('web.st.idle') : '');
+    else if (isEmpty) status(T('web.st.emptyBranch'));
+    else if (el) status(T('web.st.selected', TYPE_NAMES[el.type] || el.type));
   }
 
   /* ------------------------------ Nachrichten ------------------------------ */
@@ -285,11 +265,11 @@
       settings = m.settings || settings;
       if (m.hasClipboard != null) hasClipboard = m.hasClipboard;
       if (m.select !== undefined) sel = m.select;
-      if (m.error) { message.hidden = false; message.innerHTML = ''; message.textContent = m.error; if (!READONLY) { const b = document.createElement('button'); b.textContent = 'Als Text öffnen'; b.onclick = () => action('openText'); message.appendChild(b); } }
+      if (m.error) { message.hidden = false; message.innerHTML = ''; message.textContent = m.error; if (!READONLY) { const b = document.createElement('button'); b.textContent = T('web.openAsText'); b.onclick = () => action('openText'); message.appendChild(b); } }
       else message.hidden = true;
       if (!READONLY && doc && !doc.roots.length) {
         message.hidden = false;
-        message.innerHTML = 'Das Struktogramm ist leer. <button id="startBtn">Hauptprogramm anlegen</button>';
+        message.innerHTML = `${escapeHtml(T('web.emptyDiagram'))} <button id="startBtn">${escapeHtml(T('web.addMain'))}</button>`;
         $('startBtn').onclick = () => action('addMain');
       }
       render();
@@ -322,12 +302,12 @@
       const form = $('conin');
       if (m.state === 'input') {
         form.hidden = false;
-        $('conprompt').textContent = m.prompt || 'Eingabe:';
+        $('conprompt').textContent = m.prompt || T('web.inputPrompt');
         const inp = $('coninput');
         inp.value = '';
         setTimeout(() => inp.focus(), 0);
       } else form.hidden = true;
-      $('execstate').textContent = { running: 'läuft …', paused: 'angehalten', input: 'wartet auf Eingabe', done: 'beendet' }[m.state] || '';
+      $('execstate').textContent = { running: T('web.state.running'), paused: T('web.state.paused'), input: T('web.state.input'), done: T('web.state.done') }[m.state] || '';
       updateExecButtons();
       markExec(m.state === 'paused' || m.state === 'input');
     }
@@ -399,7 +379,7 @@
     set('pause', execState === 'running');
     set('stop', busy);
     const rb = toolbar.querySelector('[data-x="run"] span');
-    if (rb) rb.textContent = execState === 'paused' ? 'Weiter' : 'Ausführen';
+    if (rb) rb.textContent = execState === 'paused' ? T('web.tb.continue') : T('web.tb.run');
   }
 
   function markExec(scroll) {
@@ -442,12 +422,12 @@
   }
 
   function toggleBreakpoint() {
-    if (!sel || sel.endsWith('/#') || /^roots\/\d+$/.test(sel)) { status('Haltepunkte können nur auf Elemente gesetzt werden.'); return; }
+    if (!sel || sel.endsWith('/#') || /^roots\/\d+$/.test(sel)) { status(T('web.bp.onlyElements')); return; }
     if (breakpoints.has(sel)) breakpoints.delete(sel); else breakpoints.add(sel);
     save();
     markExec(false);
     post({ type: 'exec', cmd: 'config', breakpoints: [...breakpoints] });
-    status(breakpoints.has(sel) ? 'Haltepunkt gesetzt – die Ausführung hält vor diesem Element an.' : 'Haltepunkt entfernt.');
+    status(breakpoints.has(sel) ? T('web.bp.set') : T('web.bp.removed'));
   }
 
   function showExecPanel() { $('execpanel').hidden = false; }
@@ -468,9 +448,9 @@
     let html = '';
     for (let k = frames.length - 1; k >= 0; k--) {
       const f = frames[k];
-      html += `<div class="frame${k === frames.length - 1 ? ' top' : ''}">${escapeHtml(f.name)}${k === frames.length - 1 ? '' : ' <span class="muted">(wartet)</span>'}</div>`;
+      html += `<div class="frame${k === frames.length - 1 ? ' top' : ''}">${escapeHtml(f.name)}${k === frames.length - 1 ? '' : ` <span class="muted">(${escapeHtml(T('web.vars.waiting'))})</span>`}</div>`;
       if (k === frames.length - 1 || frames.length <= 3) {
-        html += '<table>' + (f.vars.length ? f.vars.map((x) => `<tr><td class="n">${escapeHtml(x.name)}</td><td class="v">${escapeHtml(x.value)}</td><td class="t">${escapeHtml(x.type || '')}</td></tr>`).join('') : '<tr><td class="muted">keine Variablen</td></tr>') + '</table>';
+        html += '<table>' + (f.vars.length ? f.vars.map((x) => `<tr><td class="n">${escapeHtml(x.name)}</td><td class="v">${escapeHtml(x.value)}</td><td class="t">${escapeHtml(x.type || '')}</td></tr>`).join('') : `<tr><td class="muted">${escapeHtml(T('web.vars.none'))}</td></tr>`) + '</table>';
       }
     }
     v.innerHTML = html;
@@ -561,18 +541,18 @@
     const el = getAt(sel);
     const isRoot = sel && /^roots\/\d+$/.test(sel);
     const items = [];
-    if (el) items.push(['edit', 'Bearbeiten …', 'Enter']);
+    if (el) items.push(['edit', T('web.menu.edit'), 'Enter']);
     items.push(['-']);
-    items.push(['sub:after', 'Danach einfügen ▸']);
-    if (el && !isRoot) items.push(['sub:before', 'Davor einfügen ▸']);
-    if (el && !isRoot && ['instruction', 'call', 'jump', 'alternative', 'case', 'for', 'while', 'repeat', 'forever', 'try', 'parallel'].includes(el.type)) items.push(['sub:wrap', 'Umschließen mit ▸']);
+    items.push(['sub:after', T('web.menu.insertAfter') + ' ▸']);
+    if (el && !isRoot) items.push(['sub:before', T('web.menu.insertBefore') + ' ▸']);
+    if (el && !isRoot && ['instruction', 'call', 'jump', 'alternative', 'case', 'for', 'while', 'repeat', 'forever', 'try', 'parallel'].includes(el.type)) items.push(['sub:wrap', T('web.menu.wrap') + ' ▸']);
     items.push(['-']);
-    if (el && !isRoot) { items.push(['copy', 'Kopieren', 'Strg+C'], ['cut', 'Ausschneiden', 'Strg+X']); }
-    items.push(['paste', 'Einfügen', 'Strg+V', !hasClipboard]);
-    if (el && !isRoot) items.push(['toggleDisabled', el.disabled ? 'Aktivieren' : 'Deaktivieren']);
-    if (el && !isRoot) items.push(['toggleBp', breakpoints.has(sel) ? 'Haltepunkt entfernen' : 'Haltepunkt setzen', 'F9']);
-    if (el) items.push(['-'], ['up', 'Nach oben', 'Strg+↑'], ['down', 'Nach unten', 'Strg+↓'], ['delete', isRoot ? 'Diagramm löschen' : 'Löschen', 'Entf']);
-    items.push(['-'], ['addSub', '+ Neues Unterprogramm'], ['addMain', '+ Neues Hauptprogramm']);
+    if (el && !isRoot) { items.push(['copy', T('web.tb.copy'), T('web.key.ctrl') + '+C'], ['cut', T('web.tb.cut'), T('web.key.ctrl') + '+X']); }
+    items.push(['paste', T('web.tb.paste'), T('web.key.ctrl') + '+V', !hasClipboard]);
+    if (el && !isRoot) items.push(['toggleDisabled', el.disabled ? T('web.menu.enable') : T('web.menu.disable')]);
+    if (el && !isRoot) items.push(['toggleBp', breakpoints.has(sel) ? T('web.menu.bpRemove') : T('web.menu.bpSet'), 'F9']);
+    if (el) items.push(['-'], ['up', T('web.menu.up'), T('web.key.ctrl') + '+↑'], ['down', T('web.menu.down'), T('web.key.ctrl') + '+↓'], ['delete', isRoot ? T('web.menu.deleteDiagram') : T('web.tb.delete'), T('web.key.del')]);
+    items.push(['-'], ['addSub', T('web.menu.addSub')], ['addMain', T('web.menu.addMain')]);
     menu.innerHTML = items.filter((it, i, a) => !(it[0] === '-' && (i === 0 || a[i - 1][0] === '-'))).map((it) => {
       if (it[0] === '-') return '<div class="sep"></div>';
       return `<div class="item${it[3] ? ' disabled' : ''}" data-m="${it[0]}"><span>${it[1]}</span><kbd>${it[2] || ''}</kbd></div>`;
@@ -599,7 +579,7 @@
     sm.className = 'menu';
     sm.setAttribute('role', 'menu');
     const kinds = mode === 'wrap' ? KINDS.filter(([k]) => ['alternative', 'for', 'while', 'repeat', 'forever', 'try'].includes(k)) : KINDS;
-    const title = { after: 'Danach einfügen', before: 'Davor einfügen', wrap: 'Umschließen mit' }[mode] || '';
+    const title = { after: T('web.menu.insertAfter'), before: T('web.menu.insertBefore'), wrap: T('web.menu.wrap') }[mode] || '';
     sm.innerHTML = `<div class="mtitle">${title}</div>` + kinds.map(([k, label, , key]) => `<div class="item" role="menuitem" data-k="${k}" data-key="${key}">${icon(k)}<span>${label}</span><kbd>${key.toUpperCase()}</kbd></div>`).join('');
     document.body.appendChild(sm);
     positionMenu(sm, x, y);
@@ -660,17 +640,17 @@
   /* ------------------------------ Einfügen per Tastatur: Inline-Auswahl mit Vorschau ------------------------------ */
   // Stichwörter für die Suche (zusätzlich zu Name und Tastenkürzel)
   const KIND_WORDS = {
-    instruction: ['anweisung', 'zuweisung', 'input', 'output', 'eingabe', 'ausgabe', 'befehl', 'var'],
-    alternative: ['verzweigung', 'if', 'wenn', 'falls', 'bedingung'],
-    case: ['fallauswahl', 'switch', 'case', 'auswahl', 'mehrfach'],
-    for: ['zählschleife', 'for', 'foreach', 'zähl'],
-    while: ['kopfschleife', 'while', 'solange', 'kopf'],
-    repeat: ['fußschleife', 'repeat', 'until', 'do', 'fuß', 'bis'],
-    forever: ['endlosschleife', 'loop', 'endlos', 'forever'],
-    call: ['aufruf', 'call', 'funktion', 'unterprogramm', 'prozedur'],
-    jump: ['sprung', 'leave', 'return', 'exit', 'break', 'throw', 'continue'],
-    try: ['try', 'catch', 'finally', 'fehler', 'ausnahme'],
-    parallel: ['parallel', 'thread', 'gleichzeitig'],
+    instruction: ['anweisung', 'zuweisung', 'input', 'output', 'eingabe', 'ausgabe', 'befehl', 'var', 'instruction', 'statement', 'assignment'],
+    alternative: ['verzweigung', 'if', 'wenn', 'falls', 'bedingung', 'alternative', 'branch', 'condition'],
+    case: ['fallauswahl', 'switch', 'case', 'auswahl', 'mehrfach', 'select', 'selection'],
+    for: ['zählschleife', 'for', 'foreach', 'zähl', 'counting', 'count'],
+    while: ['kopfschleife', 'while', 'solange', 'kopf', 'pre-test'],
+    repeat: ['fußschleife', 'repeat', 'until', 'do', 'fuß', 'bis', 'post-test'],
+    forever: ['endlosschleife', 'loop', 'endlos', 'forever', 'endless', 'infinite'],
+    call: ['aufruf', 'call', 'funktion', 'unterprogramm', 'prozedur', 'subroutine', 'function', 'procedure'],
+    jump: ['sprung', 'leave', 'return', 'exit', 'break', 'throw', 'continue', 'jump'],
+    try: ['try', 'catch', 'finally', 'fehler', 'ausnahme', 'error', 'exception'],
+    parallel: ['parallel', 'thread', 'gleichzeitig', 'concurrent'],
   };
   let picker = null; // { box, input, list, where, path, items, idx, token, saved }
 
@@ -696,9 +676,9 @@
     const box = document.createElement('div');
     box.id = 'picker';
     box.setAttribute('role', 'dialog');
-    box.setAttribute('aria-label', 'Element einfügen');
-    box.innerHTML = `<div class="ptitle">${w === 'before' ? 'Davor' : 'Danach'} einfügen – Enter übernimmt, Esc bricht ab</div>
-      <input id="pickerInput" autocomplete="off" spellcheck="false" placeholder="Element suchen: Kopfschleife, if, try …" aria-autocomplete="list" aria-controls="pickerList">
+    box.setAttribute('aria-label', T('web.tb.insertGroup'));
+    box.innerHTML = `<div class="ptitle">${escapeHtml(T(w === 'before' ? 'web.pick.titleBefore' : 'web.pick.titleAfter'))}</div>
+      <input id="pickerInput" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(T('web.pick.placeholder'))}" aria-autocomplete="list" aria-controls="pickerList">
       <div id="pickerList" class="plist" role="listbox"></div>`;
     scroller.appendChild(box);
     picker = { box, input: box.querySelector('input'), list: box.querySelector('.plist'), where: w, path: sel, items: [], idx: 0, token: 0, saved: svgText, previewPath: null };
@@ -713,8 +693,8 @@
       picker.idx = parseInt(it.dataset.i, 10);
       pickerCommit();
     });
-    positionPicker(nodeFor(sel), w);
     pickerUpdate();
+    positionPicker(nodeFor(sel), w);
     picker.input.focus();
   }
 
@@ -723,10 +703,11 @@
     p.items = pickerMatches(p.input.value);
     if (p.idx >= p.items.length) p.idx = Math.max(0, p.items.length - 1);
     p.list.innerHTML = p.items.length
-      ? p.items.map((it, i) => `<div class="pitem${i === p.idx ? ' active' : ''}" role="option" aria-selected="${i === p.idx}" data-i="${i}">${icon(it.k)}<span>${it.label}</span><kbd>${it.key.toUpperCase()}</kbd></div>`).join('')
-      : '<div class="pempty">kein passendes Element</div>';
+      ? p.items.map((it, i) => `<div id="pitem${i}" class="pitem${i === p.idx ? ' active' : ''}" role="option" aria-selected="${i === p.idx}" data-i="${i}">${icon(it.k)}<span>${it.label}</span><kbd>${it.key.toUpperCase()}</kbd></div>`).join('')
+      : `<div class="pempty">${escapeHtml(T('web.pick.none'))}</div>`;
     const cur = p.items[p.idx];
-    status(cur ? `${cur.label} einfügen (${cur.title}) – Enter übernimmt` : 'Kein passendes Element');
+    fitPicker();
+    status(cur ? T('web.pick.status', cur.label, cur.title) : T('web.pick.noneStatus'));
     requestPreview();
   }
 
@@ -760,9 +741,45 @@
     }
   }
 
+  /** gewähltes Element in der Liste sichtbar halten (nur die Liste scrollen, nicht das Diagramm) */
+  function pickerReveal() {
+    const p = picker;
+    if (!p) return;
+    const act = p.list.querySelector('.pitem.active');
+    if (!act) { p.input.removeAttribute('aria-activedescendant'); return; }
+    const top = act.offsetTop - p.list.offsetTop, bottom = top + act.offsetHeight;
+    if (top < p.list.scrollTop) p.list.scrollTop = top;
+    else if (bottom > p.list.scrollTop + p.list.clientHeight) p.list.scrollTop = bottom - p.list.clientHeight;
+    p.input.setAttribute('aria-activedescendant', act.id);
+  }
+
+  /** Auswahlfeld in den sichtbaren Bereich einpassen: erst die Liste kürzen (sie scrollt dann), notfalls nach oben schieben */
+  function fitPicker() {
+    const p = picker;
+    if (!p) return;
+    p.list.style.maxHeight = '';
+    const limit = Math.min(scroller.getBoundingClientRect().bottom, window.innerHeight) - 6;
+    let over = p.box.getBoundingClientRect().bottom - limit;
+    if (over > 0) {
+      const lh = p.list.getBoundingClientRect().height, nh = Math.max(Math.min(lh, 110), lh - over);
+      p.list.style.maxHeight = nh + 'px';
+      over -= lh - nh;
+    }
+    if (over > 0) p.box.style.top = Math.max(scroller.scrollTop + 4, (parseFloat(p.box.style.top) || 0) - over) + 'px';
+    // sehr niedriges Fenster: Liste weiter kürzen (mindestens zwei Zeilen)
+    over = p.box.getBoundingClientRect().bottom - limit;
+    if (over > 0) p.list.style.maxHeight = Math.max(48, p.list.getBoundingClientRect().height - over) + 'px';
+    pickerReveal();
+  }
+
   /** Auswahlfeld direkt unter (bzw. über) dem Element platzieren */
   function positionPicker(g, w) {
     if (!picker) return;
+    placePicker(g, w);
+    fitPicker();
+  }
+
+  function placePicker(g, w) {
     const s = scroller.getBoundingClientRect();
     const bg = g && (g.querySelector(':scope > rect.bg') || g);
     const r = bg ? bg.getBoundingClientRect() : { left: s.left + 16, right: s.left + 16, top: s.top + 16, bottom: s.top + 16, width: 0 };
@@ -799,7 +816,7 @@
     if (!cur) return;
     closePicker(false);
     op({ op: 'insert', path: p.path, kind: cur.k, where: p.where, noEdit: true });
-    status(`${cur.label} eingefügt – Enter öffnet die Bearbeitung`);
+    status(T('web.pick.inserted', cur.label));
     focusCanvas();
   }
 
@@ -841,7 +858,7 @@
       default: return [];
     }
   }
-  const BLOCK_NAMES = { qTrue: 'Ja-Zweig', qFalse: 'Nein-Zweig', body: 'Schleifenrumpf', qTry: 'try', qCatch: 'catch', qFinally: 'finally', children: '' };
+  const BLOCK_NAMES = { qTrue: T('web.block.true'), qFalse: T('web.block.false'), body: T('web.block.body'), qTry: 'try', qCatch: 'catch', qFinally: 'finally', children: '' };
 
   /** Pfad zerlegen: {owner: Pfad des Elternelements, key: Block, index (-1 = leerer Block)} */
   function splitPath(path) {
@@ -907,44 +924,23 @@
       const owner = getAt(s.owner);
       if (owner && owner.type === 'case' && /^branches\//.test(s.key)) {
         const k = parseInt(s.key.split('/')[1], 10);
-        where = ' · Fall ' + (String((owner.text || [])[k + 1] || '').trim() || k + 1);
-      } else if (owner && owner.type === 'parallel' && /^branches\//.test(s.key)) where = ' · Zweig ' + (parseInt(s.key.split('/')[1], 10) + 1);
+        where = ' · ' + T('web.block.case', String((owner.text || [])[k + 1] || '').trim() || k + 1);
+      } else if (owner && owner.type === 'parallel' && /^branches\//.test(s.key)) where = ' · ' + T('web.block.branch', parseInt(s.key.split('/')[1], 10) + 1);
       else if (BLOCK_NAMES[s.key]) where = ' · ' + BLOCK_NAMES[s.key];
     }
-    if (sel.endsWith('/#')) return 'Leerer Block' + where + ' – Enter: Anweisung einfügen · Strg+Enter: Element auswählen';
+    if (sel.endsWith('/#')) return T('web.st.emptyBlock', where);
     const el = getAt(sel);
     if (!el) return '';
     const text = (el.text || []).filter((l) => String(l).trim()).join(' · ');
-    return `${TYPE_NAMES[el.type] || el.type}${text ? ': ' + text : ''}${where}${el.disabled ? ' (deaktiviert)' : ''}${breakpoints.has(sel) ? ' (Haltepunkt)' : ''}`;
+    return `${TYPE_NAMES[el.type] || el.type}${text ? ': ' + text : ''}${where}${el.disabled ? ` (${T('web.st.disabled')})` : ''}${breakpoints.has(sel) ? ` (${T('web.st.breakpoint')})` : ''}`;
   }
 
   /** Übersicht aller Tasten */
   function showHelp() {
-    const rows = [
-      ['Navigation', ''],
-      ['↑ / ↓', 'vorheriges / nächstes Element (über Blockgrenzen hinweg)'],
-      ['→ / ←', 'in den ersten Block hinein / zum umgebenden Element'],
-      ['Strg + → / ←', 'nächster / vorheriger Zweig (Ja/Nein, Fälle, try/catch/finally)'],
-      ['Pos1 / Ende', 'erstes / letztes Element im Block'],
-      ['Bild ↑ / ↓', 'vorheriges / nächstes Diagramm'],
-      ['Bearbeiten', ''],
-      ['Enter / F2', 'bearbeiten (im leeren Block: Anweisung einfügen)'],
-      ['Strg+Enter / Einfg', 'Einfügen: Auswahl mit Vorschau öffnen, tippen filtert (z.B. K → Kopfschleife, „if“, „try“), ↑/↓ wählen, Enter fügt ein, Esc bricht ab – Strg+Umschalt+Enter bzw. Umschalt+Einfg fügt davor ein'],
-      ['Enter (danach)', 'Detailbearbeitung des eingefügten Elements öffnen'],
-      ['Umschalt+F10 / Menütaste', 'Kontextmenü (Umschließen, Deaktivieren …)'],
-      ['Entf', 'löschen'],
-      ['Strg + ↑ / ↓', 'Element verschieben'],
-      ['Strg + C / X / V', 'kopieren / ausschneiden / einfügen'],
-      ['Leertaste', 'Element aktivieren / deaktivieren'],
-      ['Ausführen', ''],
-      ['F5 / F10 / F6 / Umschalt+F5', 'ausführen / Einzelschritt / anhalten / beenden'],
-      ['F9', 'Haltepunkt'],
-      ['Ansicht', ''],
-      ['Strg + + / − / 0', 'Zoom'],
-      ['Tab', 'Werkzeugleiste und Ausführungsbereich erreichen'],
-      ['?', 'diese Übersicht'],
-    ];
-    dialog.innerHTML = `<div class="box help" role="dialog" aria-label="Tastenkürzel"><h2>Tastenkürzel</h2><div class="hscroll" tabindex="0" aria-label="Liste der Tastenkürzel"><table>${rows.map(([k, d]) => (d ? `<tr><td><kbd>${escapeHtml(k)}</kbd></td><td>${escapeHtml(d)}</td></tr>` : `<tr><th colspan="2">${escapeHtml(k)}</th></tr>`)).join('')}</table></div><div class="buttons"><button id="hClose" class="primary">Schließen</button></div></div>`;
+    // Zeilen: [Taste, Beschreibung]; leere Beschreibung = Zwischenüberschrift
+    const rows = [];
+    for (let i = 1; L10N[`web.help.k${i}`] != null; i++) rows.push([T(`web.help.k${i}`), T(`web.help.d${i}`)]);
+    dialog.innerHTML = `<div class="box help" role="dialog" aria-label="${escapeHtml(T('web.help.title'))}"><h2>${escapeHtml(T('web.help.title'))}</h2><div class="hscroll" tabindex="0" aria-label="${escapeHtml(T('web.help.list'))}"><table>${rows.map(([k, d]) => (d ? `<tr><td><kbd>${escapeHtml(k)}</kbd></td><td>${escapeHtml(d)}</td></tr>` : `<tr><th colspan="2">${escapeHtml(k)}</th></tr>`)).join('')}</table></div><div class="buttons"><button id="hClose" class="primary">${escapeHtml(T('web.close'))}</button></div></div>`;
     dialog.hidden = false;
     const close = () => { dialog.hidden = true; dialog.innerHTML = ''; focusCanvas(); };
     $('hClose').onclick = close;
@@ -1027,21 +1023,21 @@
     const comment = (el.comment || []).join('\n');
     const color = el.color || 'ffffff';
     dialog.innerHTML = `
-      <div class="box" role="dialog" aria-label="Element bearbeiten">
-        <h2>${icon(type === 'root' ? 'instruction' : type)} ${TYPE_NAMES[type] || type} ${isNew ? 'einfügen' : 'bearbeiten'}</h2>
-        ${type !== 'root' ? `<label for="dType">Elementtyp</label>
-        <select id="dType" title="Elementtyp wechseln – enthaltene Elemente bleiben erhalten">${KINDS.map(([k, label]) => `<option value="${k}"${k === type ? ' selected' : ''}>${label}</option>`).join('')}</select>` : ''}
-        <label for="dText">${type === 'root' ? 'Name / Signatur' : type === 'alternative' ? 'Bedingung' : type === 'parallel' ? 'Anzahl Zweige' : type === 'try' ? 'Fehlervariable (catch)' : 'Text'}</label>
+      <div class="box" role="dialog" aria-label="${escapeHtml(T('web.dlg.aria'))}">
+        <h2>${icon(type === 'root' ? 'instruction' : type)} ${escapeHtml(T(isNew ? 'web.dlg.insertTitle' : 'web.dlg.editTitle', TYPE_NAMES[type] || type))}</h2>
+        ${type !== 'root' ? `<label for="dType">${escapeHtml(T('web.dlg.type'))}</label>
+        <select id="dType" title="${escapeHtml(T('web.dlg.type.title'))}">${KINDS.map(([k, label]) => `<option value="${k}"${k === type ? ' selected' : ''}>${label}</option>`).join('')}</select>` : ''}
+        <label for="dText">${escapeHtml(T(type === 'root' ? 'web.dlg.signature' : type === 'alternative' ? 'web.dlg.condition' : type === 'parallel' ? 'web.dlg.branches' : type === 'try' ? 'web.dlg.catchVar' : 'web.dlg.text'))}</label>
         <textarea id="dText" rows="${Math.max(type === 'instruction' || type === 'case' ? 4 : 2, (el.text || []).length + 1)}" spellcheck="false">${escapeHtml(text)}</textarea>
         <div class="hint">${escapeHtml(HINTS[type] || '').replace(/\n/g, '<br>')}</div>
-        ${type === 'root' ? `<div class="row"><label><input type="radio" name="rt" value="program" ${el.rootType === 'program' ? 'checked' : ''}> Hauptprogramm</label>
-          <label><input type="radio" name="rt" value="sub" ${el.rootType === 'sub' ? 'checked' : ''}> Unterprogramm (Funktion)</label></div>` : ''}
-        <label for="dComment">Kommentar</label>
+        ${type === 'root' ? `<div class="row"><label><input type="radio" name="rt" value="program" ${el.rootType === 'program' ? 'checked' : ''}> ${escapeHtml(T('web.dlg.main'))}</label>
+          <label><input type="radio" name="rt" value="sub" ${el.rootType === 'sub' ? 'checked' : ''}> ${escapeHtml(T('web.dlg.sub'))}</label></div>` : ''}
+        <label for="dComment">${escapeHtml(T('web.dlg.comment'))}</label>
         <textarea id="dComment" rows="2">${escapeHtml(comment)}</textarea>
-        <div class="row colors">Farbe: ${COLORS.map((c) => `<button class="swatch${c === color ? ' on' : ''}" data-c="${c}" style="background:#${c}" title="#${c}"></button>`).join('')}</div>
-        ${type !== 'root' ? `<div class="row"><label><input type="checkbox" id="dDisabled" ${el.disabled ? 'checked' : ''}> deaktiviert (wird bei der Codeerzeugung übersprungen)</label></div>` : ''}
-        <div class="buttons"><button id="dCancel">Abbrechen</button><button id="dOk" class="primary">OK</button></div>
-        <div class="hint small">Tab/Enter: Vorschlag übernehmen · Strg+Leertaste: Vorschläge · Strg+Enter: OK · Esc: Abbrechen</div>
+        <div class="row colors">${escapeHtml(T('web.dlg.color'))} ${COLORS.map((c) => `<button class="swatch${c === color ? ' on' : ''}" data-c="${c}" style="background:#${c}" title="#${c}"></button>`).join('')}</div>
+        ${type !== 'root' ? `<div class="row"><label><input type="checkbox" id="dDisabled" ${el.disabled ? 'checked' : ''}> ${escapeHtml(T('web.dlg.disabled'))}</label></div>` : ''}
+        <div class="buttons"><button id="dCancel">${escapeHtml(T('web.dlg.cancel'))}</button><button id="dOk" class="primary">${escapeHtml(T('web.dlg.ok'))}</button></div>
+        <div class="hint small">${escapeHtml(T('web.dlg.keys'))}</div>
       </div>`;
     dialog.hidden = false;
     let chosen = color;
@@ -1110,20 +1106,15 @@
     // Turtleizer
     ['forward', 1], ['backward', 1], ['left', 1], ['right', 1], ['gotoXY', 2], ['gotoX', 1], ['gotoY', 1], ['penUp', 0], ['penDown', 0],
     ['hideTurtle', 0], ['showTurtle', 0], ['setPenColor', 3], ['setBackground', 3], ['clear', 0]];
-  // [Wort, Beschreibung, Leerzeichen anhängen, eher am Zeilenanfang]
+  // [Wort, Leerzeichen anhängen, eher am Zeilenanfang] – Beschreibung aus den Übersetzungen
   const KEYWORDS = [
-    ['INPUT', 'Eingabe', 1, 1], ['OUTPUT', 'Ausgabe', 1, 1], ['var', 'Deklaration  var x: int', 1, 1], ['const', 'Konstante', 1, 1],
-    ['for', 'Zählschleife  for i := 1 to n', 1, 1], ['foreach', 'Durchlaufschleife  foreach x in liste', 1, 1],
-    ['while', 'Kopfschleife', 1, 1], ['until', 'Fußschleife (Abbruchbedingung)', 1, 1],
-    ['leave', 'Schleife verlassen', 0, 1], ['return', 'Rückgabe', 1, 1], ['exit', 'Programm beenden', 1, 1],
-    ['continue', 'nächster Schleifendurchlauf', 0, 1], ['throw', 'Fehler auslösen', 1, 1],
-    ['to', 'for … to …', 1, 0], ['downto', 'for … downto …', 1, 0], ['by', 'Schrittweite', 1, 0], ['in', 'foreach … in …', 1, 0],
-    ['and', 'logisches Und', 1, 0], ['or', 'logisches Oder', 1, 0], ['not', 'logisches Nicht', 1, 0],
-    ['mod', 'Divisionsrest', 1, 0], ['true', 'wahr', 0, 0], ['false', 'falsch', 0, 0],
-    ['type', 'Typdefinition  type Punkt = record{x: int; y: int}', 1, 1], ['record', 'Record-Typ', 0, 0], ['enum', 'Aufzählungstyp', 0, 0],
-  ];
+    ['INPUT', 1, 1], ['OUTPUT', 1, 1], ['var', 1, 1], ['const', 1, 1], ['for', 1, 1], ['foreach', 1, 1], ['while', 1, 1], ['until', 1, 1],
+    ['leave', 0, 1], ['return', 1, 1], ['exit', 1, 1], ['continue', 0, 1], ['throw', 1, 1],
+    ['to', 1, 0], ['downto', 1, 0], ['by', 1, 0], ['in', 1, 0], ['and', 1, 0], ['or', 1, 0], ['not', 1, 0],
+    ['mod', 1, 0], ['true', 0, 0], ['false', 0, 0], ['type', 1, 1], ['record', 0, 0], ['enum', 0, 0],
+  ].map(([w, space, lead]) => [w, T(`web.kw.${w}`), space, lead]);
   const TYPE_WORDS = ['int', 'double', 'float', 'string', 'boolean', 'char'];
-  const KIND_LABEL = { var: 'Variable', func: 'Unterprogramm', builtin: 'Funktion', proc: 'Prozedur', kw: 'Schlüsselwort', type: 'Datentyp' };
+  const KIND_LABEL = Object.fromEntries(['var', 'func', 'builtin', 'proc', 'kw', 'type'].map((k) => [k, T(`web.ck.${k}`)]));
   const KIND_ICON = { var: 'x', func: 'ƒ', builtin: 'ƒ', proc: 'ƒ', kw: 'K', type: 'T' };
 
   /** Kandidaten: Variablen des aktuellen Diagramms, dann Unterprogramme, Standardfunktionen, Schlüsselwörter */
@@ -1135,9 +1126,9 @@
     for (const v of (symbols.roots && symbols.roots[ri]) || []) push({ name: v.name, kind: 'var', detail: v.type || '' });
     for (const f of symbols.funcs || []) push({ name: f.name, kind: 'func', detail: f.sig, call: true, params: f.params });
     // Datentypen vor gleichnamigen Funktionen: "in" → int, "int" → int()
-    for (const t of TYPE_WORDS) push({ name: t, kind: 'type', detail: 'Datentyp', space: true });
-    for (const [n, p] of BUILTINS) push({ name: n, kind: 'builtin', detail: TYPE_WORDS.includes(n) ? 'Umwandlung nach ' + n : n + '(…)', call: true, params: p });
-    for (const [n, p] of PROCEDURES) push({ name: n, kind: 'proc', detail: 'Prozedur ' + n + '(…)', call: true, params: p });
+    for (const t of TYPE_WORDS) push({ name: t, kind: 'type', detail: T('web.ck.type'), space: true });
+    for (const [n, p] of BUILTINS) push({ name: n, kind: 'builtin', detail: TYPE_WORDS.includes(n) ? T('web.ck.convert', n) : n + '(…)', call: true, params: p });
+    for (const [n, p] of PROCEDURES) push({ name: n, kind: 'proc', detail: T('web.ck.proc') + ' ' + n + '(…)', call: true, params: p });
     for (const [k, d, space, lead] of KEYWORDS) push({ name: k, kind: 'kw', detail: d, space: !!space, lead: !!lead });
     return items;
   }
@@ -1272,7 +1263,7 @@
 
     function draw() {
       box.innerHTML = list.map((it, i) => `<div class="ci${i === idx ? ' on' : ''}" data-i="${i}" role="option"><span class="ck ck-${it.kind}">${KIND_ICON[it.kind]}</span><b>${escapeHtml(it.name)}${it.call ? '()' : ''}</b><span class="cd">${escapeHtml(it.detail || KIND_LABEL[it.kind])}</span></div>`).join('') +
-        '<div class="cfoot">Tab / Enter: übernehmen · Esc: schließen</div>';
+        `<div class="cfoot">${escapeHtml(T('web.ck.foot'))}</div>`;
       box.hidden = false;
       const c = caretPos(ta);
       const w = box.offsetWidth, h = box.offsetHeight;
@@ -1354,7 +1345,7 @@
       ctx.drawImage(img, 0, 0, c.width, c.height);
       post({ type: 'pngData', id, dataUrl: c.toDataURL('image/png') });
     };
-    img.onerror = () => { status('PNG-Export fehlgeschlagen.'); post({ type: 'pngData', id, error: 'Das Bild konnte nicht erzeugt werden.' }); };
+    img.onerror = () => { status(T('web.png.failed')); post({ type: 'pngData', id, error: T('web.png.error') }); };
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
 

@@ -7,6 +7,7 @@
  */
 const { tokenize, joinTokens, matchClose, splitTop, findTop, isWrapped, OPEN, CLOSE } = require('../tokenizer');
 const { mk, sequencesOf } = require('../model');
+const { t } = require('../../i18n');
 const P = require('../pseudo');
 const { outputLine, inputLine, litContent, stripTrailingNewline, refine, addComment } = require('./common');
 
@@ -105,7 +106,7 @@ class ModernParser {
     if (this.globals.length) {
       const g = this.finish(this.globals);
       if (main) main.children.unshift(...g);
-      else { main = mk.root(this.opts.name || 'Hauptprogramm', 'program', g); this.roots.unshift(main); }
+      else { main = mk.root(this.opts.name || t('core.mainProgram'), 'program', g); this.roots.unshift(main); }
     }
     this.roots.sort((a, b) => (a.rootType === 'program' ? 0 : 1) - (b.rootType === 'program' ? 0 : 1));
     for (const r of this.roots) this.dropUnusedBuffers(r);
@@ -727,8 +728,8 @@ class ModernParser {
         catchBody = b;
       } else { this.p++; fin = this.body(end); }
     }
-    const el = mk.try(catchVar || 'fehler', body, catchBody || [], fin);
-    if (extra) addComment(el, `${extra} weitere catch-Zweige wurden nicht übernommen`);
+    const el = mk.try(catchVar || t('core.defErrorVar'), body, catchBody || [], fin);
+    if (extra) addComment(el, t('parse.moreCatch', extra));
     return [el];
   }
 

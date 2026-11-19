@@ -1,6 +1,10 @@
 'use strict';
 const vscode = require('vscode');
 const { renderSvg } = require('./core/render');
+const { t, allStrings, getLanguage } = require('./i18n');
+
+/** Text für ein HTML-Attribut */
+const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 function nonce() {
   let s = '';
@@ -16,20 +20,20 @@ function webviewHtml(webview, extensionUri, readonly) {
   const css = webview.asWebviewUri(vscode.Uri.joinPath(media, 'editor.css'));
   const n = nonce();
   return `<!DOCTYPE html>
-<html lang="de">
+<html lang="${getLanguage()}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: blob:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${n}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${css}">
-<title>Struktogramm</title>
+<title>${attr(t('ext.filterNsd'))}</title>
 </head>
-<body data-readonly="${readonly ? 1 : 0}">
-<div id="toolbar" role="toolbar" aria-label="Struktogramm-Werkzeuge"></div>
+<body data-readonly="${readonly ? 1 : 0}" data-l10n="${attr(JSON.stringify(allStrings()))}">
+<div id="toolbar" role="toolbar" aria-label="${attr(t('web.toolbarLabel'))}"></div>
 <div id="message" hidden></div>
 <div id="scroller"><div id="canvas"></div><div id="dropmark" hidden></div></div>
 <div id="execpanel" hidden>
-  <div class="exechead"><b>Ausführung</b> <span id="execstate"></span><span class="spacer"></span><button id="execClear" title="Ausgabe leeren">Leeren</button><button id="execClose" title="Schließen (beendet die Ausführung)">✕</button></div>
+  <div class="exechead"><b>${attr(t('web.exec.title'))}</b> <span id="execstate"></span><span class="spacer"></span><button id="execClear" title="${attr(t('web.exec.clear.title'))}">${attr(t('web.exec.clear'))}</button><button id="execClose" title="${attr(t('web.exec.close.title'))}" aria-label="${attr(t('web.exec.close.title'))}">✕</button></div>
   <div class="execbody">
     <div id="console"><div id="conout"></div><form id="conin" hidden><label id="conprompt" for="coninput"></label><input id="coninput" autocomplete="off" spellcheck="false"><button type="submit">OK</button></form></div>
     <div id="turtle" hidden title="Turtleizer"><svg id="turtlesvg" xmlns="http://www.w3.org/2000/svg"></svg></div>
@@ -52,16 +56,17 @@ function editorTheme() {
 }
 
 function diagramTheme() {
-  const t = vscode.workspace.getConfiguration('struktogramm').get('theme', 'auto');
-  return t === 'light' || t === 'dark' ? t : editorTheme();
+  const th = vscode.workspace.getConfiguration('struktogramm').get('theme', 'auto');
+  return th === 'light' || th === 'dark' ? th : editorTheme();
 }
 
 function settings() {
   const c = vscode.workspace.getConfiguration('struktogramm');
   return {
     theme: diagramTheme(),
-    trueLabel: c.get('trueLabel', 'ja'),
-    falseLabel: c.get('falseLabel', 'nein'),
+    // leer = Standard der Sprache (yes/no bzw. ja/nein)
+    trueLabel: c.get('trueLabel') || t('core.trueLabel'),
+    falseLabel: c.get('falseLabel') || t('core.falseLabel'),
     pretty: c.get('prettyOperators', true),
     highlight: c.get('highlightKeywords', true),
   };

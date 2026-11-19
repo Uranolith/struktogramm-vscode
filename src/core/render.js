@@ -55,7 +55,7 @@ function esc(s) {
 
 class Renderer {
   constructor(opts = {}) {
-    this.opts = { trueLabel: 'ja', falseLabel: 'nein', pretty: true, highlight: true, theme: 'light', ...opts };
+    this.opts = { trueLabel: require('../i18n').t('core.trueLabel'), falseLabel: require('../i18n').t('core.falseLabel'), pretty: true, highlight: true, theme: 'light', ...opts };
     this.themeName = this.opts.theme === 'dark' ? 'dark' : 'light';
     this.colors = THEMES[this.themeName];
     this.cache = new Map();
@@ -181,7 +181,7 @@ class Renderer {
 
   foreverText(el) {
     const t = (el.text || []).filter((l) => String(l).trim());
-    return t.length ? this.disp(t) : ['∞ (Endlosschleife)'];
+    return t.length ? this.disp(t) : [require('../i18n').t('render.endless')];
   }
 
   /* ---------------------------- Zeichnen ---------------------------- */

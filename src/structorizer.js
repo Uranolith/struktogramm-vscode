@@ -18,13 +18,15 @@ const { clone } = require('./core/model');
 const { modernize, toStructorizer, splitInstructions } = require('./core/style');
 const { parseSignature } = require('./core/pseudo');
 
+const { t } = require('./i18n');
+
 /** Structorizer-Generatoren (Name für -x, Anzeige, VS-Code-Sprache) */
 const GENERATORS = [
   ['Python', 'Python', 'python'], ['Java', 'Java', 'java'], ['C', 'C', 'c'], ['C++', 'C++', 'cpp'],
   ['C#', 'C#', 'csharp'], ['Javascript', 'JavaScript', 'javascript'], ['Pascal', 'Pascal', 'pascal'],
   ['Delphi', 'Delphi (Object Pascal)', 'pascal'], ['Oberon', 'Oberon', 'plaintext'], ['PHP', 'PHP', 'php'],
-  ['Perl', 'Perl', 'perl'], ['Basic', 'BASIC', 'vb'], ['BASH', 'Bash', 'shellscript'], ['KSH', 'Korn-Shell', 'shellscript'],
-  ['ARM', 'ARM-Assembler', 'plaintext'], ['StrucTeX', 'StrucTeX (LaTeX)', 'latex'], ['LaTeX', 'LaTeX (algorithmic)', 'latex'],
+  ['Perl', 'Perl', 'perl'], ['Basic', 'BASIC', 'vb'], ['BASH', 'Bash', 'shellscript'], ['KSH', 'Korn Shell', 'shellscript'],
+  ['ARM', 'ARM Assembler', 'plaintext'], ['StrucTeX', 'StrucTeX (LaTeX)', 'latex'], ['LaTeX', 'LaTeX (algorithmic)', 'latex'],
   ['Algorithm', 'LaTeX (algorithm)', 'latex'],
 ].map(([id, label, languageId]) => ({ id, label, languageId }));
 
@@ -33,7 +35,7 @@ const IMPORT_EXT = ['pas', 'dpr', 'pp', 'lpr', 'c', 'java', 'pde', 'cob', 'cbl',
 
 let output = null;
 function log(msg) {
-  if (!output) output = vscode.window.createOutputChannel('Struktogramm / Structorizer');
+  if (!output) output = vscode.window.createOutputChannel(t('str.outputChannel'));
   output.appendLine(msg);
 }
 
@@ -70,13 +72,13 @@ function get(url, binary) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { 'User-Agent': 'struktogramm-vscode', Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) { res.resume(); return resolve(get(res.headers.location, binary)); }
-      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode} für ${url}`)); }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(t('str.httpError', res.statusCode, url))); }
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve(Buffer.concat(chunks)));
       res.on('error', reject);
     });
-    req.setTimeout(120000, () => req.destroy(new Error('Zeitüberschreitung beim Download')));
+    req.setTimeout(120000, () => req.destroy(new Error(t('str.timeout'))));
     req.on('error', reject);
   });
 }
@@ -85,11 +87,11 @@ function get(url, binary) {
 function unzipEntry(buf, suffix) {
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
-  if (eocd < 0) throw new Error('Ungültige ZIP-Datei');
+  if (eocd < 0) throw new Error(t('str.badZip'));
   const count = buf.readUInt16LE(eocd + 10);
   let p = buf.readUInt32LE(eocd + 16);
   for (let k = 0; k < count; k++) {
-    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('Ungültiges ZIP-Verzeichnis');
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error(t('str.badZipDir'));
     const method = buf.readUInt16LE(p + 10);
     const csize = buf.readUInt32LE(p + 20);
     const nlen = buf.readUInt16LE(p + 28), xlen = buf.readUInt16LE(p + 30), clen = buf.readUInt16LE(p + 32);
@@ -107,15 +109,15 @@ function unzipEntry(buf, suffix) {
 
 async function download(context) {
   const dir = path.join(context.globalStorageUri.fsPath, 'structorizer');
-  return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Structorizer wird heruntergeladen …' }, async (progress) => {
+  return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('str.downloading') }, async (progress) => {
     progress.report({ message: 'suche aktuelle Version auf GitHub' });
     const rel = JSON.parse((await get('https://api.github.com/repos/fesch/Structorizer.Desktop/releases/latest')).toString('utf8'));
     const asset = (rel.assets || []).find((a) => /^structorizer_[\d.\-]+\.zip$/i.test(a.name));
-    if (!asset) throw new Error('Kein passendes Download-Paket im Release ' + rel.tag_name + ' gefunden.');
+    if (!asset) throw new Error(t('str.noAsset', rel.tag_name));
     progress.report({ message: `${asset.name} (${Math.round(asset.size / 1e6)} MB)` });
     const zip = await get(asset.browser_download_url, true);
     const jar = unzipEntry(zip, 'Structorizer.jar');
-    if (!jar) throw new Error('Structorizer.jar nicht im Paket gefunden.');
+    if (!jar) throw new Error(t('str.noJarInPackage'));
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'Structorizer.jar'), jar);
     const lic = unzipEntry(zip, 'license.txt');
@@ -143,10 +145,10 @@ async function ensure(context, interactive = true) {
   const v = await javaVersion();
   if (!v || v < 11) {
     if (interactive) {
-      const msg = v ? `Structorizer benötigt Java 11 oder neuer (gefunden: Java ${v}).` : 'Für Structorizer wird Java (Version 11 oder neuer) benötigt, wurde aber nicht gefunden.';
-      const c = await vscode.window.showErrorMessage(msg, 'Java herunterladen', 'Java-Pfad einstellen');
-      if (c === 'Java herunterladen') vscode.env.openExternal(vscode.Uri.parse('https://adoptium.net/'));
-      if (c === 'Java-Pfad einstellen') vscode.commands.executeCommand('workbench.action.openSettings', 'struktogramm.structorizer.javaPath');
+      const msg = v ? t('str.javaTooOld', v) : t('str.javaMissing');
+      const c = await vscode.window.showErrorMessage(msg, t('str.downloadJava'), t('str.setJavaPath'));
+      if (c === t('str.downloadJava')) vscode.env.openExternal(vscode.Uri.parse('https://adoptium.net/'));
+      if (c === t('str.setJavaPath')) vscode.commands.executeCommand('workbench.action.openSettings', 'struktogramm.structorizer.javaPath');
     }
     return null;
   }
@@ -154,18 +156,18 @@ async function ensure(context, interactive = true) {
   if (jar) return jar;
   if (!interactive) return null;
   const c = await vscode.window.showInformationMessage(
-    'Für diese Funktion wird das Original-Structorizer benötigt (Open Source, GPL-3.0, ca. 8 MB). Jetzt von GitHub herunterladen?',
-    { modal: true }, 'Herunterladen', 'Vorhandene Installation wählen …');
-  if (c === 'Herunterladen') {
-    try { jar = await download(context); } catch (e) { vscode.window.showErrorMessage('Download fehlgeschlagen: ' + e.message); return null; }
+    t('str.needed'),
+    { modal: true }, t('str.download'), t('str.chooseExisting'));
+  if (c === t('str.download')) {
+    try { jar = await download(context); } catch (e) { vscode.window.showErrorMessage(t('ext.downloadFailed', e.message)); return null; }
     return jar;
   }
-  if (c === 'Vorhandene Installation wählen …') {
-    const pick = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, openLabel: 'Structorizer wählen', filters: { 'Structorizer.jar oder Ordner': ['jar'] } });
+  if (c === t('str.chooseExisting')) {
+    const pick = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, openLabel: t('str.chooseStructorizer'), filters: { [t('str.jarOrFolder')]: ['jar'] } });
     if (!pick || !pick[0]) return null;
     await cfg().update('jarPath', pick[0].fsPath, vscode.ConfigurationTarget.Global);
     jar = findJar(context);
-    if (!jar) vscode.window.showErrorMessage('Dort wurde keine Structorizer.jar gefunden.');
+    if (!jar) vscode.window.showErrorMessage(t('str.noJarThere'));
     return jar;
   }
   return null;
@@ -203,10 +205,10 @@ async function exportCode(context, model, generatorId) {
     const outBase = files[mainIdx].replace(/\.nsd$/, '');
     const outDir = path.join(dir, 'out');
     fs.mkdirSync(outDir);
-    const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Structorizer erzeugt ${generatorId}-Code …` },
+    const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('str.generating', generatorId) },
       () => run(['-jar', jar, '-x', generatorId, '-f', '-e', 'UTF-8', ...extra, '-o', path.join(outDir, outBase + '.code'), ...files], dir));
     const out = fs.readdirSync(outDir)[0];
-    if (!out) throw new Error('Structorizer hat keinen Code erzeugt.' + (res.stderr ? '\n' + res.stderr.trim().split('\n').slice(-3).join('\n') : ''));
+    if (!out) throw new Error(t('str.noCode') + (res.stderr ? '\n' + res.stderr.trim().split('\n').slice(-3).join('\n') : ''));
     let code = fs.readFileSync(path.join(outDir, out), 'utf8');
     // doppelte Schnittmarken (Name der Ausgabedatei) entfernen; bei nur einem Diagramm alle
     const esc = outBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -235,12 +237,12 @@ async function importCode(context, srcText, fileName) {
     const ext = (/\.([^.]+)$/.exec(fileName) || [])[1] || 'c';
     const src = path.join(dir, `${base}.${ext}`);
     fs.writeFileSync(src, srcText, 'utf8');
-    const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Structorizer liest den Code ein …' },
+    const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('str.reading') },
       () => run(['-jar', jar, '-p', '-f', '-e', 'UTF-8', '-o', path.join(dir, base + '.nsd'), src], dir));
     const nsds = fs.readdirSync(dir).filter((f) => f.endsWith('.nsd'));
     if (!nsds.length) {
       const errLines = (res.stdout + '\n' + res.stderr).split(/\r?\n/).filter((l) => /error|fehler|exception|unexpected|line/i.test(l)).slice(0, 6);
-      throw new Error('Structorizer konnte den Code nicht einlesen.' + (errLines.length ? '\n' + errLines.join('\n') : ' Details im Ausgabefenster „Struktogramm / Structorizer“.'));
+      throw new Error(t('str.importFailed') + (errLines.length ? '\n' + errLines.join('\n') : t('str.seeOutput')));
     }
     nsds.sort((a, b) => (a === base + '.nsd' ? -1 : b === base + '.nsd' ? 1 : a.localeCompare(b)));
     const roots = [];
@@ -261,14 +263,14 @@ async function openInStructorizer(context, model, docPath) {
   const same = JSON.stringify(toStructorizer(clone(model))) === JSON.stringify(model);
   if (same && model.roots.length === 1 && docPath && fs.existsSync(docPath)) { args = [docPath]; cwd = path.dirname(docPath); }
   else {
-    if (!same) vscode.window.showInformationMessage('Structorizer öffnet eine Kopie (Zuweisungen in <- umgewandelt). Änderungen dort wirken sich nicht auf diese Datei aus.');
+    if (!same) vscode.window.showInformationMessage(t('str.opensCopy'));
     const dir = path.join(os.tmpdir(), 'struktogramm-structorizer-' + Date.now());
     fs.mkdirSync(dir, { recursive: true });
     args = writeRoots(model, dir).map((f) => path.join(dir, f));
     cwd = dir;
   }
   const child = cp.spawn(javaCmd(), ['-jar', jar, ...args], { cwd, detached: true, stdio: 'ignore', windowsHide: false });
-  child.on('error', (e) => vscode.window.showErrorMessage('Structorizer konnte nicht gestartet werden: ' + e.message));
+  child.on('error', (e) => vscode.window.showErrorMessage(t('str.startFailed', e.message)));
   child.unref();
 }
 

@@ -1,5 +1,19 @@
 # Änderungen
 
+## Unveröffentlicht
+- **Neues Struktogramm** anlegen: über *Datei → Neue Datei …*, das Explorer-Kontextmenü auf Ordnern, ein Symbol in
+  der Explorer-Leiste, das Menü ⋯ des Struktogramm-Editors und einen Knopf in dessen Werkzeugleiste. Statt eines
+  Speichern-Dialogs genügt ein Dateiname; die Datei landet im gewählten Ordner bzw. neben der aktiven Datei.
+- **Mehrsprachig:** Oberfläche, Meldungen, Befehle, Einstellungen und Kommentare im erzeugten Code auf Englisch und
+  Deutsch – passend zur Anzeigesprache von VS Code (Deutsch bei `de`, sonst Englisch).
+- Befehle nach VS-Code-Konvention benannt (Kategorie „Struktograf“, „...“ bei Befehlen mit Rückfrage), Symbol für
+  „Neues Struktogramm“ im Stil der VS-Code-Symbole.
+- Eigenes **Dateisymbol für `.nsd`** im Explorer (im Stil der Seti-Symbole, für helle und dunkle Themes);
+  `.nsd` ist eine eigene Sprache „Struktogramm (NSD)“, als Text geöffnet weiterhin mit XML-Hervorhebung.
+- Einfüge-Auswahl (Strg+Enter): die Liste scrollt zum gewählten Element und passt sich der Fensterhöhe an.
+- Ja/Nein-Beschriftung der Verzweigung folgt der Sprache (yes/no bzw. ja/nein), solange in den Einstellungen nichts
+  anderes eingetragen ist.
+
 ## 0.8.2
 - README für den Marketplace: Installation über *Erweiterungen* → *Struktograf*.
 - Änderungsliste (dieser Reiter) ergänzt.

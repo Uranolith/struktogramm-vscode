@@ -8,6 +8,7 @@
  */
 const P = require('./pseudo');
 const { splitTop, joinTokens, matchClose } = require('./tokenizer');
+const { t: tr } = require('../i18n');
 
 class ExecError extends Error {
   constructor(msg, path) { super(msg); this.path = path; }
@@ -15,7 +16,7 @@ class ExecError extends Error {
 class Signal { constructor(kind, value) { this.kind = kind; this.value = value; } }
 /** throw im Struktogramm: kann von einem TRY-Element abgefangen werden */
 class ThrowSignal extends ExecError {
-  constructor(value, path) { super('Ausnahme ausgelöst: ' + fmt(value), path); this.value = value; }
+  constructor(value, path) { super(tr('exec.thrown', fmt(value)), path); this.value = value; }
 }
 
 const lc = (t) => (t && t.t === 'id' ? t.v.toLowerCase() : null);
@@ -45,7 +46,7 @@ function parseExpr(text) {
     return ['and', 'or', 'xor', 'div', 'mod', 'in', 'shl', 'shr'].includes(l) ? l : null;
   };
   const expect = (v) => {
-    if (!toks[i] || toks[i].v !== v) throw new Error(`„${v}“ erwartet in: ${text}`);
+    if (!toks[i] || toks[i].v !== v) throw new Error(tr('exec.expected', v, text));
     i++;
   };
 
@@ -72,7 +73,7 @@ function parseExpr(text) {
 
   function unary() {
     const t = peek();
-    if (!t) throw new Error('Unvollständiger Ausdruck: ' + text);
+    if (!t) throw new Error(tr('exec.incomplete', text));
     const l = lc(t);
     if (l === 'not' || t.v === '!') { i++; return { k: 'not', a: expr(3) }; }
     if (t.v === '-' ) { i++; return { k: 'neg', a: unary() }; }
@@ -82,7 +83,7 @@ function parseExpr(text) {
 
   function primary() {
     const t = toks[i++];
-    if (!t) throw new Error('Unvollständiger Ausdruck: ' + text);
+    if (!t) throw new Error(tr('exec.incomplete', text));
     if (t.t === 'num') {
       const v = t.v.replace(/_/g, '').replace(/[lLfFdDuU]+$/, '');
       const isFloat = /[.eE]/.test(v) && !/^0[xX]/.test(v);
@@ -129,7 +130,7 @@ function parseExpr(text) {
       }
       return { k: 'id', name: t.v };
     }
-    throw new Error(`Unerwartetes Zeichen „${t.v}“ in: ${text}`);
+    throw new Error(tr('exec.unexpectedChar', t.v, text));
   }
 
   function postfix(node) {
@@ -158,7 +159,7 @@ function parseExpr(text) {
   }
 
   const e = expr(0);
-  if (i < toks.length) throw new Error(`Unerwartetes „${toks[i].v}“ in: ${text}`);
+  if (i < toks.length) throw new Error(tr('exec.unexpected', toks[i].v, text));
   return e;
 }
 
@@ -264,14 +265,14 @@ class Interpreter {
 
   fileHandle(no, mode, path) {
     const f = this.files[num(no) - 1];
-    if (!f || f.mode !== mode) throw new ExecError(`Datei Nr. ${fmt(no)} ist nicht ${mode === 'r' ? 'zum Lesen' : 'zum Schreiben'} geöffnet`, path);
+    if (!f || f.mode !== mode) throw new ExecError(tr(mode === 'r' ? 'exec.fileNotOpenRead' : 'exec.fileNotOpenWrite', fmt(no)), path);
     return f;
   }
 
   /** nächstes Wort (wie java.util.Scanner.next) */
   fileToken(f, path) {
     const m = /\S+/.exec(f.text.slice(f.pos));
-    if (!m) throw new ExecError('Dateiende erreicht – keine weiteren Daten', path);
+    if (!m) throw new ExecError(tr('exec.eofData'), path);
     f.pos += m.index + m[0].length;
     return m[0];
   }
@@ -289,7 +290,7 @@ class Interpreter {
     const rest = f.text.slice(f.pos);
     const ws = /^\s*/.exec(rest)[0].length;
     const c = rest[ws];
-    if (c === undefined) throw new ExecError('Dateiende erreicht – keine weiteren Daten', path);
+    if (c === undefined) throw new ExecError(tr('exec.eofData'), path);
     if (c === '"' || c === "'" || c === '{') {
       const endCh = c === '{' ? '}' : c;
       const end = rest.indexOf(endCh, ws + 1);
@@ -314,7 +315,7 @@ class Interpreter {
     const T = this.turtle || (this.turtle = { x: 0, y: 0, dir: 0, pen: true, color: '#000000', visible: true });
     if (!this.turtleOps) this.turtleOps = [];
     const ops = this.turtleOps;
-    const need = (n) => { if (a.length < n || a.slice(0, n).some((v) => typeof v !== 'number')) throw new ExecError(`${name}() braucht ${n} Zahl${n > 1 ? 'en' : ''}`, path); };
+    const need = (n) => { if (a.length < n || a.slice(0, n).some((v) => typeof v !== 'number')) throw new ExecError(tr('exec.needNumbers', name, n), path); };
     const moveTo = (nx, ny) => {
       if (T.pen) ops.push({ op: 'line', x1: T.x, y1: T.y, x2: nx, y2: ny, c: T.color });
       T.x = nx; T.y = ny;
@@ -367,24 +368,24 @@ class Interpreter {
       case 'fileread': return this.fileRead(this.fileHandle(args[0], 'r', path), path);
       case 'filereadint': {
         const t = this.fileToken(this.fileHandle(args[0], 'r', path), path);
-        if (!/^[+-]?\d+$/.test(t)) throw new ExecError(`„${t}“ ist keine ganze Zahl`, path);
+        if (!/^[+-]?\d+$/.test(t)) throw new ExecError(tr('exec.notInt', t), path);
         return parseInt(t, 10);
       }
       case 'filereaddouble': {
         const t = this.fileToken(this.fileHandle(args[0], 'r', path), path);
         const v = parseFloat(t);
-        if (isNaN(v)) throw new ExecError(`„${t}“ ist keine Zahl`, path);
+        if (isNaN(v)) throw new ExecError(tr('exec.notNumber', t), path);
         return new Float(v);
       }
       case 'filereadchar': {
         const f = this.fileHandle(args[0], 'r', path);
-        if (f.pos >= f.text.length) throw new ExecError('Dateiende erreicht – keine weiteren Zeichen', path);
+        if (f.pos >= f.text.length) throw new ExecError(tr('exec.eofChar'), path);
         if (f.text.startsWith('\r\n', f.pos)) { f.pos += 2; return '\n'; }
         return f.text[f.pos++];
       }
       case 'filereadline': {
         const f = this.fileHandle(args[0], 'r', path);
-        if (f.pos >= f.text.length) throw new ExecError('Dateiende erreicht – keine weitere Zeile', path);
+        if (f.pos >= f.text.length) throw new ExecError(tr('exec.eofLine'), path);
         const nl = f.text.indexOf('\n', f.pos);
         const end = nl < 0 ? f.text.length : nl;
         const line = f.text.slice(f.pos, end).replace(/\r$/, '');
@@ -405,24 +406,24 @@ class Interpreter {
   /** Startet ein Diagramm (Index) – liefert einen Generator */
   *run(rootIndex, args = []) {
     const r = this.doc.roots[rootIndex];
-    if (!r) throw new ExecError('Kein Diagramm zum Ausführen gefunden.');
+    if (!r) throw new ExecError(tr('exec.noDiagram'));
     const sig = P.parseSignature(r.text);
     if (r.rootType !== 'program' && sig.params.length && !args.length) {
       // Parameter für Unterprogramm abfragen
       for (const p of sig.params) {
-        const v = yield { type: 'input', prompt: `Parameter ${p.name}${p.type ? ' (' + p.type + ')' : ''}:`, name: p.name };
+        const v = yield { type: 'input', prompt: tr('exec.paramPrompt', p.name + (p.type ? ' (' + p.type + ')' : '')), name: p.name };
         args.push(this.convertInput(v, P.normType(p.type)));
       }
     }
     const result = yield* this.invoke(rootIndex, args, null);
-    if (r.rootType !== 'program' && result !== undefined) yield { type: 'output', text: `Ergebnis von ${sig.name}: ${fmt(result)}`, info: true };
+    if (r.rootType !== 'program' && result !== undefined) yield { type: 'output', text: tr('exec.resultOf', sig.name, fmt(result)), info: true };
     return result;
   }
 
   *invoke(rootIndex, args, callPath) {
     const r = this.doc.roots[rootIndex];
     const sig = P.parseSignature(r.text);
-    if (this.frames.length >= (this.opts.maxDepth || 800)) throw new ExecError('Zu viele verschachtelte Aufrufe (Endlos-Rekursion?)', callPath);
+    if (this.frames.length >= (this.opts.maxDepth || 800)) throw new ExecError(tr('exec.tooDeep'), callPath);
     const vars = new Map();
     const types = new Map();
     sig.params.forEach((p, k) => {
@@ -462,7 +463,7 @@ class Interpreter {
       if (cached === 'busy') continue; // gegenseitige Einbindung
       if (!cached) {
         const k = this.doc.roots.findIndex((x) => x.rootType === 'includable' && P.parseSignature(x.text).name === name);
-        if (k < 0) throw new ExecError(`Einzubindendes Diagramm „${name}“ nicht gefunden`);
+        if (k < 0) throw new ExecError(tr('exec.includeMissing', name));
         const inc = this.doc.roots[k];
         this.includeCache.set(name, 'busy');
         const f = { name, rootIndex: k, vars: new Map(), types: new Map(), sig: P.parseSignature(inc.text) };
@@ -596,12 +597,12 @@ class Interpreter {
   *forLoop(el, path) {
     const text = (el.text || []).join(' ');
     const f = P.parseForText(text);
-    if (!f) throw new ExecError(`Schleifenkopf nicht verstanden: „${text}“ (erwartet z.B. for i := 1 to 10)`, path);
+    if (!f) throw new ExecError(tr('exec.badLoopHead', text), path);
     if (f.kind === 'count') {
       let v = yield* this.eval(f.start, path);
       const end = yield* this.eval(f.end, path);
       const step = yield* this.eval(f.step || '1', path);
-      if (num(step) === 0) throw new ExecError('Schrittweite 0 in Zählschleife', path);
+      if (num(step) === 0) throw new ExecError(tr('exec.stepZero'), path);
       const fl = isFloat(v) || isFloat(step);
       for (;;) {
         const cur = num(v);
@@ -614,7 +615,7 @@ class Interpreter {
     } else {
       let coll = yield* this.eval(f.coll, path);
       if (typeof coll === 'string') coll = [...coll];
-      if (!Array.isArray(coll)) throw new ExecError(`„${f.coll}“ ist keine Liste/kein Array`, path);
+      if (!Array.isArray(coll)) throw new ExecError(tr('exec.notList', f.coll), path);
       const names = f.var.split(',').map((s) => s.trim());
       for (const item of coll.slice()) {
         if (names.length > 1 && Array.isArray(item)) names.forEach((n, k) => this.assignVar(n, item[k]));
@@ -660,7 +661,7 @@ class Interpreter {
         return;
       }
       case 'input': {
-        if (!c.vars.length) { yield { type: 'input', prompt: c.prompt ? unquote(c.prompt) : '(Weiter mit Enter)', name: '' }; return; }
+        if (!c.vars.length) { yield { type: 'input', prompt: c.prompt ? unquote(c.prompt) : tr('exec.continueEnter'), name: '' }; return; }
         for (let k = 0; k < c.vars.length; k++) {
           const name = c.vars[k];
           const prompt = k === 0 && c.prompt ? unquote(c.prompt) : `${name}:`;
@@ -710,7 +711,7 @@ class Interpreter {
     switch (name) {
       case 'randomize': return true;
       case 'inc': case 'dec': {
-        if (!args.length) throw new ExecError(`${toks[0].v}() braucht eine Variable`, path);
+        if (!args.length) throw new ExecError(tr('exec.needVariable', toks[0].v), path);
         const cur = yield* this.eval(args[0], path);
         const d = args[1] ? yield* this.eval(args[1], path) : 1;
         const v = name === 'inc' ? num(cur) + num(d) : num(cur) - num(d);
@@ -718,14 +719,14 @@ class Interpreter {
         return true;
       }
       case 'insert': {
-        if (args.length !== 3) throw new ExecError('insert(was, text, position) braucht drei Argumente', path);
+        if (args.length !== 3) throw new ExecError(tr('exec.insertArgs'), path);
         const vals = [];
         for (const a of args) vals.push(yield* this.eval(a, path));
         yield* this.assignTo(args[1], this.builtin('insert', vals, path), path);
         return true;
       }
       case 'delete': {
-        if (args.length !== 3) throw new ExecError('delete(text, position, anzahl) braucht drei Argumente', path);
+        if (args.length !== 3) throw new ExecError(tr('exec.deleteArgs'), path);
         const vals = [];
         for (const a of args) vals.push(yield* this.eval(a, path));
         yield* this.assignTo(args[0], this.builtin('delete', vals, path), path);
@@ -766,8 +767,8 @@ class Interpreter {
 
   convertInput(raw, t) {
     const s = raw == null ? '' : String(raw);
-    if (t === 'int') { const n = parseInt(s, 10); if (isNaN(n)) throw new ExecError(`„${s}“ ist keine ganze Zahl`); return n; }
-    if (t === 'double') { const n = parseFloat(s.replace(',', '.')); if (isNaN(n)) throw new ExecError(`„${s}“ ist keine Zahl`); return new Float(n); }
+    if (t === 'int') { const n = parseInt(s, 10); if (isNaN(n)) throw new ExecError(tr('exec.notInt', s)); return n; }
+    if (t === 'double') { const n = parseFloat(s.replace(',', '.')); if (isNaN(n)) throw new ExecError(tr('exec.notNumber', s)); return new Float(n); }
     if (t === 'boolean') return /^(true|wahr|ja|1)$/i.test(s.trim());
     if (t === 'string' || t === 'char') return s;
     // ohne Typ: wie Structorizer – Zahl, wenn es wie eine Zahl aussieht
@@ -798,8 +799,8 @@ class Interpreter {
     if (node.k === 'index') {
       const container = yield* this.evalNode(node.a, path);
       const idx = num(yield* this.evalNode(node.i, path));
-      if (!Array.isArray(container)) throw new ExecError(`„${joinTokensSafe(target)}“: kein Array`, path);
-      if (idx < 0) throw new ExecError(`Index ${idx} ist negativ`, path);
+      if (!Array.isArray(container)) throw new ExecError(tr('exec.notArrayTarget', joinTokensSafe(target)), path);
+      if (idx < 0) throw new ExecError(tr('exec.negIndex', idx), path);
       while (container.length < idx) container.push(null);
       const base = rootName(node);
       const t = base ? this.frame.types.get(base) : null;
@@ -810,7 +811,7 @@ class Interpreter {
       const obj = yield* this.evalNode(node.a, path);
       if (obj && typeof obj === 'object' && !Array.isArray(obj) && !(obj instanceof Float)) { obj[node.name] = v; return; }
     }
-    throw new ExecError(`Zuweisung an „${target}“ nicht möglich`, path);
+    throw new ExecError(tr('exec.cannotAssign', target), path);
   }
 
   /* ---------------------------- Auswertung ---------------------------- */
@@ -846,7 +847,7 @@ class Interpreter {
           const sub = this.findSub(n.name, 0);
           if (sub) return yield* this.callSub(sub, [], path);
           if (/^(pi)$/i.test(n.name)) return new Float(Math.PI);
-          throw new ExecError(`Variable „${n.name}“ hat noch keinen Wert`, path);
+          throw new ExecError(tr('exec.noValue', n.name), path);
         }
         return v;
       }
@@ -857,9 +858,9 @@ class Interpreter {
       case 'index': {
         const a = yield* this.evalNode(n.a, path);
         const i = num(yield* this.evalNode(n.i, path));
-        if (typeof a === 'string') { if (i < 0 || i >= a.length) throw new ExecError(`Index ${i} außerhalb des Textes (Länge ${a.length})`, path); return a[i]; }
-        if (!Array.isArray(a)) throw new ExecError('Indexzugriff auf etwas, das kein Array ist', path);
-        if (i < 0 || i >= a.length) throw new ExecError(`Index ${i} außerhalb des Arrays (Länge ${a.length})`, path);
+        if (typeof a === 'string') { if (i < 0 || i >= a.length) throw new ExecError(tr('exec.indexText', i, a.length), path); return a[i]; }
+        if (!Array.isArray(a)) throw new ExecError(tr('exec.indexNotArray'), path);
+        if (i < 0 || i >= a.length) throw new ExecError(tr('exec.indexArray', i, a.length), path);
         return a[i];
       }
       case 'member': {
@@ -867,10 +868,10 @@ class Interpreter {
         const m = n.name.toLowerCase();
         if ((m === 'length' || m === 'size') && (typeof a === 'string' || Array.isArray(a))) return a.length;
         if (a && typeof a === 'object' && !Array.isArray(a) && n.name in a) return a[n.name];
-        throw new ExecError(`Unbekanntes Attribut „${n.name}“`, path);
+        throw new ExecError(tr('exec.unknownAttr', n.name), path);
       }
       case 'call': return yield* this.call(n, path);
-      default: throw new ExecError('Unbekannter Ausdruck', path);
+      default: throw new ExecError(tr('exec.unknownExpr'), path);
     }
   }
 
@@ -883,7 +884,7 @@ class Interpreter {
     const a = num(A), b = num(B);
     const fl = isFloat(A) || isFloat(B);
     const needNums = () => {
-      if (typeof a !== 'number' || typeof b !== 'number') throw new ExecError(`Rechnen mit „${fmt(A, true)}“ und „${fmt(B, true)}“ nicht möglich (${op})`, path);
+      if (typeof a !== 'number' || typeof b !== 'number') throw new ExecError(tr('exec.cannotCompute', fmt(A, true), fmt(B, true), op), path);
     };
     switch (op) {
       case 'xor': return truthy(A) !== truthy(B);
@@ -904,16 +905,16 @@ class Interpreter {
         needNums(); return mkNum(a * b, fl);
       case '/':
         needNums();
-        if (b === 0 && !fl) throw new ExecError('Division durch 0', path);
+        if (b === 0 && !fl) throw new ExecError(tr('exec.divZero'), path);
         if (!fl && Number.isInteger(a) && Number.isInteger(b)) return Math.trunc(a / b);
         return new Float(a / b);
       case 'div': case '//':
         needNums();
-        if (b === 0) throw new ExecError('Division durch 0', path);
+        if (b === 0) throw new ExecError(tr('exec.divZero'), path);
         return op === '//' ? Math.floor(a / b) : Math.trunc(a / b);
       case '%': case 'mod':
         needNums();
-        if (b === 0) throw new ExecError('Division durch 0 (mod)', path);
+        if (b === 0) throw new ExecError(tr('exec.divZeroMod'), path);
         return mkNum(a % b, fl);
       case '**': needNums(); return mkNum(Math.pow(a, b), fl || b < 0);
       case '&': return a & b;
@@ -921,7 +922,7 @@ class Interpreter {
       case '^': return a ^ b;
       case '<<': case 'shl': return a << b;
       case '>>': case 'shr': return a >> b;
-      default: throw new ExecError('Unbekannter Operator ' + op, path);
+      default: throw new ExecError(tr('exec.unknownOp', op), path);
     }
   }
 
@@ -945,7 +946,7 @@ class Interpreter {
       for (const a of n.args) args.push(num(yield* this.evalNode(a, path)));
       return this.method(obj, n.fn.name, args, path);
     }
-    if (n.fn.k !== 'id') throw new ExecError('Ungültiger Aufruf', path);
+    if (n.fn.k !== 'id') throw new ExecError(tr('exec.badCall'), path);
     const name = n.fn.name;
     const sub = this.findSub(name, n.args.length);
     const args = [];
@@ -983,7 +984,7 @@ class Interpreter {
         default: break;
       }
     }
-    throw new ExecError(`Unbekannte Methode „${name}“`, path);
+    throw new ExecError(tr('exec.unknownMethod', name), path);
   }
 
   builtin(name, args, path) {
@@ -1021,7 +1022,7 @@ class Interpreter {
       case 'copyarray': return Array.isArray(args[0]) ? args[0].slice() : args[0];
       case 'copyrecord': return isRecord(args[0]) ? makeRecord(args[0][REC_TYPE], Object.entries(args[0])) : args[0];
       case 'randomize': return null;
-      case 'sqrt': if (a[0] < 0) throw new ExecError('Wurzel aus negativer Zahl', path); return f(Math.sqrt(a[0]));
+      case 'sqrt': if (a[0] < 0) throw new ExecError(tr('exec.sqrtNeg'), path); return f(Math.sqrt(a[0]));
       case 'abs': return mkNum(Math.abs(a[0]), isFloat(args[0]));
       case 'pow': case 'power': return f(Math.pow(a[0], a[1]));
       case 'exp': return f(Math.exp(a[0]));
@@ -1033,12 +1034,12 @@ class Interpreter {
       case 'ceil': return f(Math.ceil(a[0]));
       case 'round': return Math.round(a[0]);
       case 'trunc': case 'int': {
-        if (typeof a[0] === 'string') { const n = parseInt(a[0], 10); if (isNaN(n)) throw new ExecError(`„${a[0]}“ ist keine ganze Zahl`, path); return n; }
+        if (typeof a[0] === 'string') { const n = parseInt(a[0], 10); if (isNaN(n)) throw new ExecError(tr('exec.notInt', a[0]), path); return n; }
         return Math.trunc(a[0]);
       }
       case 'float': case 'double': case 'real': {
         const n = typeof a[0] === 'string' ? parseFloat(a[0].replace(',', '.')) : a[0];
-        if (isNaN(n)) throw new ExecError(`„${a[0]}“ ist keine Zahl`, path);
+        if (isNaN(n)) throw new ExecError(tr('exec.notNumber', a[0]), path);
         return f(n);
       }
       case 'str': case 'tostring': case 'inttostr': case 'floattostr': return fmt(args[0]);
@@ -1062,9 +1063,9 @@ class Interpreter {
       case 'sum': return (a[0] || []).reduce((x, y) => x + num(y), 0);
       case 'odd': return a[0] % 2 !== 0;
       case 'sqr': return mkNum(a[0] * a[0], isFloat(args[0]));
-      case 'inc': case 'dec': throw new ExecError(`${name}() ist eine Prozedur und muss allein in einer Zeile stehen, z.B. inc(x)`, path);
-      case 'print': case 'println': throw new ExecError('Für Ausgaben bitte OUTPUT verwenden', path);
-      default: throw new ExecError(`Unbekannte Funktion „${name}“ – ist das Unterprogramm als eigenes Diagramm angelegt?`, path);
+      case 'inc': case 'dec': throw new ExecError(tr('exec.procLine', name), path);
+      case 'print': case 'println': throw new ExecError(tr('exec.useOutput'), path);
+      default: throw new ExecError(tr('exec.unknownFunc', name), path);
     }
   }
 

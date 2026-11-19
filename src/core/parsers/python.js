@@ -1,6 +1,7 @@
 'use strict';
 /** Python -> Struktogramm-Modell */
 const { tokenize, joinTokens, matchClose, splitTop, findTop, isWrapped } = require('../tokenizer');
+const { t } = require('../../i18n');
 const { mk } = require('../model');
 const { addConst } = require('../pseudo');
 const { outputLine, inputLine, stripTrailingNewline, refine, addComment } = require('./common');
@@ -137,7 +138,7 @@ class PyParser {
       mainRoot.rootType = 'program';
       mainRoot.text = ['main'];
     } else if (top.length || !this.roots.length) {
-      this.roots.unshift(mk.root(this.opts.name || 'Hauptprogramm', 'program', top));
+      this.roots.unshift(mk.root(this.opts.name || t('core.mainProgram'), 'program', top));
     }
     this.roots.sort((a, b) => (a.rootType === 'program' ? 0 : 1) - (b.rootType === 'program' ? 0 : 1));
     return { roots: this.roots };
@@ -181,13 +182,13 @@ class PyParser {
               if (nd.kw === 'except') {
                 if (catchBody) { extraExcept++; continue; }
                 const m = /\bas\s+([\p{L}_][\p{L}\p{N}_]*)/u.exec(nd.text || '');
-                catchVar = m ? m[1] : 'fehler';
+                catchVar = m ? m[1] : t('core.defErrorVar');
                 catchBody = this.suite(nd.children);
               } else if (nd.kw === 'else') body.push(...this.suite(nd.children));
               else fin = this.suite(nd.children);
             }
-            const el = mk.try(catchVar || 'fehler', body, catchBody || [], fin);
-            if (extraExcept) addComment(el, `${extraExcept} weitere except-Zweige wurden nicht übernommen`);
+            const el = mk.try(catchVar || t('core.defErrorVar'), body, catchBody || [], fin);
+            if (extraExcept) addComment(el, t('parse.moreExcept', extraExcept));
             out.push(el);
             continue;
           }

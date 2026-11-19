@@ -21,6 +21,10 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
 **Deinstallieren** oder mit `code --uninstall-extension Uranolith.struktogramm`.
 
 ## Funktionen
+- **Neues Struktogramm**: *Datei → Neue Datei... → Neues Struktogramm...*, Rechtsklick auf einen Ordner im Explorer,
+  das Symbol oben in der Explorer-Leiste oder der Knopf *+ Neues Struktogramm* im Struktogramm-Editor.
+  Nach Eingabe des Namens öffnet sich die neue `.nsd`-Datei mit einem leeren Hauptprogramm.
+- **Sprache**: Oberfläche auf Englisch oder Deutsch, je nach Anzeigesprache von VS Code (*Configure Display Language*).
 - **Code → Struktogramm**: Python, Java, C, C++, C#, JavaScript, TypeScript, Kotlin, Rust
   (Rechtsklick im Editor → *Struktogramm aus Code erzeugen*; mit Markierung nur der markierte Teil).
   Jede Funktion wird ein eigenes Diagramm, `main` bzw. Code auf oberster Ebene wird das Hauptprogramm.
@@ -186,3 +190,5 @@ Rust-Code werden Zeichenketten und Arrays bei Funktionsaufrufen mit `.clone()` �
 Diese Extension steht unter der MIT-Lizenz. Structorizer (© Bob Fisch, Kay Gürtzig u.a.) ist ein
 eigenständiges Programm unter GPL-3.0 (https://github.com/fesch/Structorizer.Desktop); es wird nicht
 mitgeliefert, sondern nur auf Wunsch heruntergeladen und als separates Programm aufgerufen.
+Das Symbol „Neues Struktogramm“ (`media/struktograf-icons.woff`) übernimmt den Kreis mit Plus aus den
+[Codicons](https://github.com/microsoft/vscode-codicons) von Microsoft (CC BY 4.0); erzeugt mit `docs/build-icon-font.py`.

@@ -6,6 +6,7 @@
  */
 const { mk, clone } = require('./model');
 const { normalize } = require('./style');
+const { t } = require('../i18n');
 
 /* ------------------------------ XML-Parser ------------------------------ */
 function decodeEntities(s) {
@@ -46,7 +47,7 @@ function parseXml(text) {
       j = attrRe.lastIndex;
     }
     const gt = text.indexOf('>', j);
-    if (gt < 0) throw new Error('Ungültiges XML: Tag nicht geschlossen');
+    if (gt < 0) throw new Error(t('nsd.unclosed'));
     const selfClose = text[gt - 1] === '/';
     stack[stack.length - 1].children.push(el);
     if (!selfClose) stack.push(el);
@@ -133,14 +134,14 @@ function readElement(x) {
     case 'while': return [common(x, mk.while(text, readSeq(child(x, 'qWhile'))))];
     case 'repeat': return [common(x, mk.repeat(text, readSeq(child(x, 'qRepeat'))))];
     case 'forever': return [common(x, mk.forever(readSeq(child(x, 'qForever'))))];
-    case 'try': return [common(x, mk.try(text.length && text.some((l) => l.trim()) ? text : ['fehler'], readSeq(child(x, 'qTry')), readSeq(child(x, 'qCatch')), readSeq(child(x, 'qFinally'))))];
+    case 'try': return [common(x, mk.try(text.length && text.some((l) => l.trim()) ? text : [t('core.defErrorVar')], readSeq(child(x, 'qTry')), readSeq(child(x, 'qCatch')), readSeq(child(x, 'qFinally'))))];
     case 'parallel': {
       let paras = x.children.filter((c) => c.name === 'qPara');
       if (paras.length === 1 && paras[0].children.every((c) => c.name === 'qPara')) paras = paras[0].children;
       return [common(x, mk.parallel(paras.map(readSeq)))];
     }
     default:
-      return [mk.instruction(`?? unbekanntes Element <${x.name}> ??`)];
+      return [mk.instruction(t('nsd.unknownEl', x.name))];
   }
 }
 
@@ -162,7 +163,7 @@ function fromNsd(text) {
   if (!text || !text.trim()) return { roots: [] };
   const doc = parseXml(text);
   const top = doc.children.find((c) => c.name === 'root' || c.name === 'roots');
-  if (!top) throw new Error('Keine Struktogramm-Datei: <root> fehlt');
+  if (!top) throw new Error(t('nsd.noRoot'));
   // immer Structorizer-Schreibweise (x := 5, if x = 0) – auch für Dateien älterer Versionen
   if (top.name === 'root') return normalize({ roots: [readRoot(top)] });
   return normalize({ roots: top.children.filter((c) => c.name === 'root').map(readRoot) });
@@ -220,7 +221,7 @@ function isoNow() {
 function writeRoot(r, ind, withNs) {
   const ns = withNs ? ' xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by"' : '';
   const m = r.meta || {};
-  const meta = ` author="${escAttr(m.author || '')}" created="${escAttr(m.created || isoNow())}" changedby="" changed="${isoNow()}" origin="Struktogramm-Editor (VS Code)"`;
+  const meta = ` author="${escAttr(m.author || '')}" created="${escAttr(m.created || isoNow())}" changedby="" changed="${isoNow()}" origin="Struktograf (VS Code)"`;
   const inc = r.includeList && r.includeList.length ? ` includeList="${escAttr(r.includeList.join(','))}"` : '';
   return `${ind}<root${ns}${meta} text="${escAttr(toCommaText(r.text || ['']))}" comment="${escAttr(toCommaText(r.comment && r.comment.length ? r.comment : ['']))}" color="${r.color || 'ffffff'}" type="${r.rootType || 'program'}"${inc} style="nice">\n${ind}\t<children>\n${writeSeq(r.children || [], ind + '\t\t')}${ind}\t</children>\n${ind}</root>\n`;
 }

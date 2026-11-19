@@ -3,6 +3,7 @@
  * Struktogramm-Modell -> Quelltext.
  */
 const P = require('./pseudo');
+const { t: tr } = require('../i18n');
 const { walk } = require('./model');
 const { joinTokens, findTop, OPEN, CLOSE } = require('./tokenizer');
 
@@ -412,7 +413,7 @@ class BaseGen {
       case 'rust': return [ind + `break '${label.toLowerCase()};`];
       case 'c': case 'cpp': case 'csharp': case 'pascal': return [ind + `goto ${label};`];
       case 'python': return [ind + `raise _Leave${label}()`];
-      default: return [ind + this.comment(`leave ${count}: ${count} Schleifen verlassen – bitte von Hand umsetzen`), ...this.stmt({ kind: 'leave' }, ind)];
+      default: return [ind + this.comment(tr('gen.leaveN', count)), ...this.stmt({ kind: 'leave' }, ind)];
     }
   }
 
@@ -444,7 +445,7 @@ class BaseGen {
 
   elInner(el, ind) {
     const out = this.elComments(el, ind);
-    if (el.disabled) { out.push(ind + this.comment('(deaktiviert) ' + linesOf(el).join(' | '))); return out; }
+    if (el.disabled) { out.push(ind + this.comment(tr('gen.disabled', linesOf(el).join(' | ')))); return out; }
     switch (el.type) {
       case 'instruction': case 'call': case 'jump': {
         const lines = linesOf(el);
@@ -467,10 +468,10 @@ class BaseGen {
       case 'repeat': out.push(...this.repeatEl(this.cond(el.text, ['until', 'bis', 'solange']), el.body, ind)); break;
       case 'forever': out.push(...this.whileEl('true', el.body, ind)); break;
       case 'parallel':
-        out.push(ind + this.comment('Parallelverarbeitung (hier nacheinander ausgeführt)'));
-        el.branches.forEach((b, i) => { out.push(ind + this.comment(`Zweig ${i + 1}`)); out.push(...this.seq(b, ind)); });
+        out.push(ind + this.comment(tr('gen.parallel')));
+        el.branches.forEach((b, i) => { out.push(ind + this.comment(tr('gen.branch', i + 1))); out.push(...this.seq(b, ind)); });
         break;
-      default: out.push(ind + this.comment('Unbekanntes Element: ' + el.type));
+      default: out.push(ind + this.comment(tr('gen.unknownEl', el.type)));
     }
     return out;
   }
@@ -498,11 +499,11 @@ class BaseGen {
   }
 
   /** Name der Fehlervariable eines TRY-Elements */
-  catchVar(el) { return String((el.text || [])[0] || '').trim() || 'fehler'; }
+  catchVar(el) { return String((el.text || [])[0] || '').trim() || tr('core.defErrorVar'); }
 
   /** TRY ohne Ausnahmen in der Zielsprache (C, Rust): try- und finally-Teil nacheinander */
   tryEl(el, ind) {
-    const out = [ind + this.comment(`try – Fehlerbehandlung (catch ${this.catchVar(el)}) gibt es in dieser Sprache nicht`)];
+    const out = [ind + this.comment(tr('gen.noTry', this.catchVar(el)))];
     out.push(...this.seq(el.qTry, ind));
     if (el.qFinally.length) { out.push(ind + this.comment('finally')); out.push(...this.seq(el.qFinally, ind)); }
     return out;
@@ -855,7 +856,7 @@ class CGen extends BaseGen {
     const out = [];
     const body = this.seq(el.body, ind + this.I);
     if (!f) {
-      out.push(ind + this.comment(`TODO: Schleife "${text}" bitte manuell übersetzen`));
+      out.push(ind + this.comment(tr('gen.todoLoop', text)));
       out.push(ind + 'while (true) {', ...body, ind + this.I + 'break;', ind + '}');
       return out;
     }
@@ -885,7 +886,7 @@ class CGen extends BaseGen {
         case 'cpp': out.push(ind + `for (auto ${v} : ${coll}) {`); break;
         case 'javascript': out.push(ind + `for (const ${v} of ${coll}) {`); break;
         default:
-          out.push(ind + this.comment(`foreach ${v} in ${f.coll}: Länge des Arrays ggf. anpassen`));
+          out.push(ind + this.comment(tr('gen.foreachC', v, f.coll)));
           out.push(ind + `for (int _i = 0; _i < (int)(sizeof(${coll}) / sizeof(${coll}[0])); _i++) {`);
           out.push(ind + this.I + `${t ? this.typeName(t) : 'int'} ${v} = ${coll}[_i];`);
       }
@@ -919,7 +920,7 @@ class CGen extends BaseGen {
     if (!wasDeclared) this.cur.declared.delete(v);
     if (el.qFinally.length && L !== 'cpp') out.push(ind + '} finally {', ...this.seq(el.qFinally, ind + I));
     out.push(ind + '}');
-    if (el.qFinally.length && L === 'cpp') out.push(ind + this.comment('finally (C++ hat kein finally)'), ...this.seq(el.qFinally, ind));
+    if (el.qFinally.length && L === 'cpp') out.push(ind + this.comment(tr('gen.cppFinally')), ...this.seq(el.qFinally, ind));
     return out;
   }
 
@@ -941,7 +942,7 @@ class CGen extends BaseGen {
     const range = '    size_t ls = strlen(s); size_t k = i < 1 ? 0 : (size_t) (i - 1) > ls ? ls : (size_t) (i - 1);';
     if (N.has('cthrow')) {
       out.push('static jmp_buf* _try_env = NULL;', 'static const char* _try_msg = "";',
-        '/* throw: zum nächsten try springen oder Programm beenden */',
+        tr('gen.cThrow'),
         'void _throw(const char* msg) {', '    if (_try_env) { _try_msg = msg; longjmp(*_try_env, 1); }', '    fprintf(stderr, "%s\\n", msg);', '    exit(1);', '}');
     }
     if (N.has('strupper') || N.has('strlower')) {
@@ -1060,7 +1061,7 @@ class CGen extends BaseGen {
     for (const r of others) gen.push(this.routine(r));
     const mainName = mainRoot ? this.sigs.get(mainRoot).name : 'Programm';
     const out = [];
-    const title = this.comment(`Erzeugt aus Struktogramm "${mainRoot ? mainRoot.text.join(' ') : (roots[0] ? roots[0].text.join(' ') : '')}"`);
+    const title = this.comment(tr('gen.generated', mainRoot ? mainRoot.text.join(' ') : (roots[0] ? roots[0].text.join(' ') : '')));
     const td = this.typeDefs(L === 'java' || L === 'csharp' ? this.I : '');
     const helpers = this.cppHelpers();
     if (L === 'java') {
@@ -1078,7 +1079,7 @@ class CGen extends BaseGen {
       out.push('}');
     } else if (L === 'javascript') {
       out.push(title);
-      if (this.needs.has('prompt')) out.push('// Eingabe im Terminal: npm install prompt-sync', 'const prompt = require("prompt-sync")();');
+      if (this.needs.has('prompt')) out.push(tr('gen.jsPrompt'), 'const prompt = require("prompt-sync")();');
       out.push('', ...td);
       const subs = gen.filter((g) => !g.isMain);
       const main = gen.find((g) => g.isMain);
@@ -1229,7 +1230,7 @@ class PyGen extends BaseGen {
   forEl(el, ind) {
     const text = linesOf(el).join(' ');
     const f = P.parseForText(text);
-    if (!f) return [ind + this.comment(`TODO: Schleife "${text}" bitte manuell übersetzen`), ind + 'while True:', ...this.block(el.body, ind + this.I), ind + this.I + 'break'];
+    if (!f) return [ind + this.comment(tr('gen.todoLoop', text)), ind + 'while True:', ...this.block(el.body, ind + this.I), ind + this.I + 'break'];
     if (f.kind === 'each') return [ind + `for ${f.var} in ${this.x(f.coll)}:`, ...this.block(el.body, ind + this.I)];
     const step = f.step.replace(/\s+/g, '');
     const neg = step.startsWith('-');
@@ -1289,7 +1290,7 @@ class PyGen extends BaseGen {
       this.cur = this.analyze(r, { params: [] });
       this.curIsMain = true;
       const lines = [];
-      lines.push(this.comment(`Hauptprogramm: ${r.text.join(' ')}`));
+      lines.push(this.comment(tr('gen.pyMain', r.text.join(' '))));
       (r.comment || []).filter((s) => s.trim()).forEach((s) => lines.push(this.comment(s)));
       lines.push(...this.seq(r.children, ''));
       mainParts.push(lines);
@@ -1408,7 +1409,7 @@ class PasGen extends BaseGen {
   forEl(el, ind) {
     const text = linesOf(el).join(' ');
     const f = P.parseForText(text);
-    if (!f) return [ind + this.comment(`TODO: Schleife "${text}" bitte manuell übersetzen`), ...this.beginEnd(el.body, ind)];
+    if (!f) return [ind + this.comment(tr('gen.todoLoop', text)), ...this.beginEnd(el.body, ind)];
     if (f.kind === 'each') return [ind + `for ${f.var} in ${this.x(f.coll)} do`, ...this.beginEnd(el.body, ind)];
     const step = f.step.replace(/\s+/g, '');
     const v = this.x(f.var);
@@ -1694,7 +1695,7 @@ class KtGen extends CGen {
     const text = linesOf(el).join(' ');
     const f = P.parseForText(text);
     const body = this.seq(el.body, ind + this.I);
-    if (!f) return [ind + this.comment(`TODO: Schleife "${text}" bitte manuell übersetzen`), ind + 'while (true) {', ...body, ind + this.I + 'break', ind + '}'];
+    if (!f) return [ind + this.comment(tr('gen.todoLoop', text)), ind + 'while (true) {', ...body, ind + this.I + 'break', ind + '}'];
     if (f.kind === 'each') return [ind + `for (${f.var} in ${this.x(f.coll)}) {`, ...body, ind + '}'];
     const step = f.step.replace(/\s+/g, '');
     const neg = step.startsWith('-');
@@ -1759,7 +1760,7 @@ class KtGen extends CGen {
     const gen = [];
     if (mainRoot) gen.push(this.routine(mainRoot));
     for (const r of roots) if (r !== mainRoot) gen.push(this.routine(r));
-    const out = [this.comment(`Erzeugt aus Struktogramm "${(mainRoot || roots[0]).text.join(' ')}"`)];
+    const out = [this.comment(tr('gen.generated', (mainRoot || roots[0]).text.join(' ')))];
     if (this.needs.has('exit')) out.push('import kotlin.system.exitProcess');
     out.push('', ...this.typeDefs());
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
@@ -1955,7 +1956,7 @@ class RsGen extends BaseGen {
     const text = linesOf(el).join(' ');
     const f = P.parseForText(text);
     const body = this.seq(el.body, ind + this.I);
-    if (!f) return [ind + this.comment(`TODO: Schleife "${text}" bitte manuell übersetzen`), ind + 'loop {', ...body, ind + this.I + 'break;', ind + '}'];
+    if (!f) return [ind + this.comment(tr('gen.todoLoop', text)), ind + 'loop {', ...body, ind + this.I + 'break;', ind + '}'];
     if (f.kind === 'each') {
       const ct = P.normType(this.exprType(f.coll));
       const c = isArrayLit(f.coll) ? this.val(null, f.coll) : this.x(f.coll);
@@ -2020,7 +2021,7 @@ class RsGen extends BaseGen {
     if (mainRoot) gen.push(this.routine(mainRoot));
     for (const r of roots) if (r !== mainRoot) gen.push(this.routine(r));
     const out = [
-      this.comment(`Erzeugt aus Struktogramm "${(mainRoot || roots[0]).text.join(' ')}"`),
+      this.comment(tr('gen.generated', (mainRoot || roots[0]).text.join(' '))),
       '#![allow(unused_mut, unused_variables, unused_assignments, unused_parens, non_snake_case, dead_code)]',
       '',
     ];
@@ -2031,12 +2032,12 @@ class RsGen extends BaseGen {
     if (this.enumConsts.length || this.recordTypes.size) out.push('');
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
     if (this.needs.has('input')) {
-      out.push('', '/// Eine Zeile von der Tastatur lesen (ohne Zeilenumbruch)', 'fn read_line() -> String {',
+      out.push('', tr('gen.rsReadLine'), 'fn read_line() -> String {',
         '    use std::io::Write;', '    std::io::stdout().flush().unwrap();', '    let mut s = String::new();',
         '    std::io::stdin().read_line(&mut s).unwrap();', '    s.trim().to_string()', '}');
     }
     if (this.needs.has('try')) {
-      out.push('', '/// try/catch nachgebildet: führt f aus und liefert die Meldung eines panic! (throw) als Err',
+      out.push('', tr('gen.rsTry'),
         'fn try_block<F: FnOnce()>(f: F) -> Result<(), String> {',
         '    let prev = std::panic::take_hook();',
         '    std::panic::set_hook(Box::new(|_| {}));',
@@ -2050,7 +2051,7 @@ class RsGen extends BaseGen {
         '}');
     }
     if (this.needs.has('random')) {
-      out.push('', '/// Einfache Zufallszahl zwischen 0 und 1 (ohne externe Crates)', 'fn random() -> f64 {',
+      out.push('', tr('gen.rsRandom'), 'fn random() -> f64 {',
         '    use std::time::{SystemTime, UNIX_EPOCH};', '    let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos();',
         '    (n % 1_000_000) as f64 / 1_000_000.0', '}');
     }

@@ -29,7 +29,7 @@ const mk = {
   repeat: (text, body = []) => ({ type: 'repeat', text: toLines(text), body }),
   forever: (body = []) => ({ type: 'forever', text: [], body }),
   parallel: (branches) => ({ type: 'parallel', text: [], branches }),
-  try: (catchVar = 'fehler', qTry = [], qCatch = [], qFinally = []) => ({ type: 'try', text: toLines(catchVar), qTry, qCatch, qFinally }),
+  try: (catchVar = require('../i18n').t('core.defErrorVar'), qTry = [], qCatch = [], qFinally = []) => ({ type: 'try', text: toLines(catchVar), qTry, qCatch, qFinally }),
 };
 
 /** Alle Unterfolgen eines Elements: [{ key, seq }] mit key als Pfadfragment */
@@ -54,20 +54,21 @@ function walk(seq, cb, depth = 0) {
 
 /** Neues Standard-Element für den Editor */
 function defaultElement(kind) {
+  const { t } = require('../i18n');
   switch (kind) {
     case 'instruction': return mk.instruction('');
-    case 'call': return mk.call('Unterprogramm()');
+    case 'call': return mk.call(t('core.defCall'));
     case 'jump': return mk.jump('leave');
-    case 'alternative': return mk.alternative('Bedingung');
-    case 'case': return mk.case('Ausdruck', ['1', '2', 'default'], [[], [], []]);
+    case 'alternative': return mk.alternative(t('core.defCondition'));
+    case 'case': return mk.case(t('core.defExpression'), ['1', '2', 'default'], [[], [], []]);
     case 'for': return mk.for('for i := 1 to 10');
-    case 'foreach': return mk.for('foreach x in liste');
-    case 'while': return mk.while('while Bedingung');
-    case 'repeat': return mk.repeat('until Bedingung');
+    case 'foreach': return mk.for('foreach x in ' + t('core.defList'));
+    case 'while': return mk.while('while ' + t('core.defCondition'));
+    case 'repeat': return mk.repeat('until ' + t('core.defCondition'));
     case 'forever': return mk.forever();
     case 'parallel': return mk.parallel([[], []]);
-    case 'try': return mk.try('fehler');
-    default: throw new Error('Unbekannter Elementtyp: ' + kind);
+    case 'try': return mk.try(t('core.defErrorVar'));
+    default: throw new Error(t('core.unknownKind', kind));
   }
 }
 

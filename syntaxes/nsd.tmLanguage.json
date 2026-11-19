@@ -1,0 +1,5 @@
+{
+  "name": "Structogram (NSD)",
+  "scopeName": "text.xml.nsd",
+  "patterns": [{ "include": "text.xml" }]
+}

@@ -12,6 +12,7 @@ const { webviewHtml, settings, render, diagramTheme } = require('./webview');
 const { parseSignature } = require('./core/pseudo');
 const { ExecController } = require('./execSession');
 const S = require('./structorizer');
+const { t, setLanguage } = require('./i18n');
 
 let extContext = null;
 
@@ -57,7 +58,7 @@ class NsdEditorProvider {
     const subs = [
       vscode.workspace.onDidChangeTextDocument((e) => {
         if (e.document.uri.toString() === document.uri.toString() && e.contentChanges.length) {
-          state.exec.abort('■ Ausführung abgebrochen, weil das Diagramm geändert wurde.');
+          state.exec.abort(t('ext.abortDiagramChanged'));
           send();
         }
       }),
@@ -86,7 +87,7 @@ class NsdEditorProvider {
           case 'op': {
             let cmd = msg.cmd;
             if (cmd.op === 'pasteClipboard') {
-              if (!this.clipboard) { vscode.window.showInformationMessage('Die Zwischenablage ist leer.'); return; }
+              if (!this.clipboard) { vscode.window.showInformationMessage(t('ext.clipboardEmpty')); return; }
               cmd = { op: 'paste', path: cmd.path, where: cmd.where, element: this.clipboard };
             }
             await this.applyOp(state, cmd);
@@ -106,6 +107,7 @@ class NsdEditorProvider {
           }
           case 'copy': this.clipboard = msg.element; this.editors.forEach((s) => s.panel.webview.postMessage({ type: 'clipboard', has: true })); break;
           case 'toCode': await toCode(document.uri, this); break;
+          case 'newFile': await newFile(document.uri); break;
           case 'exportSvg': await exportSvg(document); break;
           case 'exportPng': await exportPng(document.uri, fromNsd(document.getText()), panel.webview); break;
           case 'exportSingle': await exportSingle(document); break;
@@ -117,7 +119,7 @@ class NsdEditorProvider {
           default: break;
         }
       } catch (e) {
-        vscode.window.showErrorMessage('Struktogramm: ' + e.message);
+        vscode.window.showErrorMessage(t('ext.errorPrefix', e.message));
         send();
       }
     });
@@ -152,17 +154,17 @@ class PreviewPanel {
 
   show(editor) {
     if (!this.panel) {
-      this.panel = vscode.window.createWebviewPanel('struktogramm.preview', 'Struktogramm-Vorschau', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
+      this.panel = vscode.window.createWebviewPanel('struktogramm.preview', t('ext.previewTitle'), { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
       });
       this.panel.webview.html = webviewHtml(this.panel.webview, this.context.extensionUri, true);
-      this.exec = new ExecController(this.panel.webview, () => { const d = this.document(); if (!d) throw new Error('Kein Quelltext geöffnet.'); return this.model(d); },
+      this.exec = new ExecController(this.panel.webview, () => { const d = this.document(); if (!d) throw new Error(t('ext.noSource')); return this.model(d); },
         () => { const d = this.document(); return d && d.uri.scheme === 'file' ? path.dirname(d.uri.fsPath) : undefined; });
       const subs = [
         vscode.window.onDidChangeActiveTextEditor((ed) => { if (ed && supportedLanguage(ed.document.languageId, ed.document.fileName)) { this.docUri = ed.document.uri; this.exec.abort(); this.update(); } }),
-        vscode.workspace.onDidChangeTextDocument((e) => { if (this.docUri && e.document.uri.toString() === this.docUri.toString()) { this.exec.abort('■ Ausführung abgebrochen, weil der Code geändert wurde.'); this.schedule(); } }),
+        vscode.workspace.onDidChangeTextDocument((e) => { if (this.docUri && e.document.uri.toString() === this.docUri.toString()) { this.exec.abort(t('ext.abortCodeChanged')); this.schedule(); } }),
         vscode.window.onDidChangeTextEditorSelection((e) => { if (this.docUri && e.textEditor.document.uri.toString() === this.docUri.toString() && !this.exec.running) this.schedule(); }),
         vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('struktogramm')) this.update(); }),
         vscode.window.onDidChangeActiveColorTheme(() => this.update()),
@@ -179,7 +181,7 @@ class PreviewPanel {
           else if (msg.type === 'exportPng') await exportPng(doc.uri, this.model(doc), this.panel.webview);
           else if (msg.type === 'exportSvg') await saveSvg(doc.uri, this.model(doc));
           else if (msg.type === 'exportMenu') await exportAs(msg.format, doc.uri, this.model(doc), this.panel.webview, null);
-        } catch (e) { vscode.window.showErrorMessage('Struktogramm: ' + e.message); }
+        } catch (e) { vscode.window.showErrorMessage(t('ext.errorPrefix', e.message)); }
       });
     } else this.panel.reveal(vscode.ViewColumn.Beside, true);
     this.docUri = editor.document.uri;
@@ -200,7 +202,7 @@ class PreviewPanel {
     const lang = supportedLanguage(doc.languageId, doc.fileName);
     const ed = vscode.window.visibleTextEditors.find((e) => e.document === doc);
     const sel = ed && !ed.selection.isEmpty ? doc.getText(ed.selection) : null;
-    const name = doc.isUntitled ? 'Hauptprogramm' : path.basename(doc.fileName).replace(/\.[^.]*$/, '');
+    const name = doc.isUntitled ? t('core.mainProgram') : path.basename(doc.fileName).replace(/\.[^.]*$/, '');
     return parseCode(sel || doc.getText(), lang, { name });
   }
 
@@ -208,7 +210,7 @@ class PreviewPanel {
     if (!this.panel) return;
     const doc = this.document();
     if (!doc) return;
-    this.panel.title = 'Struktogramm: ' + path.basename(doc.fileName);
+    this.panel.title = t('ext.previewTitleFile', path.basename(doc.fileName));
     let model = null, svg = '', error = null;
     try {
       model = this.model(doc);
@@ -244,39 +246,39 @@ async function fromCode(arg, engine = 'auto') {
     editor = vscode.window.activeTextEditor;
     doc = editor && editor.document;
   }
-  if (!doc) { vscode.window.showWarningMessage('Bitte zuerst eine Quelltextdatei öffnen.'); return; }
+  if (!doc) { vscode.window.showWarningMessage(t('ext.openSourceFirst')); return; }
   const ownLang = supportedLanguage(doc.languageId, doc.fileName);
   if (engine === 'auto') {
     const pref = vscode.workspace.getConfiguration('struktogramm').get('importEngine', 'eigene');
     if (!ownLang || STRUCTORIZER_ONLY.test(doc.fileName)) engine = 'structorizer';
     else engine = pref === 'structorizer' && STRUCTORIZER_CAN.test(doc.fileName) ? 'structorizer' : 'own';
   }
-  if (engine === 'own' && !ownLang) { vscode.window.showWarningMessage(`Die Sprache „${doc.languageId}“ wird nicht unterstützt.`); return; }
+  if (engine === 'own' && !ownLang) { vscode.window.showWarningMessage(t('ext.langUnsupported', doc.languageId)); return; }
   if (engine === 'structorizer' && !STRUCTORIZER_CAN.test(doc.fileName)) {
-    vscode.window.showWarningMessage('Der Structorizer-Parser unterstützt C (.c), Java (.java), Pascal/Delphi (.pas, .dpr), COBOL (.cob, .cbl) und Processing (.pde). Die Datei muss gespeichert sein und die passende Endung haben.');
+    vscode.window.showWarningMessage(t('ext.structorizerParserLangs'));
     return;
   }
   const useSel = editor && !editor.selection.isEmpty && editor.document === doc;
   const src = useSel ? doc.getText(editor.selection) : doc.getText();
-  const base = doc.isUntitled ? 'Struktogramm' : path.basename(doc.fileName).replace(/\.[^.]*$/, '');
+  const base = doc.isUntitled ? t('ext.untitledName') : path.basename(doc.fileName).replace(/\.[^.]*$/, '');
   let model;
   if (engine === 'structorizer') {
     try { model = await S.importCode(extContext, src, doc.fileName); } catch (e) { vscode.window.showErrorMessage(e.message); return; }
     if (!model) return;
   } else model = parseCode(src, ownLang, { name: base });
-  if (!model.roots.length) { vscode.window.showWarningMessage('Im Code wurde nichts gefunden, das sich darstellen lässt.'); return; }
+  if (!model.roots.length) { vscode.window.showWarningMessage(t('ext.nothingFound')); return; }
 
   let target;
   if (doc.isUntitled) {
-    target = await vscode.window.showSaveDialog({ filters: { Struktogramm: ['nsd'] }, saveLabel: 'Struktogramm speichern' });
+    target = await vscode.window.showSaveDialog({ filters: { [t('ext.filterNsd')]: ['nsd'] }, saveLabel: t('ext.saveNsd') });
     if (!target) return;
   } else {
-    target = vscode.Uri.file(path.join(path.dirname(doc.fileName), base + (useSel ? '_auswahl' : '') + '.nsd'));
+    target = vscode.Uri.file(path.join(path.dirname(doc.fileName), base + (useSel ? t('ext.selectionSuffix') : '') + '.nsd'));
     if (await exists(target)) {
-      const choice = await vscode.window.showWarningMessage(`„${path.basename(target.fsPath)}“ existiert bereits.`, { modal: true }, 'Überschreiben', 'Anderer Name …');
+      const choice = await vscode.window.showWarningMessage(t('ext.exists', path.basename(target.fsPath)), { modal: true }, t('ext.overwrite'), t('ext.otherName'));
       if (!choice) return;
-      if (choice !== 'Überschreiben') {
-        target = await vscode.window.showSaveDialog({ defaultUri: target, filters: { Struktogramm: ['nsd'] } });
+      if (choice !== t('ext.overwrite')) {
+        target = await vscode.window.showSaveDialog({ defaultUri: target, filters: { [t('ext.filterNsd')]: ['nsd'] } });
         if (!target) return;
       }
     }
@@ -295,13 +297,13 @@ async function pickLanguage(context) {
   }
   const last = context.globalState.get('lastTarget2', 'own:python');
   const haveJar = !!S.findJar(context);
-  const items = [{ label: 'Eigene Übersetzung (schnell, ohne Java)', kind: vscode.QuickPickItemKind.Separator }];
-  for (const [id, t] of Object.entries(TARGETS)) items.push({ label: t.label, key: 'own:' + id, engine: 'own', id });
-  items.push({ label: 'Original-Structorizer' + (haveJar ? '' : ' (wird bei Bedarf heruntergeladen, benötigt Java)'), kind: vscode.QuickPickItemKind.Separator });
+  const items = [{ label: t('ext.pickOwn'), kind: vscode.QuickPickItemKind.Separator }];
+  for (const [id, tg] of Object.entries(TARGETS)) items.push({ label: tg.label, key: 'own:' + id, engine: 'own', id });
+  items.push({ label: t('ext.pickStructorizer') + (haveJar ? '' : t('ext.pickDownloadHint')), kind: vscode.QuickPickItemKind.Separator });
   for (const g of S.GENERATORS) items.push({ label: g.label, description: 'Structorizer', key: 'structorizer:' + g.id, engine: 'structorizer', id: g.id, languageId: g.languageId });
   const lastItem = items.find((i) => i.key === last);
-  if (lastItem) lastItem.description = (lastItem.description ? lastItem.description + ' · ' : '') + 'zuletzt verwendet';
-  const pick = await vscode.window.showQuickPick(items, { placeHolder: 'In welche Programmiersprache soll das Struktogramm übersetzt werden?', matchOnDescription: true });
+  if (lastItem) lastItem.description = (lastItem.description ? lastItem.description + ' · ' : '') + t('ext.lastUsed');
+  const pick = await vscode.window.showQuickPick(items, { placeHolder: t('ext.pickLanguage'), matchOnDescription: true });
   if (!pick) return null;
   await context.globalState.update('lastTarget2', pick.key);
   return pick;
@@ -319,7 +321,7 @@ function updateLiveStatus() {
   const link = ed && liveLinks.get(ed.document.uri.toString());
   if (!link) { liveStatus.hide(); return; }
   liveStatus.text = `$(sync) Live: ${path.basename(vscode.Uri.parse(link.srcUri).fsPath)}`;
-  liveStatus.tooltip = 'Dieser Code wird automatisch aktualisiert, wenn sich das Struktogramm ändert – bis du ihn speicherst oder selbst bearbeitest.\nKlicken, um die Live-Aktualisierung zu beenden.';
+  liveStatus.tooltip = t('ext.liveTooltip');
   liveStatus.show();
 }
 
@@ -329,7 +331,7 @@ function endLive(key, reason) {
   clearTimeout(link.timer);
   liveLinks.delete(key);
   updateLiveStatus();
-  if (reason) vscode.window.setStatusBarMessage(`Struktogramm: Live-Aktualisierung beendet (${reason}).`, 6000);
+  if (reason) vscode.window.setStatusBarMessage(t('ext.liveEnded', reason), 6000);
 }
 
 function registerLiveCode(codeDoc, srcUri, target, baseName) {
@@ -351,7 +353,7 @@ async function updateLiveCode(key, link, nsdDoc) {
   const d = link.codeDoc;
   if (d.isClosed || !d.isUntitled) { endLive(key); return; }
   if (link.text === null) { scheduleLiveUpdate(nsdDoc); return; } // vorheriges Schreiben läuft noch
-  if (d.getText() !== link.text) { endLive(key, 'der Code wurde von Hand geändert'); return; }
+  if (d.getText() !== link.text) { endLive(key, t('ext.reasonEdited')); return; }
   let code;
   try {
     const model = fromNsd(nsdDoc.getText());
@@ -384,7 +386,7 @@ async function toCodeFromModel(model, baseName, srcUri) {
   await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
   // Eigene Übersetzung aus einer .nsd: Code bleibt bis zum Speichern mit dem Struktogramm verbunden
   if (srcUri && pick.engine === 'own') registerLiveCode(doc, srcUri, pick.id, baseName);
-  if (pick.id === 'java' || pick.id === 'Java') vscode.window.setStatusBarMessage(`Tipp: Als ${toClassName(baseName)}.java speichern.`, 8000);
+  if (pick.id === 'java' || pick.id === 'Java') vscode.window.setStatusBarMessage(t('ext.javaTip', toClassName(baseName)), 8000);
 }
 
 async function nsdUri(arg, provider) {
@@ -394,7 +396,7 @@ async function nsdUri(arg, provider) {
     const ed = vscode.window.activeTextEditor;
     if (ed && /\.nsd$/i.test(ed.document.fileName)) uri = ed.document.uri;
   }
-  if (!uri) vscode.window.showWarningMessage('Bitte zuerst ein Struktogramm (.nsd) öffnen.');
+  if (!uri) vscode.window.showWarningMessage(t('ext.openNsdFirst'));
   return uri;
 }
 
@@ -404,7 +406,7 @@ async function toCode(arg, provider) {
   if (!uri) return;
   const doc = await vscode.workspace.openTextDocument(uri);
   const model = fromNsd(doc.getText());
-  if (!model.roots.length) { vscode.window.showWarningMessage('Das Struktogramm ist leer.'); return; }
+  if (!model.roots.length) { vscode.window.showWarningMessage(t('ext.emptyDiagram')); return; }
   await toCodeFromModel(model, path.basename(uri.fsPath).replace(/\.[^.]*$/, ''), uri);
 }
 
@@ -414,30 +416,23 @@ async function openInStructorizer(document) {
 }
 
 /* ---------------------------- Export-Menü ---------------------------- */
-const EXPORTS = [
-  { id: 'svg', label: '$(file-media) SVG-Bild', description: '.svg – Vektorgrafik, hell oder dunkel' },
-  { id: 'png', label: '$(file-media) PNG-Bild', description: '.png – Rastergrafik, hell oder dunkel' },
-  { id: 'json', label: '$(json) JSON', description: '.json – vollständige Struktur zur Weiterverarbeitung' },
-  { id: 'xml', label: '$(code) XML', description: '.xml – vollständige Struktur als einfaches XML' },
-  { id: 'aiClip', label: '$(sparkle) KI-kompakt → Zwischenablage', description: 'token-sparender Pseudocode zum Einfügen in einen Chat / Agent' },
-  { id: 'aiFile', label: '$(sparkle) KI-kompakt als Datei', description: '.txt – token-sparender Pseudocode für KI-Agents' },
-  { id: 'single', label: '$(files) Structorizer-Dateien einzeln', description: '.nsd je Diagramm (für den Original-Structorizer)', nsdOnly: true },
-];
+const EXPORTS = ['svg', 'png', 'json', 'xml', 'aiClip', 'aiFile', 'single'];
+const exportItems = () => EXPORTS.map((id) => ({ id, label: t(`ext.export.${id}`), description: t(`ext.export.${id}.desc`), nsdOnly: id === 'single' }));
 
 async function saveTextExport(srcUri, ext, filterName, content) {
   const def = vscode.Uri.file(srcUri.fsPath.replace(/\.[^.\\/]*$/, '') + ext);
   const target = await vscode.window.showSaveDialog({ defaultUri: def, filters: { [filterName]: [ext.replace(/^.*\./, '')] } });
   if (!target) return;
   await writeText(target, content);
-  vscode.window.showInformationMessage('Gespeichert: ' + path.basename(target.fsPath));
+  vscode.window.showInformationMessage(t('ext.saved', path.basename(target.fsPath)));
 }
 
 /** Exportformat wählen bzw. direkt ausführen. nsdDocument nur im .nsd-Editor (für Einzeldateien). */
 async function exportAs(format, srcUri, model, webview, nsdDocument) {
   if (!format) {
     // PNG braucht das Webview (Canvas) – ohne geöffneten Editor nicht verfügbar
-    const items = EXPORTS.filter((e) => (!e.nsdOnly || nsdDocument) && (e.id !== 'png' || webview));
-    const pick = await vscode.window.showQuickPick(items, { title: 'Struktogramm exportieren', placeHolder: 'Format wählen' });
+    const items = exportItems().filter((e) => (!e.nsdOnly || nsdDocument) && (e.id !== 'png' || webview));
+    const pick = await vscode.window.showQuickPick(items, { title: t('ext.exportTitle'), placeHolder: t('ext.chooseFormat') });
     if (!pick) return;
     format = pick.id;
   }
@@ -446,11 +441,11 @@ async function exportAs(format, srcUri, model, webview, nsdDocument) {
     case 'png': return exportPng(srcUri, model, webview);
     case 'json': return saveTextExport(srcUri, '.json', 'JSON', X.toJson(model));
     case 'xml': return saveTextExport(srcUri, '.xml', 'XML', X.toXml(model));
-    case 'aiFile': return saveTextExport(srcUri, '.ki.txt', 'Text', X.toCompact(model));
+    case 'aiFile': return saveTextExport(srcUri, t('ext.aiFileSuffix'), 'Text', X.toCompact(model));
     case 'aiClip': {
       const text = X.toCompact(model);
       await vscode.env.clipboard.writeText(text);
-      vscode.window.showInformationMessage(`KI-kompakt in die Zwischenablage kopiert (${text.length} Zeichen, ca. ${Math.ceil(text.length / 3.6)} Tokens).`);
+      vscode.window.showInformationMessage(t('ext.aiCopied', text.length, Math.ceil(text.length / 3.6)));
       return undefined;
     }
     case 'single': return nsdDocument ? exportSingle(nsdDocument) : undefined;
@@ -466,12 +461,12 @@ async function pickExportTheme(kind) {
   if (pref === 'editor') return current;
   const last = extContext.globalState.get('lastExportTheme');
   const items = [
-    { label: '$(circle-large-outline) Hell', description: 'weißer Hintergrund – gut zum Drucken und für Dokumente', theme: 'light' },
-    { label: '$(circle-large-filled) Dunkel', description: 'dunkler Hintergrund', theme: 'dark' },
+    { label: t('ext.themeLight'), description: t('ext.themeLight.desc'), theme: 'light' },
+    { label: t('ext.themeDark'), description: t('ext.themeDark.desc'), theme: 'dark' },
   ];
-  items.forEach((it) => { if (it.theme === current) it.detail = 'wie gerade im Editor angezeigt'; });
+  items.forEach((it) => { if (it.theme === current) it.detail = t('ext.themeCurrent'); });
   if (last) items.sort((a, b) => (b.theme === last) - (a.theme === last));
-  const pick = await vscode.window.showQuickPick(items, { title: `Als ${kind} exportieren – Farbschema`, placeHolder: 'Farbschema für das Bild wählen' });
+  const pick = await vscode.window.showQuickPick(items, { title: t('ext.themeTitle', kind), placeHolder: t('ext.themePlaceholder') });
   if (!pick) return null;
   await extContext.globalState.update('lastExportTheme', pick.theme);
   return pick.theme;
@@ -480,11 +475,11 @@ async function pickExportTheme(kind) {
 async function saveSvg(srcUri, model) {
   const theme = await pickExportTheme('SVG');
   if (!theme) return;
-  const def = vscode.Uri.file(srcUri.fsPath.replace(/\.[^.\\/]*$/, '') + (theme === 'dark' ? '-dunkel' : '') + '.svg');
-  const target = await vscode.window.showSaveDialog({ defaultUri: def, filters: { 'SVG-Bild': ['svg'] } });
+  const def = vscode.Uri.file(srcUri.fsPath.replace(/\.[^.\\/]*$/, '') + (theme === 'dark' ? t('ext.darkSuffix') : '') + '.svg');
+  const target = await vscode.window.showSaveDialog({ defaultUri: def, filters: { [t('ext.svgImage')]: ['svg'] } });
   if (!target) return;
   await writeText(target, '<?xml version="1.0" encoding="UTF-8"?>\n' + render(model, { theme }).svg);
-  vscode.window.showInformationMessage('Gespeichert: ' + path.basename(target.fsPath));
+  vscode.window.showInformationMessage(t('ext.saved', path.basename(target.fsPath)));
 }
 
 async function exportSvg(document) {
@@ -520,17 +515,17 @@ async function exportPng(srcUri, model, webview) {
 }
 
 async function savePng(srcUri, dataUrl, theme) {
-  const def = vscode.Uri.file(srcUri.fsPath.replace(/\.[^.\\/]*$/, '') + (theme === 'dark' ? '-dunkel' : '') + '.png');
-  const target = await vscode.window.showSaveDialog({ defaultUri: def, filters: { 'PNG-Bild': ['png'] } });
+  const def = vscode.Uri.file(srcUri.fsPath.replace(/\.[^.\\/]*$/, '') + (theme === 'dark' ? t('ext.darkSuffix') : '') + '.png');
+  const target = await vscode.window.showSaveDialog({ defaultUri: def, filters: { [t('ext.pngImage')]: ['png'] } });
   if (!target) return;
   await vscode.workspace.fs.writeFile(target, Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'));
-  vscode.window.showInformationMessage('Gespeichert: ' + path.basename(target.fsPath));
+  vscode.window.showInformationMessage(t('ext.saved', path.basename(target.fsPath)));
 }
 
 async function exportSingle(document) {
   // für den Original-Structorizer: Zuweisungen mit <-
   const model = require('./core/style').toStructorizer(fromNsd(document.getText()));
-  const folder = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: 'Ordner wählen', defaultUri: vscode.Uri.file(path.dirname(document.uri.fsPath)) });
+  const folder = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: t('ext.chooseFolder'), defaultUri: vscode.Uri.file(path.dirname(document.uri.fsPath)) });
   if (!folder || !folder[0]) return;
   const used = new Set();
   for (const r of model.roots) {
@@ -539,36 +534,83 @@ async function exportSingle(document) {
     used.add(name);
     await writeText(vscode.Uri.joinPath(folder[0], name + '.nsd'), rootToNsd(r));
   }
-  vscode.window.showInformationMessage(`${model.roots.length} Diagramm(e) gespeichert.`);
+  vscode.window.showInformationMessage(t('ext.diagramsSaved', model.roots.length));
 }
 
-async function newFile() {
+/**
+ * Neues Struktogramm anlegen.
+ * Ordner: angeklickter Ordner im Explorer (bzw. Ordner der angeklickten Datei), sonst Ordner der aktiven Datei,
+ * sonst erster Arbeitsbereichsordner. Ohne geöffneten Ordner: Speichern-Dialog.
+ */
+async function newFile(uri) {
+  const exists = async (u) => { try { await vscode.workspace.fs.stat(u); return true; } catch { return false; } };
+  // Zielordner bestimmen
+  let folder = null;
+  if (uri instanceof vscode.Uri && uri.scheme === 'file') {
+    try {
+      const st = await vscode.workspace.fs.stat(uri);
+      folder = st.type & vscode.FileType.Directory ? uri : vscode.Uri.joinPath(uri, '..');
+    } catch { folder = null; }
+  }
+  if (!folder) {
+    const active = (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri) ||
+      (vscode.window.tabGroups.activeTabGroup.activeTab && vscode.window.tabGroups.activeTabGroup.activeTab.input && vscode.window.tabGroups.activeTabGroup.activeTab.input.uri);
+    if (active && active.scheme === 'file' && vscode.workspace.getWorkspaceFolder(active)) folder = vscode.Uri.joinPath(active, '..');
+  }
   const ws = vscode.workspace.workspaceFolders;
-  const target = await vscode.window.showSaveDialog({ defaultUri: ws ? vscode.Uri.joinPath(ws[0].uri, 'Struktogramm.nsd') : undefined, filters: { Struktogramm: ['nsd'] }, saveLabel: 'Anlegen' });
-  if (!target) return;
-  const name = path.basename(target.fsPath).replace(/\.[^.]*$/, '');
-  await writeText(target, toNsd({ roots: [mk.root(name, 'program', [])] }));
+  if (!folder && ws && ws.length) folder = ws[0].uri;
+
+  let target;
+  if (folder) {
+    // freien Vorschlag finden: Struktogramm.nsd, Struktogramm2.nsd …
+    const baseName = t('ext.newBase');
+    let suggestion = `${baseName}.nsd`;
+    for (let k = 2; await exists(vscode.Uri.joinPath(folder, suggestion)) && k < 1000; k++) suggestion = `${baseName}${k}.nsd`;
+    const rel = vscode.workspace.asRelativePath(folder, true);
+    const name = await vscode.window.showInputBox({
+      title: t('ext.newTitle'),
+      prompt: t('ext.newPrompt', rel),
+      value: suggestion,
+      valueSelection: [0, suggestion.length - 4],
+      validateInput: async (v) => {
+        const n = v.trim();
+        if (!n || /^\.nsd$/i.test(n)) return t('ext.enterName');
+        if (/[\\/:*?"<>|]/.test(n)) return t('ext.invalidChars');
+        const file = /\.nsd$/i.test(n) ? n : n + '.nsd';
+        return (await exists(vscode.Uri.joinPath(folder, file))) ? t('ext.existsInFolder', file) : null;
+      },
+    });
+    if (!name) return;
+    const file = /\.nsd$/i.test(name.trim()) ? name.trim() : name.trim() + '.nsd';
+    target = vscode.Uri.joinPath(folder, file);
+  } else {
+    target = await vscode.window.showSaveDialog({ filters: { [t('ext.filterNsd')]: ['nsd'] }, saveLabel: t('ext.create'), title: t('ext.newTitle') });
+    if (!target) return;
+  }
+  const title = path.basename(target.fsPath).replace(/\.[^.]*$/, '');
+  await writeText(target, toNsd({ roots: [mk.root(title, 'program', [])] }));
   await vscode.commands.executeCommand('vscode.openWith', target, 'struktogramm.editor');
 }
 
 async function setupStructorizer(context) {
   const jar = S.findJar(context);
   if (jar) {
-    const c = await vscode.window.showInformationMessage(`Structorizer ist eingerichtet:\n${jar}`, 'Neueste Version laden', 'Anderen Ort wählen …');
-    if (c === 'Neueste Version laden') {
-      try { const j = await S.download(context); vscode.window.showInformationMessage('Structorizer aktualisiert: ' + j); } catch (e) { vscode.window.showErrorMessage('Download fehlgeschlagen: ' + e.message); }
-    } else if (c === 'Anderen Ort wählen …') {
+    const c = await vscode.window.showInformationMessage(t('ext.structorizerSetUp', jar), t('ext.downloadLatest'), t('ext.otherLocation'));
+    if (c === t('ext.downloadLatest')) {
+      try { const j = await S.download(context); vscode.window.showInformationMessage(t('ext.structorizerUpdated', j)); } catch (e) { vscode.window.showErrorMessage(t('ext.downloadFailed', e.message)); }
+    } else if (c === t('ext.otherLocation')) {
       await vscode.workspace.getConfiguration('struktogramm.structorizer').update('jarPath', '', vscode.ConfigurationTarget.Global);
       await S.ensure(context, true);
     }
     return;
   }
   const j = await S.ensure(context, true);
-  if (j) vscode.window.showInformationMessage('Structorizer ist bereit: ' + j);
+  if (j) vscode.window.showInformationMessage(t('ext.structorizerReady', j));
 }
 
 function activate(context) {
   extContext = context;
+  setLanguage(vscode.env.language); // Englisch, bei deutscher VS-Code-Oberfläche Deutsch
   const provider = new NsdEditorProvider(context);
   const preview = new PreviewPanel(context);
   const activeEditorDoc = () => (provider.active ? provider.active.document : null);
@@ -587,24 +629,24 @@ function activate(context) {
     }
     if (preview.panel && preview.panel.active) { preview.panel.webview.postMessage(msg); return; }
     if (provider.active) { provider.active.panel.webview.postMessage(msg); return; }
-    if (cmd === 'run') vscode.window.showInformationMessage('Zum Ausführen bitte eine .nsd-Datei im Struktogramm-Editor öffnen.');
+    if (cmd === 'run') vscode.window.showInformationMessage(t('ext.runHint'));
   }
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider('struktogramm.editor', provider, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.commands.registerCommand('struktogramm.fromCode', (uri) => fromCode(uri, 'auto')),
     vscode.commands.registerCommand('struktogramm.fromCodeStructorizer', (uri) => fromCode(uri, 'structorizer')),
     vscode.commands.registerCommand('struktogramm.toCode', (uri) => toCode(uri, provider)),
-    vscode.commands.registerCommand('struktogramm.newFile', () => newFile()),
+    vscode.commands.registerCommand('struktogramm.newFile', (uri) => newFile(uri)),
     vscode.commands.registerCommand('struktogramm.preview', () => {
       const ed = vscode.window.activeTextEditor;
-      if (!ed || !supportedLanguage(ed.document.languageId, ed.document.fileName)) { vscode.window.showWarningMessage('Bitte eine Python-, Java-, C-, C++-, C#-, JavaScript-, TypeScript-, Kotlin- oder Rust-Datei öffnen.'); return; }
+      if (!ed || !supportedLanguage(ed.document.languageId, ed.document.fileName)) { vscode.window.showWarningMessage(t('ext.previewLangs')); return; }
       preview.show(ed);
     }),
     vscode.commands.registerCommand('struktogramm.exportSvg', () => { const d = activeEditorDoc(); if (d) exportSvg(d); }),
     vscode.commands.registerCommand('struktogramm.exportPng', async () => {
       const a = provider.active;
       if (!a) return;
-      try { await exportPng(a.document.uri, fromNsd(a.document.getText()), a.panel.webview); } catch (e) { vscode.window.showErrorMessage('Struktogramm: ' + e.message); }
+      try { await exportPng(a.document.uri, fromNsd(a.document.getText()), a.panel.webview); } catch (e) { vscode.window.showErrorMessage(t('ext.errorPrefix', e.message)); }
     }),
     vscode.commands.registerCommand('struktogramm.export', async (uri) => {
       try {
@@ -616,14 +658,14 @@ function activate(context) {
         }
         const a = provider.active;
         if (a) await exportAs(null, a.document.uri, fromNsd(a.document.getText()), a.panel.webview, a.document);
-      } catch (e) { vscode.window.showErrorMessage('Struktogramm: ' + e.message); }
+      } catch (e) { vscode.window.showErrorMessage(t('ext.errorPrefix', e.message)); }
     }),
     ...['json', 'xml', 'aiClip'].map((f) => vscode.commands.registerCommand('struktogramm.export.' + f, async (uri) => {
       try {
         let d = provider.active ? provider.active.document : null;
         if (uri && uri.fsPath && /\.nsd$/i.test(uri.fsPath)) d = await vscode.workspace.openTextDocument(uri);
         if (d) await exportAs(f, d.uri, fromNsd(d.getText()), null, d);
-      } catch (e) { vscode.window.showErrorMessage('Struktogramm: ' + e.message); }
+      } catch (e) { vscode.window.showErrorMessage(t('ext.errorPrefix', e.message)); }
     })),
     vscode.commands.registerCommand('struktogramm.exportSingle', () => { const d = activeEditorDoc(); if (d) exportSingle(d); }),
     ...['run', 'step', 'pause', 'stop'].map((cmd) => vscode.commands.registerCommand('struktogramm.' + cmd, (uri) => execCommand(cmd, uri))),
@@ -641,14 +683,14 @@ function activate(context) {
     liveStatus,
     vscode.commands.registerCommand('struktogramm.stopLiveCode', () => {
       const ed = vscode.window.activeTextEditor;
-      if (ed) endLive(ed.document.uri.toString(), 'beendet');
+      if (ed) endLive(ed.document.uri.toString(), t('ext.reasonStopped'));
     }),
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (!e.contentChanges.length || !liveLinks.size) return;
       const key = e.document.uri.toString();
       const own = liveLinks.get(key);
       // Handänderung im erzeugten Code -> Verbindung lösen (eigene Schreibvorgänge haben text === null)
-      if (own && own.text !== null && e.document.getText() !== own.text) { endLive(key, 'der Code wurde von Hand geändert'); return; }
+      if (own && own.text !== null && e.document.getText() !== own.text) { endLive(key, t('ext.reasonEdited')); return; }
       scheduleLiveUpdate(e.document);
     }),
     vscode.workspace.onDidCloseTextDocument((d) => endLive(d.uri.toString())),

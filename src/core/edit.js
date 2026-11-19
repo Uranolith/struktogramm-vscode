@@ -4,6 +4,7 @@
  * z.B. "roots/0/children/2/qTrue/0"; leere Folgen: "roots/0/children/2/qTrue/#".
  */
 const { defaultElement, clone, mk, toLines } = require('./model');
+const { t } = require('../i18n');
 
 function segs(path) {
   return String(path).split('/').filter((s) => s !== '').map((s) => (/^\d+$/.test(s) ? parseInt(s, 10) : s));
@@ -37,7 +38,7 @@ function isRootPath(path) { return /^roots\/\d+$/.test(path); }
  */
 function insert(doc, path, element, where = 'after') {
   if (!path) path = doc.roots.length ? 'roots/0' : null;
-  if (!path) { doc.roots.push(mk.root('Hauptprogramm', 'program', [])); path = 'roots/0'; }
+  if (!path) { doc.roots.push(mk.root(t('core.mainProgram'), 'program', [])); path = 'roots/0'; }
   if (isRootPath(path)) {
     const root = get(doc, path);
     if (where === 'before') { root.children.unshift(element); return `${path}/children/0`; }
@@ -45,7 +46,7 @@ function insert(doc, path, element, where = 'after') {
     return `${path}/children/${root.children.length - 1}`;
   }
   const loc = locate(doc, path);
-  if (!loc || !Array.isArray(loc.arr)) throw new Error('Ungültige Einfügeposition');
+  if (!loc || !Array.isArray(loc.arr)) throw new Error(t('edit.badPosition'));
   if (loc.empty) { loc.arr.push(element); return `${loc.base}/${loc.arr.length - 1}`; }
   const idx = where === 'before' ? loc.index : loc.index + 1;
   loc.arr.splice(idx, 0, element);
@@ -84,7 +85,7 @@ function move(doc, path, dir) {
 /** Text/Kommentar/Farbe/Typ eines Elements setzen */
 function update(doc, path, props) {
   const el = get(doc, path);
-  if (!el || typeof el !== 'object' || Array.isArray(el)) throw new Error('Element nicht gefunden');
+  if (!el || typeof el !== 'object' || Array.isArray(el)) throw new Error(t('edit.notFound'));
   if (props.text != null) {
     const lines = toLines(props.text);
     if (el.type === 'case') {
@@ -260,7 +261,7 @@ function apply(doc, cmd) {
     case 'moveTo': return moveTo(doc, cmd.from, cmd.to, cmd.where);
     case 'addRoot': {
       const sub = cmd.rootType === 'sub';
-      doc.roots.push(mk.root(sub ? 'unterprogramm(a, b)' : 'Hauptprogramm', sub ? 'sub' : 'program', []));
+      doc.roots.push(mk.root(sub ? t('core.defSub') : t('core.mainProgram'), sub ? 'sub' : 'program', []));
       return `roots/${doc.roots.length - 1}`;
     }
     default: throw new Error('Unbekannte Operation: ' + cmd.op);

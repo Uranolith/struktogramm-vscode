@@ -7,6 +7,7 @@
  *              {type:'execOut', lines:[{text, kind}]}
  */
 const { Interpreter, Signal, fmt } = require('./core/executor');
+const { t } = require('./i18n');
 
 class ExecSession {
   constructor(webview, model, rootIndex, opts = {}) {
@@ -69,7 +70,7 @@ class ExecSession {
     clearTimeout(this.timer);
     this.timer = null;
     if (this.state !== 'done') {
-      this.out('■ Ausführung abgebrochen.', 'info');
+      this.out(t('exec.aborted'), 'info');
       this.path = null;
       this.post('done');
     }
@@ -89,19 +90,19 @@ class ExecSession {
     this.timer = null;
     const secs = ((Date.now() - this.started) / 1000).toFixed(1);
     if (!err) {
-      this.out(`✔ Programm beendet (${this.steps} Schritte, ${secs} s).`, 'info');
+      this.out(t('exec.finished', this.steps, secs), 'info');
       this.path = null;
       this.post('done');
     } else if (err instanceof Signal && err.kind === 'exit') {
-      this.out(`✔ Programm mit exit ${fmt(err.value)} beendet.`, 'info');
+      this.out(t('exec.finishedExit', fmt(err.value)), 'info');
       this.path = null;
       this.post('done');
     } else if (err instanceof Signal) {
-      this.out(`✔ Programm beendet (${err.kind}).`, 'info');
+      this.out(t('exec.finishedKind', err.kind), 'info');
       this.path = null;
       this.post('done');
     } else {
-      this.out('✖ Fehler: ' + err.message, 'err');
+      this.out(t('exec.error', err.message), 'err');
       this.post('done', { error: err.message, errorPath: err.path || this.path });
     }
   }
@@ -128,7 +129,7 @@ class ExecSession {
       this.path = y.path;
       if (!y.loop && this.breakpoints.has(y.path) && this.mode === 'run') {
         this.mode = 'step';
-        this.out('● Haltepunkt erreicht.', 'info');
+        this.out(t('exec.breakpoint'), 'info');
         this.post('paused');
         return;
       }
