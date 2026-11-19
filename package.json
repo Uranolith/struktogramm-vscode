@@ -2,7 +2,7 @@
   "name": "struktogramm",
   "displayName": "Struktograf – Nassi-Shneiderman-Struktogramme",
   "description": "Struktogramme (Nassi-Shneiderman-Diagramme) zeichnen, Schritt für Schritt ausführen und in Code umwandeln – und umgekehrt: Python, Java, C, C++, C#, JavaScript/TypeScript, Pascal, Kotlin und Rust. Structorizer-kompatibel (.nsd, voller Befehlssatz inkl. Turtleizer), optional mit dem Original-Structorizer (18 Zielsprachen). Export als SVG, PNG, JSON, XML und KI-Pseudocode.",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "publisher": "Uranolith",
   "icon": "media/icon.png",
   "preview": true,
