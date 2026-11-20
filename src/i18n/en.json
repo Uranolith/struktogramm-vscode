@@ -74,6 +74,7 @@
  "ext.clipboardEmpty": "The clipboard is empty.",
  "ext.create": "Create",
  "ext.darkSuffix": "-dark",
+ "ext.debugConfigName": "Run structogram: {0}",
  "ext.diagramsSaved": "{0} diagram(s) saved.",
  "ext.downloadFailed": "Download failed: {0}",
  "ext.downloadLatest": "Download Latest Version",

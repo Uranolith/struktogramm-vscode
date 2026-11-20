@@ -58,5 +58,11 @@
   "cmd.toggleToolbarLocation": "Werkzeuge im Editor oder in der Seitenleiste anzeigen",
   "config.toolbarLocation": "Wo die Struktogramm-Werkzeuge stehen: in der Werkzeugleiste oben im Editor oder in der Ansicht *Struktograf* in der Aktivitätsleiste (wie der Explorer). Lässt sich live umschalten, auch mit dem Befehl *Struktograf: Werkzeuge im Editor oder in der Seitenleiste anzeigen* oder dem Knopf in der Titelleiste des Editors.",
   "config.toolbarLocation.enum0": "Werkzeugleiste oben im Struktogramm-Editor",
-  "config.toolbarLocation.enum1": "Ansicht Struktograf in der Aktivitätsleiste (wie der Explorer)"
+  "config.toolbarLocation.enum1": "Ansicht Struktograf in der Aktivitätsleiste (wie der Explorer)",
+  "debugger.label": " ▶ Struktogramm ausführen (Struktograf)",
+  "debugger.program": "Struktogramm-Datei (.nsd), die ausgeführt wird. Standard: das geöffnete Struktogramm.",
+  "debugger.stopOnEntry": "Am ersten Element anhalten (wie F10) statt durchzulaufen.",
+  "debugger.configName": "Struktogramm ausführen",
+  "debugger.snippet": "Struktograf: Struktogramm ausführen",
+  "debugger.snippet.desc": "Führt ein Struktogramm (.nsd) in Struktograf aus."
 }

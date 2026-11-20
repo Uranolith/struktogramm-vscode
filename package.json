@@ -39,7 +39,11 @@
     "cobol"
   ],
   "main": "./src/extension.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "onDebugResolve:struktogramm",
+    "onDebugDynamicConfigurations:struktogramm",
+    "onDebugInitialConfigurations"
+  ],
   "contributes": {
     "customEditors": [
       {
@@ -565,27 +569,82 @@
       {
         "command": "struktogramm.run",
         "key": "f5",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
       },
       {
         "command": "struktogramm.step",
         "key": "f10",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
       },
       {
         "command": "struktogramm.step",
         "key": "f11",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
       },
       {
         "command": "struktogramm.pause",
         "key": "f6",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
       },
       {
         "command": "struktogramm.stop",
         "key": "shift+f5",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
+        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
+      },
+      {
+        "command": "struktogramm.run",
+        "key": "f5",
+        "when": "struktograf.editorOpen && !debuggerInterestedInActiveEditor && !inDebugMode && !struktograf.execActive"
+      },
+      {
+        "command": "struktogramm.step",
+        "key": "f10",
+        "when": "struktograf.editorOpen && !debuggerInterestedInActiveEditor && !inDebugMode && !struktograf.execActive"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "struktogramm",
+        "label": "%debugger.label%",
+        "languages": [
+          "nsd"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "%debugger.program%",
+                "default": "${file}"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "%debugger.stopOnEntry%",
+                "default": false
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "struktogramm",
+            "request": "launch",
+            "name": "%debugger.configName%",
+            "program": "${file}"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "%debugger.snippet%",
+            "description": "%debugger.snippet.desc%",
+            "body": {
+              "type": "struktogramm",
+              "request": "launch",
+              "name": "%debugger.configName%",
+              "program": "^\"\\${file}\""
+            }
+          }
+        ]
       }
     ]
   }

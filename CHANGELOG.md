@@ -9,6 +9,9 @@
   VS Code (neben Probleme, Ausgabe, Debugkonsole) statt unter dem Diagramm. Einstellung
   `struktogramm.executionPanelLocation`, live umschaltbar per Befehl, mit dem Knopf ⇲ in der Ausführungsanzeige oder in
   der Kopfzeile des Panels (dort auch Ausführen, Schritt, Anhalten, Beenden, Leeren).
+- **F5 überall:** Nach einem Einzelschritt (F10) setzt F5 fort, egal wo der Fokus gerade ist. Hat die aktive Datei
+  keinen eigenen Debugger, startet F5 das geöffnete Struktogramm. In der Debugger-Auswahl von VS Code steht
+  „▶ Struktogramm ausführen (Struktograf)“ ganz oben; auch in `launch.json` nutzbar (`"type": "struktogramm"`).
 - **Zoom als Eingabefeld:** Zoomstufe direkt eingeben (z.B. `150`, `150 %`, `1,5x`); Enter übernimmt, Esc verwirft,
   ↑/↓ ändern um 10 %.
 

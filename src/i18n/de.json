@@ -74,6 +74,7 @@
  "ext.clipboardEmpty": "Die Zwischenablage ist leer.",
  "ext.create": "Anlegen",
  "ext.darkSuffix": "-dunkel",
+ "ext.debugConfigName": "Struktogramm ausführen: {0}",
  "ext.diagramsSaved": "{0} Diagramm(e) gespeichert.",
  "ext.downloadFailed": "Download fehlgeschlagen: {0}",
  "ext.downloadLatest": "Neueste Version laden",

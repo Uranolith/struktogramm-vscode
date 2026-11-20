@@ -140,6 +140,9 @@ return a + b
 ## Tastatur im Editor
 **F5** ausführen / fortsetzen · **F10** (oder F11) Einzelschritt · **F6** anhalten · **Umschalt+F5** beenden ·
 **F9** Haltepunkt. Im Explorer: Rechtsklick auf eine `.nsd` → *Struktogramm ausführen / fortsetzen*.
+Läuft oder pausiert eine Ausführung, wirken diese Tasten überall in VS Code. Hat die aktive Datei keinen eigenen
+Debugger, startet F5 das geöffnete Struktogramm; in der Debugger-Auswahl von VS Code steht
+*▶ Struktogramm ausführen (Struktograf)* ganz oben.
 
 Der Editor ist vollständig per Tastatur bedienbar; **?** zeigt alle Tastenkürzel.
 

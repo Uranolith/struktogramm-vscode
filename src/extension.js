@@ -17,6 +17,7 @@ const { ToolsViewProvider, VIEW_ID } = require('./toolsView');
 const { toolbarLocation } = require('./webview');
 const { ExecViewProvider, VIEW_ID: EXEC_VIEW_ID } = require('./execView');
 const { executionLocation } = require('./webview');
+const { registerDebugger } = require('./debugLaunch');
 
 let extContext = null;
 
@@ -36,6 +37,21 @@ class NsdEditorProvider {
     this.pending = new Map(); // uri -> 'run'|'step': nach dem Öffnen automatisch starten
     this.tools = null;       // Struktograf-Seitenleiste mit den Werkzeugen
     this.execView = null;    // Panel „Struktogramm-Ausführung“ unten
+    this.execEditor = null;  // Editor mit der zuletzt gestarteten Ausführung
+  }
+
+  /** ist irgendein Struktogramm offen? (F5/F10 starten es, wenn die aktive Datei keinen eigenen Debugger hat) */
+  updateOpenContext() {
+    vscode.commands.executeCommand('setContext', 'struktograf.editorOpen', this.editors.size > 0);
+  }
+
+  /** läuft oder pausiert irgendwo eine Ausführung? Dann gehören F5/F10/F6/Umschalt+F5 ihr, egal wo der Fokus ist */
+  updateExecContext() {
+    const busy = [...this.editors].some((s) => s.exec && s.exec.running);
+    if (busy !== this.execBusy) {
+      this.execBusy = busy;
+      vscode.commands.executeCommand('setContext', 'struktograf.execActive', busy);
+    }
   }
 
   /** aktiven Editor setzen und die Seitenleiste nachziehen */
@@ -50,13 +66,19 @@ class NsdEditorProvider {
     const state = { document, panel, select: undefined, editNew: false };
     this.editors.add(state);
     this.setActive(state);
+    this.updateOpenContext();
     panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')] };
     panel.webview.html = webviewHtml(panel.webview, this.context.extensionUri, false);
     // Meldungen der Ausführung gehen an den Editor (Markierung im Diagramm) und an das Panel unten
     const execTarget = {
       postMessage: (m) => {
         if (this.execView) this.execView.forward(state, m);
-        return panel.webview.postMessage(m);
+        const r = panel.webview.postMessage(m);
+        if (m.type === 'execState') {
+          this.execEditor = state;
+          this.updateExecContext();
+        }
+        return r;
       },
     };
     state.exec = new ExecController(execTarget, () => fromNsd(document.getText()),
@@ -91,6 +113,9 @@ class NsdEditorProvider {
       state.exec.abort();
       subs.forEach((s) => s.dispose());
       this.editors.delete(state);
+      if (this.execEditor === state) this.execEditor = null;
+      this.updateExecContext();
+      this.updateOpenContext();
       if (this.active === state) this.setActive(null);
     });
 
@@ -671,9 +696,14 @@ function activate(context) {
       return;
     }
     if (preview.panel && preview.panel.active) { preview.panel.webview.postMessage(msg); return; }
+    // laufende oder pausierte Ausführung hat Vorrang (z.B. F10 im Struktogramm, dann F5 aus einem anderen Editor)
+    const ex = provider.execEditor;
+    if (ex && ex.exec && ex.exec.running && provider.editors.has(ex)) { ex.panel.webview.postMessage(msg); return; }
     if (provider.active) { provider.active.panel.webview.postMessage(msg); return; }
     if (cmd === 'run') vscode.window.showInformationMessage(t('ext.runHint'));
   }
+  // Struktograf als „Debugger“: F5 ohne Struktogramm im Fokus bietet es in der Debugger-Auswahl ganz oben an
+  registerDebugger(context, provider, (cmd, uri) => execCommand(cmd, uri));
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider('struktogramm.editor', provider, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerWebviewViewProvider(VIEW_ID, tools),
