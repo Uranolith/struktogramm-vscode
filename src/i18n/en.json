@@ -433,6 +433,8 @@
  "web.tb.where.before": "insert before",
  "web.tb.zoomIn": "Zoom in",
  "web.tb.zoomIn.title": "Zoom in (Ctrl++)",
+ "web.tb.zoomInput": "Zoom level",
+ "web.tb.zoomInput.title": "Zoom level in percent, e.g. 150 – Enter applies, ↑/↓ changes by 10 %",
  "web.tb.zoomOut": "Zoom out",
  "web.tb.zoomOut.title": "Zoom out (Ctrl+−)",
  "web.toolbarLabel": "Structogram tools",

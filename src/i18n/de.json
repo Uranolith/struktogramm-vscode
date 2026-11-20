@@ -433,6 +433,8 @@
  "web.tb.where.before": "davor einfügen",
  "web.tb.zoomIn": "Vergrößern",
  "web.tb.zoomIn.title": "Vergrößern (Strg++)",
+ "web.tb.zoomInput": "Zoomstufe",
+ "web.tb.zoomInput.title": "Zoomstufe in Prozent, z.B. 150 – Enter übernimmt, ↑/↓ ändert um 10 %",
  "web.tb.zoomOut": "Verkleinern",
  "web.tb.zoomOut.title": "Verkleinern (Strg+−)",
  "web.toolbarLabel": "Struktogramm-Werkzeuge",

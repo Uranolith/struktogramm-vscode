@@ -1,5 +1,9 @@
 # Änderungen
 
+## Unveröffentlicht
+- **Zoom als Eingabefeld:** Zoomstufe direkt eingeben (z.B. `150`, `150 %`, `1,5x`); Enter übernimmt, Esc verwirft,
+  ↑/↓ ändern um 10 %.
+
 ## 0.8.3
 - **Neues Struktogramm** anlegen: über *Datei → Neue Datei …*, das Explorer-Kontextmenü auf Ordnern, ein Symbol in
   der Explorer-Leiste, das Menü ⋯ des Struktogramm-Editors und einen Knopf in dessen Werkzeugleiste. Statt eines

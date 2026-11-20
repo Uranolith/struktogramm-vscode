@@ -70,7 +70,7 @@
         <button data-x="stop" title="${T('web.tb.stop.title')}" aria-label="${T('web.tb.stop.title')}">⏹</button>
         <select id="speed" title="${T('web.tb.speed')}"><option value="800">${T('web.speed.slow')}</option><option value="250">${T('web.speed.medium')}</option><option value="40">${T('web.speed.fast')}</option><option value="0">${T('web.speed.instant')}</option></select>
       </span>`;
-    const zoomGroup = `<span class="group"><button data-a="zoomOut" title="${T('web.tb.zoomOut.title')}" aria-label="${T('web.tb.zoomOut')}">−</button><span id="zoomLabel"></span><button data-a="zoomIn" title="${T('web.tb.zoomIn.title')}" aria-label="${T('web.tb.zoomIn')}">+</button><button data-a="help" title="${T('web.tb.help.title')}" aria-label="${T('web.tb.help')}">?</button></span>`;
+    const zoomGroup = `<span class="group"><button data-a="zoomOut" title="${T('web.tb.zoomOut.title')}" aria-label="${T('web.tb.zoomOut')}">−</button><input id="zoomInput" class="zoomInput" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" title="${T('web.tb.zoomInput.title')}" aria-label="${T('web.tb.zoomInput')}"><button data-a="zoomIn" title="${T('web.tb.zoomIn.title')}" aria-label="${T('web.tb.zoomIn')}">+</button><button data-a="help" title="${T('web.tb.help.title')}" aria-label="${T('web.tb.help')}">?</button></span>`;
     if (READONLY) {
       toolbar.innerHTML = `
         <span class="group"><button data-a="saveNsd" class="primary" title="${T('web.tb.saveNsd.title')}">${T('web.tb.saveNsd')}</button>
@@ -115,6 +115,35 @@
     const w = $('where');
     w.value = where;
     w.addEventListener('change', () => { where = w.value; save(); });
+  }
+
+  /** Zoomstufe direkt eingeben (wie in anderen Programmen): 150, 150 % oder 1,5x; Enter/Verlassen übernimmt, Esc verwirft */
+  function parseZoom(text) {
+    const s = String(text).trim().replace(',', '.');
+    const x = /^(\d+(?:\.\d+)?)\s*x$/i.exec(s);
+    if (x) return parseFloat(x[1]) * 100;
+    const v = parseFloat(s.replace('%', ''));
+    return isNaN(v) ? null : v;
+  }
+
+  function initZoomInput() {
+    const zi = $('zoomInput');
+    if (!zi) return;
+    const commit = () => { const v = parseZoom(zi.value); if (v != null && v > 0) setZoom(v / 100); zi.value = Math.round(zoom * 100) + ' %'; };
+    zi.addEventListener('focus', () => { zi.value = String(Math.round(zoom * 100)); zi.select(); });
+    zi.addEventListener('blur', commit);
+    zi.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { commit(); zi.select(); e.preventDefault(); }
+      else if (e.key === 'Escape') { zi.value = String(Math.round(zoom * 100)); zi.blur(); focusCanvas(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        const cur = parseZoom(zi.value) || Math.round(zoom * 100);
+        const step = e.key === 'ArrowUp' ? 10 : -10;
+        setZoom((Math.round(cur / 10) * 10 + step) / 100);
+        zi.value = String(Math.round(zoom * 100)); zi.select();
+        e.preventDefault();
+      }
+    });
+    applyZoom();
   }
 
   function initSpeed() {
@@ -203,8 +232,8 @@
       svg.style.width = w * zoom + 'px';
       svg.style.height = h * zoom + 'px';
     }
-    const zl = $('zoomLabel');
-    if (zl) zl.textContent = Math.round(zoom * 100) + ' %';
+    const zi = $('zoomInput');
+    if (zi && document.activeElement !== zi) zi.value = Math.round(zoom * 100) + ' %';
   }
 
   function status(t) { statusbar.textContent = t || ''; }
@@ -1355,6 +1384,7 @@
 
   buildToolbar();
   initSpeed();
+  initZoomInput();
   updateExecButtons();
   applyZoom();
   post({ type: 'ready' });

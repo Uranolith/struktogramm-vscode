@@ -22,7 +22,12 @@ body { display: flex; flex-direction: column; }
 }
 #toolbar .group { display: inline-flex; gap: 2px; align-items: center; }
 #toolbar .hint { opacity: .75; font-size: 12px; }
-#zoomLabel { min-width: 44px; text-align: center; font-size: 12px; opacity: .8; }
+#toolbar .zoomInput {
+  width: 52px; padding: 1px 4px; text-align: center; font: inherit; font-size: 12px; font-variant-numeric: tabular-nums;
+  color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px;
+}
+#toolbar .zoomInput:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
 
 button {
   font: inherit;
