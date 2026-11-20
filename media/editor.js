@@ -37,19 +37,7 @@
   const op = (cmd) => post({ type: 'op', cmd });
 
   /* ------------------------------------------------------------------ */
-  const ICONS = {
-    instruction: '<rect x="1.5" y="4.5" width="13" height="7"/>',
-    alternative: '<rect x="1.5" y="2.5" width="13" height="11"/><path d="M1.5 2.5 L8 8 L14.5 2.5 M1.5 8 H14.5 M8 8 V13.5"/>',
-    case: '<rect x="1.5" y="2.5" width="13" height="11"/><path d="M1.5 2.5 L11 8 L14.5 2.5 M1.5 8 H14.5 M5 8 V13.5 M8.2 8 V13.5 M11 8 V13.5"/>',
-    for: '<rect x="1.5" y="2.5" width="13" height="11"/><path d="M5 6 H14.5 M5 6 V13.5"/><circle cx="3.3" cy="10.5" r=".9"/>',
-    while: '<rect x="1.5" y="2.5" width="13" height="11"/><path d="M5 6 H14.5 M5 6 V13.5"/>',
-    repeat: '<rect x="1.5" y="2.5" width="13" height="11"/><path d="M5 10 H14.5 M5 2.5 V10"/>',
-    forever: '<rect x="1.5" y="2.5" width="13" height="11"/><path d="M5 5.5 H14.5 M5 5.5 V11 H14.5"/>',
-    call: '<rect x="1.5" y="4.5" width="13" height="7"/><path d="M3.5 4.5 V11.5 M12.5 4.5 V11.5"/>',
-    jump: '<rect x="1.5" y="4.5" width="13" height="7"/><path d="M4.5 4.5 L2 8 L4.5 11.5"/>',
-    parallel: '<rect x="1.5" y="2.5" width="13" height="11"/><path d="M1.5 5 H14.5 M1.5 11 H14.5 M8 5 V11"/>',
-    try: '<rect x="1.5" y="1.5" width="13" height="13"/><path d="M4.5 4 H14.5 M4.5 4 V7.5 H14.5 M4.5 9.5 H14.5 M4.5 9.5 V12.5 H14.5"/>',
-  };
+  const ICONS = window.STRUKTO_ICONS || {};
   const icon = (k) => `<svg class="ico" viewBox="0 0 16 16">${ICONS[k] || ''}</svg>`;
 
   // [Typ, Name, Beschreibung, Taste zum Einfügen] – Namen und Tasten je Sprache
@@ -114,7 +102,7 @@
       ${zoomGroup}`;
     const w = $('where');
     w.value = where;
-    w.addEventListener('change', () => { where = w.value; save(); });
+    w.addEventListener('change', () => { where = w.value; save(); reportTools(); });
   }
 
   /** Zoomstufe direkt eingeben (wie in anderen Programmen): 150, 150 % oder 1,5x; Enter/Verlassen übernimmt, Esc verwirft */
@@ -150,7 +138,7 @@
     const sp = $('speed');
     if (!sp) return;
     sp.value = String(speed);
-    sp.addEventListener('change', () => { speed = Number(sp.value); save(); post({ type: 'exec', cmd: 'config', delay: speed }); });
+    sp.addEventListener('change', () => { speed = Number(sp.value); save(); post({ type: 'exec', cmd: 'config', delay: speed }); reportTools(); });
   }
 
   toolbar.addEventListener('click', (e) => {
@@ -160,6 +148,42 @@
     else if (b.dataset.x) execCmd(b.dataset.x);
     else action(b.dataset.a);
   });
+
+  /** Befehl aus der Struktograf-Seitenleiste ausführen (gleiche Wirkung wie der Knopf in der Werkzeugleiste) */
+  function runTool(m) {
+    if (READONLY) return;
+    if (m.kind) insertKind(m.kind, m.where || where);
+    else if (m.x) execCmd(m.x);
+    else if (m.a) action(m.a);
+    else if (m.set === 'where') { where = m.value === 'before' ? 'before' : 'after'; const w = $('where'); if (w) w.value = where; save(); }
+    else if (m.set === 'zoom') { const v = Number(m.value); if (v > 0) setZoom(v / 100); }
+    else if (m.set === 'speed') { speed = Number(m.value); const sp = $('speed'); if (sp) sp.value = String(speed); save(); post({ type: 'exec', cmd: 'config', delay: speed }); }
+    reportTools();
+  }
+
+  /** Werkzeugleiste im Editor oder in der Seitenleiste (Einstellung struktogramm.toolbarLocation) */
+  function setToolbarMode(mode) {
+    document.body.classList.toggle('tools-sidebar', mode === 'sidebar');
+  }
+
+  /** Zustand der Knöpfe an die Seitenleiste melden (gesperrt, Einfügeposition, Tempo, Zoom, Ausführung) */
+  let reportTimer = null, lastReport = '';
+  function reportTools(force) {
+    if (READONLY) return;
+    clearTimeout(reportTimer);
+    reportTimer = setTimeout(() => {
+      const disabled = {};
+      toolbar.querySelectorAll('button').forEach((b) => {
+        const id = b.dataset.kind ? 'kind:' + b.dataset.kind : b.dataset.x ? 'x:' + b.dataset.x : 'a:' + b.dataset.a;
+        if (b.disabled) disabled[id] = true;
+      });
+      const state = { disabled, where, speed, zoom: Math.round(zoom * 100), exec: execState || 'idle' };
+      const json = JSON.stringify(state);
+      if (!force && json === lastReport) return;
+      lastReport = json;
+      post({ type: 'toolState', state });
+    }, 30);
+  }
 
   function insertKind(kind, w) {
     op({ op: 'insert', path: sel, kind, where: w || where });
@@ -234,6 +258,7 @@
     }
     const zi = $('zoomInput');
     if (zi && document.activeElement !== zi) zi.value = Math.round(zoom * 100) + ' %';
+    reportTools();
   }
 
   function status(t) { statusbar.textContent = t || ''; }
@@ -311,6 +336,9 @@
       hasClipboard = m.has; updateButtons();
     } else if (m.type === 'renderPng') renderPng(m.svg, m.id);
     else if (m.type === 'execCommand') execCmd(m.cmd);
+    else if (m.type === 'tool') runTool(m);
+    else if (m.type === 'toolbarMode') setToolbarMode(m.mode);
+    else if (m.type === 'toolStateRequest') reportTools(true);
     else if (m.type === 'execTurtle') turtleApply(m.ops);
     else if (m.type === 'preview') { if (picker && m.token === picker.token) showPreview(m.svg, m.path); }
     else if (m.type === 'execReset') {
@@ -1385,6 +1413,9 @@
   buildToolbar();
   initSpeed();
   initZoomInput();
+  setToolbarMode(document.body.dataset.toolbar);
+  // jede Änderung an den Knöpfen (gesperrt, Beschriftung) an die Seitenleiste melden
+  new MutationObserver(() => reportTools()).observe(toolbar, { subtree: true, attributes: true, attributeFilter: ['disabled'], childList: true, characterData: true });
   updateExecButtons();
   applyZoom();
   post({ type: 'ready' });

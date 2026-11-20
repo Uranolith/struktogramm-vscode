@@ -1,6 +1,10 @@
 # Änderungen
 
 ## Unveröffentlicht
+- **Werkzeuge in der Seitenleiste:** die Werkzeuge des Struktogramm-Editors wahlweise als Ansicht *Struktograf* in der
+  Aktivitätsleiste (wie der Explorer), im Stil der VS-Code-Seitenleiste. Kategorien lassen sich ein- und ausklappen
+  und per Drag & Drop (oder Alt+↑/↓) umsortieren. Einstellung `struktogramm.toolbarLocation`, live umschaltbar per
+  Befehl oder Knopf in der Titelleiste.
 - **Zoom als Eingabefeld:** Zoomstufe direkt eingeben (z.B. `150`, `150 %`, `1,5x`); Enter übernimmt, Esc verwirft,
   ↑/↓ ändern um 10 %.
 

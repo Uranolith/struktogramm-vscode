@@ -44,5 +44,12 @@
   "config.structorizer.javaPath": "Java-Programm (mindestens Version 11), mit dem Structorizer gestartet wird.",
   "config.structorizer.exportOptions": "Zusätzliche Schalter für den Structorizer-Export, z.B. \"-b\" (Klammern in eigener Zeile), \"-c\" (Anweisungen als Kommentar), \"-t\" (ohne Übersetzung).",
   "icon.newFile": "Neues Struktogramm",
-  "lang.nsd": "Struktogramm (NSD)"
+  "lang.nsd": "Struktogramm (NSD)",
+  "container.struktograf": "Struktograf",
+  "view.tools": "Werkzeuge",
+  "cmd.tools.resetLayout": "Reihenfolge der Werkzeug-Kategorien zurücksetzen",
+  "cmd.toggleToolbarLocation": "Werkzeuge im Editor oder in der Seitenleiste anzeigen",
+  "config.toolbarLocation": "Wo die Struktogramm-Werkzeuge stehen: in der Werkzeugleiste oben im Editor oder in der Ansicht *Struktograf* in der Aktivitätsleiste (wie der Explorer). Lässt sich live umschalten, auch mit dem Befehl *Struktograf: Werkzeuge im Editor oder in der Seitenleiste anzeigen* oder dem Knopf in der Titelleiste des Editors.",
+  "config.toolbarLocation.enum0": "Werkzeugleiste oben im Struktogramm-Editor",
+  "config.toolbarLocation.enum1": "Ansicht Struktograf in der Aktivitätsleiste (wie der Explorer)"
 }

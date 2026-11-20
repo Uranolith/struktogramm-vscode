@@ -3,6 +3,15 @@ const vscode = require('vscode');
 const { renderSvg } = require('./core/render');
 const { t, allStrings, getLanguage } = require('./i18n');
 
+/** Werkzeuge in der Editor-Kopfzeile ('editor') oder in der Seitenleiste ('sidebar'); liest auch die frühere Dev-Vorschau-Einstellung */
+function toolbarLocation() {
+  const c = vscode.workspace.getConfiguration('struktogramm');
+  const i = c.inspect('toolbarLocation') || {};
+  const set = i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue;
+  const v = set !== undefined ? set : c.get('devPreview.toolbarLocation', 'editor');
+  return v === 'sidebar' ? 'sidebar' : 'editor';
+}
+
 /** Text für ein HTML-Attribut */
 const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -28,7 +37,7 @@ function webviewHtml(webview, extensionUri, readonly) {
 <link rel="stylesheet" href="${css}">
 <title>${attr(t('ext.filterNsd'))}</title>
 </head>
-<body data-readonly="${readonly ? 1 : 0}" data-l10n="${attr(JSON.stringify(allStrings()))}">
+<body data-readonly="${readonly ? 1 : 0}" data-toolbar="${readonly ? 'editor' : toolbarLocation()}" data-l10n="${attr(JSON.stringify(allStrings()))}">
 <div id="toolbar" role="toolbar" aria-label="${attr(t('web.toolbarLabel'))}"></div>
 <div id="message" hidden></div>
 <div id="scroller"><div id="canvas"></div><div id="dropmark" hidden></div></div>
@@ -43,6 +52,7 @@ function webviewHtml(webview, extensionUri, readonly) {
 <div id="statusbar" role="status" aria-live="polite"></div>
 <div id="menu" hidden></div>
 <div id="dialog" hidden></div>
+<script nonce="${n}" src="${webview.asWebviewUri(vscode.Uri.joinPath(media, 'icons.js'))}"></script>
 <script nonce="${n}" src="${js}"></script>
 </body>
 </html>`;
@@ -76,4 +86,4 @@ function render(model, overrides) {
   return renderSvg(model, { ...settings(), ...(overrides || {}) });
 }
 
-module.exports = { webviewHtml, settings, render, diagramTheme, editorTheme };
+module.exports = { toolbarLocation, webviewHtml, settings, render, diagramTheme, editorTheme };

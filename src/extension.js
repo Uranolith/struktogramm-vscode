@@ -13,6 +13,8 @@ const { parseSignature } = require('./core/pseudo');
 const { ExecController } = require('./execSession');
 const S = require('./structorizer');
 const { t, setLanguage } = require('./i18n');
+const { ToolsViewProvider, VIEW_ID } = require('./toolsView');
+const { toolbarLocation } = require('./webview');
 
 let extContext = null;
 
@@ -30,12 +32,20 @@ class NsdEditorProvider {
     this.editors = new Set();
     this.clipboard = null;   // kopiertes Element (zwischen allen Editoren)
     this.pending = new Map(); // uri -> 'run'|'step': nach dem Öffnen automatisch starten
+    this.tools = null;       // Struktograf-Seitenleiste mit den Werkzeugen
+  }
+
+  /** aktiven Editor setzen und die Seitenleiste nachziehen */
+  setActive(state) {
+    if (this.active === state) return;
+    this.active = state;
+    if (this.tools) this.tools.refresh(true);
   }
 
   resolveCustomTextEditor(document, panel) {
     const state = { document, panel, select: undefined, editNew: false };
     this.editors.add(state);
-    this.active = state;
+    this.setActive(state);
     panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')] };
     panel.webview.html = webviewHtml(panel.webview, this.context.extensionUri, false);
     state.exec = new ExecController(panel.webview, () => fromNsd(document.getText()),
@@ -64,19 +74,20 @@ class NsdEditorProvider {
       }),
       vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('struktogramm')) send(); }),
       vscode.window.onDidChangeActiveColorTheme(() => send()),
-      panel.onDidChangeViewState(() => { if (panel.active) this.active = state; }),
+      panel.onDidChangeViewState(() => { if (panel.active) this.setActive(state); }),
     ];
     panel.onDidDispose(() => {
       state.exec.abort();
       subs.forEach((s) => s.dispose());
       this.editors.delete(state);
-      if (this.active === state) this.active = null;
+      if (this.active === state) this.setActive(null);
     });
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {
         if (state.exec.handle(msg) || handlePngData(msg)) return;
         switch (msg.type) {
+          case 'toolState': if (this.tools) this.tools.setState(state, msg.state); break;
           case 'ready': {
             send();
             const key = document.uri.toString();
@@ -613,6 +624,16 @@ function activate(context) {
   setLanguage(vscode.env.language); // Englisch, bei deutscher VS-Code-Oberfläche Deutsch
   const provider = new NsdEditorProvider(context);
   const preview = new PreviewPanel(context);
+  // Werkzeuge in der Editor-Kopfzeile oder in der Struktograf-Seitenleiste (Einstellung struktogramm.toolbarLocation)
+  const tools = new ToolsViewProvider(context, provider);
+  provider.tools = tools;
+  const applyToolbarLocation = (reveal) => {
+    const loc = toolbarLocation();
+    vscode.commands.executeCommand('setContext', 'struktograf.toolsInSidebar', loc === 'sidebar');
+    provider.editors.forEach((s) => s.panel.webview.postMessage({ type: 'toolbarMode', mode: loc }));
+    if (reveal && loc === 'sidebar') vscode.commands.executeCommand('workbench.view.extension.struktograf');
+  };
+  applyToolbarLocation(false);
   const activeEditorDoc = () => (provider.active ? provider.active.document : null);
   /**
    * Ausführung steuern (F5 / F10 / F6 / Shift+F5). Ziel: aktive Live-Vorschau, sonst der aktive .nsd-Editor.
@@ -633,6 +654,18 @@ function activate(context) {
   }
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider('struktogramm.editor', provider, { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.window.registerWebviewViewProvider(VIEW_ID, tools),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('struktogramm.toolbarLocation') || e.affectsConfiguration('struktogramm.devPreview.toolbarLocation')) applyToolbarLocation(true);
+    }),
+    vscode.commands.registerCommand('struktogramm.tools.resetLayout', () => tools.resetLayout()),
+    vscode.commands.registerCommand('struktogramm.toggleToolbarLocation', async () => {
+      const next = toolbarLocation() === 'sidebar' ? 'editor' : 'sidebar';
+      const c = vscode.workspace.getConfiguration('struktogramm');
+      await c.update('toolbarLocation', next, vscode.ConfigurationTarget.Global);
+      // frühere Dev-Vorschau-Einstellung aufräumen
+      if (c.inspect('devPreview.toolbarLocation')?.globalValue !== undefined) await c.update('devPreview.toolbarLocation', undefined, vscode.ConfigurationTarget.Global);
+    }),
     vscode.commands.registerCommand('struktogramm.fromCode', (uri) => fromCode(uri, 'auto')),
     vscode.commands.registerCommand('struktogramm.fromCodeStructorizer', (uri) => fromCode(uri, 'structorizer')),
     vscode.commands.registerCommand('struktogramm.toCode', (uri) => toCode(uri, provider)),

@@ -20,6 +20,7 @@ body { display: flex; flex-direction: column; }
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
   user-select: none;
 }
+body.tools-sidebar #toolbar { display: none; }
 #toolbar .group { display: inline-flex; gap: 2px; align-items: center; }
 #toolbar .hint { opacity: .75; font-size: 12px; }
 #toolbar .zoomInput {

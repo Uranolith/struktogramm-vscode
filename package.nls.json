@@ -44,5 +44,12 @@
   "config.structorizer.javaPath": "Java program (version 11 or newer) used to start Structorizer.",
   "config.structorizer.exportOptions": "Additional switches for the Structorizer export, e.g. \"-b\" (braces on their own line), \"-c\" (instructions as comments), \"-t\" (no translation).",
   "icon.newFile": "New structogram",
-  "lang.nsd": "Structogram (NSD)"
+  "lang.nsd": "Structogram (NSD)",
+  "container.struktograf": "Struktograf",
+  "view.tools": "Tools",
+  "cmd.tools.resetLayout": "Reset Order of Tool Categories",
+  "cmd.toggleToolbarLocation": "Show Tools in Editor or Sidebar",
+  "config.toolbarLocation": "Where the structogram tools are shown: in the toolbar at the top of the editor or in the *Struktograf* view in the activity bar (like the Explorer). Can be switched live, also with the command *Struktograf: Show Tools in Editor or Sidebar* or the button in the editor title bar.",
+  "config.toolbarLocation.enum0": "Toolbar at the top of the structogram editor",
+  "config.toolbarLocation.enum1": "Struktograf view in the activity bar (like the Explorer)"
 }
