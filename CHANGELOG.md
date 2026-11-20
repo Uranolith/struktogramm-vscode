@@ -12,6 +12,7 @@
 - **F5 überall:** Nach einem Einzelschritt (F10) setzt F5 fort, egal wo der Fokus gerade ist. Hat die aktive Datei
   keinen eigenen Debugger, startet F5 das geöffnete Struktogramm. In der Debugger-Auswahl von VS Code steht
   „▶ Struktogramm ausführen (Struktograf)“ ganz oben; auch in `launch.json` nutzbar (`"type": "struktogramm"`).
+- **Eingabe:** Wartet das Programm auf `INPUT`, steht der Cursor direkt im Eingabefeld.
 - **Zoom als Eingabefeld:** Zoomstufe direkt eingeben (z.B. `150`, `150 %`, `1,5x`); Enter übernimmt, Esc verwirft,
   ↑/↓ ändern um 10 %.
 

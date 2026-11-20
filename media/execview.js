@@ -33,6 +33,11 @@
     } else if (m.type === 'clear') EX.clear();
     else apply(m, true);
   });
+  // wartet die Ausführung auf eine Eingabe, landet der Cursor beim Fokussieren des Panels im Eingabefeld
+  window.addEventListener('focus', () => {
+    const form = document.getElementById('conin');
+    if (form && !form.hidden) setTimeout(() => document.getElementById('coninput').focus(), 0);
+  });
   showEmpty(false);
   post({ type: 'ready' });
 })();

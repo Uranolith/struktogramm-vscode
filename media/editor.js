@@ -438,6 +438,11 @@
     if (!inPanel && execState !== 'idle') $('execpanel').hidden = false;
   }
 
+  // wartet die Ausführung auf eine Eingabe, landet der Cursor beim Fokussieren des Editors im Eingabefeld
+  window.addEventListener('focus', () => {
+    if (execState === 'input' && !document.body.classList.contains('exec-in-panel')) setTimeout(() => $('coninput').focus(), 0);
+  });
+
   // Konsole, Eingabe, Turtleizer und Variablen (gemeinsam mit dem Panel unten, siehe execui.js)
   $('execpanel').innerHTML = window.StruktoExec.markup(T, escapeHtml, true);
   const EX = window.StruktoExec.create({ T, esc: escapeHtml, post, onShow: showExecPanel });

@@ -77,6 +77,8 @@ class NsdEditorProvider {
         if (m.type === 'execState') {
           this.execEditor = state;
           this.updateExecContext();
+          // Eingabe erwartet: Fokus in den Editor, damit der Cursor direkt im Eingabefeld steht
+          if (m.state === 'input' && executionLocation() !== 'panel') panel.reveal(panel.viewColumn, false);
         }
         return r;
       },
