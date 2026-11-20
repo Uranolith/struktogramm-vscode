@@ -13,6 +13,9 @@
   keinen eigenen Debugger, startet F5 das geöffnete Struktogramm. In der Debugger-Auswahl von VS Code steht
   „▶ Struktogramm ausführen (Struktograf)“ ganz oben; auch in `launch.json` nutzbar (`"type": "struktogramm"`).
 - **Eingabe:** Wartet das Programm auf `INPUT`, steht der Cursor direkt im Eingabefeld.
+- **Abgeschlossene Aufrufe:** Die Variablenansicht zeigt unter den laufenden Aufrufen alle beendeten Funktionen mit
+  ihrem Endzustand, „(beendet)“ und Rückgabewert, neueste zuerst. Mehrfache Aufrufe sind nummeriert (`summe #1`,
+  `summe #2` …). Auch bei Tempo „Sofort“ bleibt so der Endzustand des Programms sichtbar.
 - **Zoom als Eingabefeld:** Zoomstufe direkt eingeben (z.B. `150`, `150 %`, `1,5x`); Enter übernimmt, Esc verwirft,
   ↑/↓ ändern um 10 %.
 

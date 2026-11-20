@@ -36,6 +36,9 @@ class ExecSession {
 
   post(state, extra = {}) {
     this.flushOut();
+    // beendete Aufrufe (Endzustände) als eigene Meldung, damit sie in der Anzeige erhalten bleiben
+    const done = this.interp.takeCompleted();
+    if (done.length) this.webview.postMessage({ type: 'execCompleted', items: done });
     this.state = state;
     this.lastPost = Date.now();
     this.webview.postMessage({ type: 'execState', state, path: this.path, frames: this.interp.snapshot(), steps: this.steps, ...extra });

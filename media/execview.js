@@ -22,6 +22,7 @@
     if (m.type === 'execReset') { empty.hidden = true; box.hidden = false; EX.reset(m.title); }
     else if (m.type === 'execOut') EX.out(m.lines);
     else if (m.type === 'execTurtle') EX.turtle(m.ops);
+    else if (m.type === 'execCompleted') EX.completed(m.items);
     else if (m.type === 'execState') EX.state(m, live);
   }
 

@@ -33,6 +33,12 @@
 #vars .frame { font-weight: bold; margin: 6px 0 2px; }
 #vars .frame.top { color: var(--vscode-textLink-foreground, #3794ff); }
 #vars .muted { opacity: .6; font-weight: normal; }
+#vars .callno { opacity: .7; font-weight: normal; }
+#vars .ret { font-weight: normal; font-family: var(--vscode-editor-font-family, Consolas, monospace); color: var(--vscode-debugTokenExpression-number, inherit); }
+#vars .vdone[hidden] { display: none; }
+#vars .vhead { margin: 10px 0 2px; padding-top: 6px; border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); font-size: 11px; text-transform: uppercase; opacity: .7; }
+#vars .doneframe .frame { font-weight: normal; }
+#vars .doneframe table { opacity: .85; }
 #vars table { border-collapse: collapse; width: 100%; font-family: var(--vscode-editor-font-family, Consolas, monospace); }
 #vars td { padding: 1px 6px 1px 0; vertical-align: top; }
 #vars td.n { white-space: nowrap; }

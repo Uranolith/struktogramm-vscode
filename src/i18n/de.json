@@ -481,6 +481,9 @@
  "web.type.root": "Diagramm",
  "web.type.try": "Try",
  "web.type.while": "Kopfschleife",
+ "web.vars.aborted": "abgebrochen",
+ "web.vars.complete": "beendet",
+ "web.vars.doneHeader": "Abgeschlossene Aufrufe ({0})",
  "web.vars.none": "keine Variablen",
  "web.vars.waiting": "wartet"
 }

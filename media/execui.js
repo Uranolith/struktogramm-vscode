@@ -36,18 +36,40 @@
       out.scrollTop = out.scrollHeight;
     }
 
-    function vars(frames) {
+    // Name eines Aufrufs; Unterprogramme mit Aufrufnummer, damit mehrfache Aufrufe unterscheidbar sind
+    const callName = (f) => esc(f.name) + (f.main || !f.callNo ? '' : ` <span class="callno">#${f.callNo}</span>`);
+    const table = (list) => '<table>' + (list.length ? list.map((x) => `<tr><td class="n">${esc(x.name)}</td><td class="v">${esc(x.value)}</td><td class="t">${esc(x.type || '')}</td></tr>`).join('') : `<tr><td class="muted">${esc(T('web.vars.none'))}</td></tr>`) + '</table>';
+
+    // Variablenansicht: oben die laufenden Aufrufe, darunter die abgeschlossenen (neueste zuerst)
+    function varsBox() {
       const v = $('vars');
-      if (!frames.length) return;
+      if (!v.querySelector('.vactive')) v.innerHTML = '<div class="vactive"></div><div class="vdone" hidden><div class="vhead"></div><div class="vlist"></div></div>';
+      return v;
+    }
+    function vars(frames) {
+      const box = varsBox().querySelector('.vactive');
       let html = '';
       for (let k = frames.length - 1; k >= 0; k--) {
         const f = frames[k];
-        html += `<div class="frame${k === frames.length - 1 ? ' top' : ''}">${esc(f.name)}${k === frames.length - 1 ? '' : ` <span class="muted">(${esc(T('web.vars.waiting'))})</span>`}</div>`;
-        if (k === frames.length - 1 || frames.length <= 3) {
-          html += '<table>' + (f.vars.length ? f.vars.map((x) => `<tr><td class="n">${esc(x.name)}</td><td class="v">${esc(x.value)}</td><td class="t">${esc(x.type || '')}</td></tr>`).join('') : `<tr><td class="muted">${esc(T('web.vars.none'))}</td></tr>`) + '</table>';
-        }
+        html += `<div class="frame${k === frames.length - 1 ? ' top' : ''}">${callName(f)}${k === frames.length - 1 ? '' : ` <span class="muted">(${esc(T('web.vars.waiting'))})</span>`}</div>`;
+        if (k === frames.length - 1 || frames.length <= 3) html += table(f.vars);
       }
-      v.innerHTML = html;
+      box.innerHTML = html;
+    }
+    let doneCount = 0;
+    function completed(items) {
+      const v = varsBox();
+      const sec = v.querySelector('.vdone'), list = v.querySelector('.vlist');
+      for (const c of items) {
+        const d = document.createElement('div');
+        d.className = 'doneframe';
+        d.innerHTML = `<div class="frame">${callName(c)} <span class="muted">(${esc(T(c.aborted ? 'web.vars.aborted' : 'web.vars.complete'))})</span>${c.result !== undefined ? ` <span class="ret">→ ${esc(c.result)}</span>` : ''}</div>` + table(c.vars);
+        list.insertBefore(d, list.firstChild);
+        doneCount++;
+      }
+      while (list.childNodes.length > 500) list.removeChild(list.lastChild);
+      sec.hidden = !doneCount;
+      v.querySelector('.vhead').textContent = T('web.vars.doneHeader', doneCount);
     }
 
     // Turtleizer: Zeichenfläche für forward/left/… – erscheint, sobald das Programm die Turtle benutzt
@@ -98,11 +120,13 @@
       reset(title) {
         $('conout').innerHTML = '';
         $('vars').innerHTML = '';
+        doneCount = 0;
         turtleReset();
         show();
         line('▶ ' + (title || ''), 'info');
       },
       out(lines) { show(); for (const l of lines) line(l.text, l.kind); },
+      completed(items) { completed(items); },
       turtle(ops) {
         for (const o of ops) {
           if (o.op === 'line') tt.lines.push(o);

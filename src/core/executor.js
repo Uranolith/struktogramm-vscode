@@ -431,14 +431,20 @@ class Interpreter {
       if (t) types.set(p.name, t);
       vars.set(p.name, this.coerce(args[k], t));
     });
-    this.frames.push({ name: sig.name, rootIndex, vars, types, sig });
+    // Aufrufe je Name zählen, damit mehrfache Aufrufe in der Variablenansicht unterscheidbar sind
+    if (!this.callCounts) this.callCounts = new Map();
+    const callNo = (this.callCounts.get(sig.name) || 0) + 1;
+    this.callCounts.set(sig.name, callNo);
+    this.frames.push({ name: sig.name, rootIndex, vars, types, sig, callNo, main: !this.frames.length });
     let result;
+    let finished = false;
     try {
       yield* this.applyIncludes(r, this.frame);
       yield* this.seq(r.children, `roots/${rootIndex}/children`);
+      finished = true;
     } catch (e) {
-      if (e instanceof Signal && e.kind === 'return') result = e.value;
-      else if (e instanceof Signal && (e.kind === 'leave' || e.kind === 'continue')) { /* außerhalb einer Schleife: ignorieren */ }
+      if (e instanceof Signal && e.kind === 'return') { result = e.value; finished = true; }
+      else if (e instanceof Signal && (e.kind === 'leave' || e.kind === 'continue')) { finished = true; /* außerhalb einer Schleife: ignorieren */ }
       else throw e;
     } finally {
       const f = this.frames.pop();
@@ -448,6 +454,7 @@ class Interpreter {
         else if (f.vars.has('result')) result = f.vars.get('result');
         else if (f.vars.has('Result')) result = f.vars.get('Result');
       }
+      this.recordCompleted(f, result, !finished);
     }
     return result;
   }
@@ -1070,9 +1077,33 @@ class Interpreter {
   }
 
   /** Variablen für die Anzeige */
+  /** beendeten Aufruf merken (nur Verweis, formatiert wird erst beim Senden); die letzten 500 bleiben erhalten */
+  recordCompleted(f, result, aborted) {
+    if (!this.completed) { this.completed = []; this.completedSeq = 0; this.completedSent = 0; }
+    this.completed.push({ seq: ++this.completedSeq, f, result, aborted });
+    if (this.completed.length > 500) this.completed.shift();
+  }
+
+  /** seit dem letzten Aufruf beendete Aufrufe, fertig für die Anzeige */
+  takeCompleted() {
+    if (!this.completed) return [];
+    const out = this.completed.filter((c) => c.seq > this.completedSent).map((c) => ({
+      name: c.f.name,
+      callNo: c.f.callNo,
+      main: c.f.main,
+      aborted: c.aborted,
+      result: c.result === undefined ? undefined : fmt(c.result, true),
+      vars: [...c.f.vars].map(([k, v]) => ({ name: k, value: fmt(v, true), type: c.f.types.get(k) || typeLabel(v) })),
+    }));
+    this.completedSent = this.completedSeq;
+    return out;
+  }
+
   snapshot() {
     return this.frames.map((f) => ({
       name: f.name,
+      callNo: f.callNo,
+      main: f.main,
       vars: [...f.vars].map(([k, v]) => ({ name: k, value: fmt(v, true), type: f.types.get(k) || typeLabel(v) })),
     }));
   }
