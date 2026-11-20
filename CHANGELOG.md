@@ -6,6 +6,8 @@
   Pascal `BeginThread` (Hauptprogramm). Bisher liefen die Zweige nacheinander; JavaScript bleibt dabei.
 - Pascal: Feld-Literale `{1, 2, 3}` werden als `[1, 2, 3]` erzeugt (vorher als Kommentar missverstanden).
 - Zählvariablen gelten im Schleifenrumpf als deklariert (keine doppelte Deklaration in C, C++, Java, C#).
+- Neues Beispiel `test/samples/gesamttest.nsd` (alle Elemente, Rekursion, Parallelverarbeitung) und
+  `test/sprachtest.js`, das es in allen Zielsprachen übersetzt, ausführt und mit dem Interpreter vergleicht.
 
 ## 0.9.0
 - README an den neuen Arbeitsbereich angepasst: Werkzeug-Ansicht, Ausführungs-Panel mit den Reitern

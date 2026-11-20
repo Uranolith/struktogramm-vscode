@@ -116,7 +116,8 @@ Python in das Modul `turtle` übersetzt; die Datei-API wird nur ausgeführt, nic
 C# `Parallel.Invoke`, C++ `std::thread`, C OpenMP (`#pragma omp parallel sections`, mit `-fopenmp` übersetzen),
 Kotlin `thread { }`, Rust `std::thread::scope`, Pascal `BeginThread`. Das Programm wartet, bis alle Zweige
 fertig sind. In Java arbeitet jeder Zweig mit Kopien der Variablen, geänderte Werte werden danach übernommen.
-Beim Ausführen im Editor laufen die Zweige dagegen nacheinander.
+Beim Ausführen im Editor laufen die Zweige dagegen nacheinander. Ein Beispiel mit allen Elementen, Rekursion und
+Parallelverarbeitung ist `test/samples/gesamttest.nsd`.
 
 Schlüsselwörter (blau, fett), Funktionsaufrufe (dunkelgelb, fett), Datentypen (petrol), Zeichenketten (rot),
 Operatoren (lila, fett: Zuweisung `:=`, Vergleiche `=` `<>` `<` `>` `≤` `≥`, Rechnen `+ - * / %` `mod`) werden im Diagramm farbig
@@ -215,6 +216,12 @@ Parallelverarbeitung im erzeugten Code:
 - **JavaScript** kennt keine Threads mit gemeinsamen Variablen, die Zweige laufen nacheinander. Für `INPUT`
   braucht der erzeugte Code das Paket `prompt-sync` (`npm install prompt-sync`), das in einem Terminal laufen muss.
 - **C** braucht `-fopenmp`, sonst laufen die Zweige nacheinander.
+
+## Entwicklung
+`node test/sprachtest.js` führt `test/samples/gesamttest.nsd` mit dem eingebauten Interpreter aus, erzeugt Code für
+alle Zielsprachen, übersetzt und startet ihn und vergleicht die Ausgaben. Sprachen ohne installierten Compiler
+werden übersprungen; ein anderes Struktogramm und die Eingabe lassen sich angeben
+(`node test/sprachtest.js datei.nsd --input 3 python rust`).
 
 ## Lizenz
 Diese Extension steht unter der MIT-Lizenz. Structorizer (© Bob Fisch, Kay Gürtzig u.a.) ist ein
