@@ -22,13 +22,14 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
 
 ## Funktionen
 - **Neues Struktogramm**: *Datei → Neue Datei... → Neues Struktogramm...*, Rechtsklick auf einen Ordner im Explorer,
-  das Symbol oben in der Explorer-Leiste oder der Knopf *+ Neues Struktogramm* im Struktogramm-Editor.
+  das Symbol oben in der Explorer-Leiste oder *Neues Struktogramm...* in der Werkzeug-Ansicht *Struktograf*.
   Nach Eingabe des Namens öffnet sich die neue `.nsd`-Datei mit einem leeren Hauptprogramm.
 - **Sprache**: Oberfläche auf Englisch oder Deutsch, je nach Anzeigesprache von VS Code (*Configure Display Language*).
 - **Arbeitsbereich**: Die Werkzeuge stehen in der Ansicht **Struktograf** (Symbol links in der Aktivitätsleiste),
   die Ausführung (Konsole, Eingabe, Turtleizer, Variablen) im Panel **Struktograf** unten neben *Probleme* und
   *Ausgabe*. Wer beides lieber direkt im Editor hat, stellt `struktogramm.toolbarLocation` bzw.
   `struktogramm.executionPanelLocation` auf `editor` – oder schaltet live über die Knöpfe in den Titelleisten um.
+  Die Kategorien der Werkzeug-Ansicht lassen sich ein- und ausklappen und per Drag & Drop (oder Alt+↑/↓) umsortieren.
 - **Code → Struktogramm**: Python, Java, C, C++, C#, JavaScript, TypeScript, Kotlin, Rust
   (Rechtsklick im Editor → *Struktogramm aus Code erzeugen*; mit Markierung nur der markierte Teil).
   Jede Funktion wird ein eigenes Diagramm, `main` bzw. Code auf oberster Ebene wird das Hauptprogramm.
@@ -43,18 +44,24 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   - Kotlin: `readln()` für Eingaben, String-Templates für Ausgaben, `IntArray`/`intArrayOf`, `when`, `downTo`/`step`.
   - Rust: `println!`, eine kleine `read_line()`-Hilfsfunktion für Eingaben, `Vec`, `match`, `loop`;
     ganze Zahlen werden in Rechnungen mit Kommazahlen automatisch als `2.0` geschrieben.
-- **Ausführen** (wie der Structorizer-Executor): ▶ Ausführen, ⏭ Einzelschritt, ⏸ Pause, ⏹ Stopp,
-  Tempo einstellbar, Haltepunkte (F9 oder Rechtsklick), Ein-/Ausgabe in der Konsole unten,
-  Variablen und Aufrufstapel daneben, Unterprogramme und Rekursion. Fehler werden am Element rot markiert.
-  Funktioniert auch in der Live-Vorschau von Quelltext.
+- **Ausführen** (wie der Structorizer-Executor): Ausführen, Einzelschritt, Anhalten, Beenden; Tempo langsam
+  (400 ms), mittel (200 ms), schnell (50 ms) oder sofort; Haltepunkte (F9 oder Rechtsklick). Das gerade ausgeführte
+  Element ist markiert und bleibt im Bild, Fehler werden am Element rot markiert. Unterprogramme und Rekursion
+  werden unterstützt; funktioniert auch in der Live-Vorschau von Quelltext.
+  - **Konsole** mit Ein- und Ausgabe (bei `INPUT` steht der Cursor direkt im Eingabefeld), daneben die
+    Turtleizer-Zeichnung.
+  - Reiter **Variablen**: laufende Aufrufe und darunter alle abgeschlossenen Aufrufe mit Endzustand und
+    Rückgabewert; mehrfache Aufrufe sind nummeriert (`summe #1`, `summe #2` …).
+  - Reiter **Aufrufe**: Aufrufstapel und Aufrufverlauf als Baum mit Argumenten und Rückgabewerten; ein Klick
+    springt zu den Variablen des Aufrufs.
 - **Original-Structorizer** (optional, benötigt Java 11+): wird beim ersten Gebrauch von GitHub
-  heruntergeladen (Befehl *Structorizer herunterladen / einrichten*).
-  - *Code erzeugen …* bietet zusätzlich alle 18 Structorizer-Generatoren an (u.a. PHP, Perl, BASIC,
+  heruntergeladen (Befehl *Structorizer herunterladen oder einrichten...*).
+  - *Code aus Struktogramm erzeugen...* bietet zusätzlich alle 18 Structorizer-Generatoren an (u.a. PHP, Perl, BASIC,
     Bash, Oberon, Delphi, LaTeX/StrucTeX).
   - Pascal/Delphi-, COBOL- und Processing-Dateien werden mit dem Structorizer-Parser eingelesen;
     für C/Java gibt es *Struktogramm aus Code erzeugen (Structorizer-Parser)*.
-  - *Im Original-Structorizer öffnen* startet die Structorizer-Oberfläche mit dem Diagramm.
-- **Export** als SVG oder PNG.
+  - *Im Structorizer öffnen* startet die Structorizer-Oberfläche mit dem Diagramm.
+- **Export** als SVG, PNG, JSON, XML, KI-kompakter Pseudocode und einzelne Structorizer-Dateien (siehe [Export](#export)).
 - **Structorizer-kompatibel**: liest und schreibt `.nsd` (XML) in Structorizer-Schreibweise. Eine Datei mit
   einem Diagramm öffnet der Structorizer direkt. Dateien mit mehreren Diagrammen (z.B. nach einem
   Code-Import mit Funktionen) kann der Structorizer nicht lesen. Teile sie mit *Diagramme einzeln als
@@ -117,14 +124,14 @@ wird gefragt, ob das Bild hell oder dunkel werden soll (`struktogramm.exportThem
 `light`, `dark`).
 
 ## Export
-**Exportieren …** (Werkzeugleiste, Titelleiste, Explorer-Kontextmenü) bietet:
+**Exportieren...** (Werkzeug-Ansicht, Titelleiste des Editors, Explorer-Kontextmenü) bietet:
 
 | Format | Zweck |
 |---|---|
 | SVG / PNG | Bild, hell oder dunkel |
 | JSON | vollständige Struktur (`diagrams[].body[]` mit `type`, `text`, `condition`, `then`/`else`, `body`, `branches` …) |
 | XML | dieselbe Struktur als einfaches XML (`<if><condition/><then/><else/></if>` …) |
-| KI-kompakt | token-sparender Pseudocode für KI-Agents – in die Zwischenablage oder als `.ki.txt` (Menü *Exportieren …* oder Befehl *KI-kompakt in die Zwischenablage*) |
+| KI-kompakt | token-sparender Pseudocode für KI-Agents – in die Zwischenablage oder als `.ki.txt` (Menü *Exportieren...* oder Befehl *KI-Pseudocode in die Zwischenablage kopieren*) |
 | Structorizer-Dateien | je Diagramm eine `.nsd` für den Original-Structorizer |
 
 KI-kompakt nutzt Einrückung mit einem Leerzeichen statt Klammern/Tags und ist etwa 6–8× kürzer als JSON:
@@ -143,7 +150,7 @@ return a + b
 
 ## Tastatur im Editor
 **F5** ausführen / fortsetzen · **F10** (oder F11) Einzelschritt · **F6** anhalten · **Umschalt+F5** beenden ·
-**F9** Haltepunkt. Im Explorer: Rechtsklick auf eine `.nsd` → *Struktogramm ausführen / fortsetzen*.
+**F9** Haltepunkt. Im Explorer: Rechtsklick auf eine `.nsd` → *Ausführen oder fortsetzen*.
 Läuft oder pausiert eine Ausführung, wirken diese Tasten überall in VS Code. Hat die aktive Datei keinen eigenen
 Debugger, startet F5 das geöffnete Struktogramm; in der Debugger-Auswahl von VS Code steht
 *▶ Struktogramm ausführen (Struktograf)* ganz oben.
@@ -162,11 +169,12 @@ Der Editor ist vollständig per Tastatur bedienbar; **?** zeigt alle Tastenkürz
 | Leertaste | Element aktivieren / deaktivieren |
 | Entf · Strg+↑/↓ · Strg+C/X/V | löschen · verschieben · kopieren/ausschneiden/einfügen |
 | Strg + + / − / 0 · Strg+Mausrad | Zoom |
-| Tab | Werkzeugleiste, Diagramm und Ausführungsbereich erreichen; Esc in der Konsoleneingabe springt zurück ins Diagramm |
+| Tab | Werkzeugleiste und Ausführungsbereich erreichen, sofern sie im Editor angezeigt werden; Esc in der Konsoleneingabe springt zurück ins Diagramm |
 
 Die Statusleiste nennt das ausgewählte Element samt Zweig (z.B. „Anweisung: y := 1 · Nein-Zweig“) und wird
 von Screenreadern vorgelesen. Nach dem Einfügen öffnet sich der Bearbeiten-Dialog; nach dem Schließen ist der
-Fokus wieder im Diagramm. Mit der Maus: Shift+Klick auf einen Einfüge-Knopf fügt davor ein.
+Fokus wieder im Diagramm. Mit der Maus: Shift+Klick auf einen Einfüge-Knopf der Editor-Werkzeugleiste fügt davor
+ein; in der Werkzeug-Ansicht legen die Knöpfe *Danach / Davor einfügen* die Position fest.
 
 Im Bearbeiten-Dialog lässt sich der **Elementtyp** wechseln (z.B. Kopfschleife → Fußschleife, Verzweigung →
 Fallauswahl, Anweisung → Aufruf). Enthaltene Elemente bleiben erhalten: Sie wandern in den ersten Block des neuen
@@ -187,8 +195,8 @@ Im Bearbeiten-Dialog schlägt die Autovervollständigung passend zur Stelle vor 
 | Sprung / Zählschleife / Fußschleife | `leave`, `return`, `exit` … / `for`, `foreach` / `until` |
 
 ## Grenzen
-Es ist kein vollständiger Compiler: Klassen, Ausnahmen (`try/catch`), Zeiger und Bibliotheksaufrufe
-werden vereinfacht oder unverändert übernommen. Variablentypen werden – wo nötig – geschätzt.
+Es ist kein vollständiger Compiler: Klassen, Zeiger und Bibliotheksaufrufe werden vereinfacht oder unverändert
+übernommen; von mehreren `catch`-Zweigen wird nur der erste übernommen. Variablentypen werden – wo nötig – geschätzt.
 String-Verkettung mit `+` lässt sich nicht nach C übersetzen.
 Bei Kotlin und Rust werden Klassen, `impl`-Blöcke, Lambdas/Closures und Ownership vereinfacht; im erzeugten
 Rust-Code werden Zeichenketten und Arrays bei Funktionsaufrufen mit `.clone()` übergeben.
