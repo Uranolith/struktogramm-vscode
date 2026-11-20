@@ -854,7 +854,11 @@ class CGen extends BaseGen {
     const text = linesOf(el).join(' ');
     const f = P.parseForText(text);
     const out = [];
-    const body = this.seq(el.body, ind + this.I);
+    // Zählvariable gilt im Rumpf als deklariert (keine zweite Deklaration bei Zuweisung im Rumpf)
+    const fv = f && SIMPLE_IDENT.test(f.var) && !this.cur.declared.has(f.var) ? f.var : null;
+    if (fv) this.cur.declared.add(fv);
+    let body;
+    try { body = this.seq(el.body, ind + this.I); } finally { if (fv) this.cur.declared.delete(fv); }
     if (!f) {
       out.push(ind + this.comment(tr('gen.todoLoop', text)));
       out.push(ind + 'while (true) {', ...body, ind + this.I + 'break;', ind + '}');

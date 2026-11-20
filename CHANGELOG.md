@@ -1,5 +1,8 @@
 # Änderungen
 
+## Unveröffentlicht
+- Zählvariablen gelten im Schleifenrumpf als deklariert (keine doppelte Deklaration in C, C++, Java, C#).
+
 ## 0.9.0
 - README an den neuen Arbeitsbereich angepasst: Werkzeug-Ansicht, Ausführungs-Panel mit den Reitern
   „Variablen“ und „Aufrufe“, aktuelle Befehlsnamen, alle Exportformate.
