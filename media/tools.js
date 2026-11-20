@@ -129,9 +129,9 @@
           continue;
         }
         if (r.speed) {
-          const sp = String(st.speed != null ? st.speed : 250);
+          const sp = String(st.speed != null ? st.speed : 200);
           // Tempo als Umschaltknöpfe (wie die Einfügeposition)
-          h += `<div class="seg" role="radiogroup" aria-label="${esc(T('web.tb.speed'))}" title="${esc(T('web.tb.speed'))}">${[['800', 'slow'], ['250', 'medium'], ['40', 'fast'], ['0', 'instant']].map(([v, k]) => `<button role="radio" aria-checked="${v === sp}" class="${v === sp ? 'on' : ''}" data-speed="${v}" data-id="speed-${v}">${esc(T('tools.speed.' + k))}</button>`).join('')}</div>`;
+          h += `<div class="seg" role="radiogroup" aria-label="${esc(T('web.tb.speed'))}" title="${esc(T('web.tb.speed'))}">${[['400', 'slow'], ['200', 'medium'], ['50', 'fast'], ['0', 'instant']].map(([v, k]) => `<button role="radio" aria-checked="${v === sp}" class="${v === sp ? 'on' : ''}" data-speed="${v}" data-id="speed-${v}">${esc(T('tools.speed.' + k))}</button>`).join('')}</div>`;
           continue;
         }
         if (r.zoom) {

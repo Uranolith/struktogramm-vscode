@@ -25,7 +25,12 @@
   let where = saved.where || 'after';
   let hasClipboard = false;
   let settings = {};
-  let speed = saved.speed != null ? saved.speed : 250;
+  // Tempo (ms je Schritt): langsam 400, mittel 200, schnell 50, sofort 0
+  const SPEEDS = [400, 200, 50, 0];
+  // frühere Stufen auf die gleichnamige neue Stufe abbilden
+  const OLD_SPEEDS = { 800: 400, 250: 400, 100: 200, 40: 50 };
+  const savedSpeed = saved.speed != null ? Number(saved.speed) : null;
+  let speed = savedSpeed == null ? 200 : SPEEDS.includes(savedSpeed) ? savedSpeed : (OLD_SPEEDS[savedSpeed] ?? 200);
   let breakpoints = new Set(saved.bps || []);
   let execState = 'idle';
   let runPath = null;
@@ -56,7 +61,7 @@
         <button data-x="step" title="${T('web.tb.step.title')}">⏭ <span>${T('web.tb.step')}</span></button>
         <button data-x="pause" title="${T('web.tb.pause.title')}" aria-label="${T('web.tb.pause.title')}">⏸</button>
         <button data-x="stop" title="${T('web.tb.stop.title')}" aria-label="${T('web.tb.stop.title')}">⏹</button>
-        <select id="speed" title="${T('web.tb.speed')}"><option value="800">${T('web.speed.slow')}</option><option value="250">${T('web.speed.medium')}</option><option value="40">${T('web.speed.fast')}</option><option value="0">${T('web.speed.instant')}</option></select>
+        <select id="speed" title="${T('web.tb.speed')}"><option value="400">${T('web.speed.slow')}</option><option value="200">${T('web.speed.medium')}</option><option value="50">${T('web.speed.fast')}</option><option value="0">${T('web.speed.instant')}</option></select>
       </span>`;
     const zoomGroup = `<span class="group"><button data-a="zoomOut" title="${T('web.tb.zoomOut.title')}" aria-label="${T('web.tb.zoomOut')}">−</button><input id="zoomInput" class="zoomInput" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" title="${T('web.tb.zoomInput.title')}" aria-label="${T('web.tb.zoomInput')}"><button data-a="zoomIn" title="${T('web.tb.zoomIn.title')}" aria-label="${T('web.tb.zoomIn')}">+</button><button data-a="help" title="${T('web.tb.help.title')}" aria-label="${T('web.tb.help')}">?</button></span>`;
     if (READONLY) {
@@ -356,7 +361,7 @@
       // Ausführung im Panel unten: dort wird eingegeben, der Editor behält den Fokus nicht
       EX.state(m, !document.body.classList.contains('exec-in-panel'));
       updateExecButtons();
-      markExec(m.state === 'paused' || m.state === 'input');
+      markExec(m.state !== 'done'); // mitscrollen, damit der ausgeführte Bereich immer zu sehen ist
     }
   });
 
@@ -383,6 +388,25 @@
     if (rb) rb.textContent = execState === 'paused' ? T('web.tb.continue') : T('web.tb.run');
   }
 
+  /**
+   * Ausgeführtes Element sichtbar halten: nur scrollen, wenn es (fast) aus dem Bild läuft, dann mittig platzieren.
+   * Ist es höher als der sichtbare Bereich (z.B. eine Schleife mit Rumpf), bleibt sein Anfang oben sichtbar.
+   */
+  function followExec(g) {
+    const bg = g.querySelector(':scope > rect.bg') || g;
+    const r = bg.getBoundingClientRect(), s = scroller.getBoundingClientRect();
+    const m = 24; // Rand, ab dem nachgeführt wird
+    const visH = s.height, visW = s.width;
+    if (r.top < s.top + m || r.bottom > s.bottom - m) {
+      const off = r.height > visH - 2 * m ? m : (visH - r.height) / 2;
+      scroller.scrollTop += r.top - s.top - off;
+    }
+    if (r.left < s.left + m || r.right > s.right - m) {
+      const off = r.width > visW - 2 * m ? m : (visW - r.width) / 2;
+      scroller.scrollLeft += r.left - s.left - off;
+    }
+  }
+
   function markExec(scroll) {
     canvas.querySelectorAll('.running, .errorel, .bp').forEach((n) => n.classList.remove('running', 'errorel', 'bp'));
     for (const p of breakpoints) { const g = nodeFor(p); if (g) g.classList.add('bp'); }
@@ -390,10 +414,7 @@
     const g = nodeFor(runPath);
     if (g) {
       g.classList.add('running');
-      if (scroll) {
-        const r = g.getBoundingClientRect(), s = scroller.getBoundingClientRect();
-        if (r.top < s.top || r.bottom > s.bottom) g.scrollIntoView({ block: 'center', inline: 'nearest' });
-      }
+      if (scroll) followExec(g);
     }
     const e = nodeFor(errPath);
     if (e) e.classList.add('errorel');

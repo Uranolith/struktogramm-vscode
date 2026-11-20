@@ -17,7 +17,7 @@ class ExecSession {
     this.interp = new Interpreter(model, opts);
     this.gen = this.interp.run(rootIndex);
     this.mode = 'run';
-    this.delay = 250;
+    this.delay = 200;
     this.breakpoints = new Set();
     this.state = 'idle';
     this.path = null;
