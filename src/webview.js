@@ -3,16 +3,16 @@ const vscode = require('vscode');
 const { renderSvg } = require('./core/render');
 const { t, allStrings, getLanguage } = require('./i18n');
 
-/** Ausführungsanzeige im Editor ('editor') oder im Panel unten ('panel') */
-const executionLocation = () => (vscode.workspace.getConfiguration('struktogramm').get('executionPanelLocation', 'editor') === 'panel' ? 'panel' : 'editor');
+/** Ausführungsanzeige im Panel unten ('panel', Standard) oder im Editor unter dem Diagramm ('editor') */
+const executionLocation = () => (vscode.workspace.getConfiguration('struktogramm').get('executionPanelLocation', 'panel') === 'editor' ? 'editor' : 'panel');
 
-/** Werkzeuge in der Editor-Kopfzeile ('editor') oder in der Seitenleiste ('sidebar'); liest auch die frühere Dev-Vorschau-Einstellung */
+/** Werkzeuge in der Seitenleiste ('sidebar', Standard) oder in der Editor-Kopfzeile ('editor'); liest auch die frühere Dev-Vorschau-Einstellung */
 function toolbarLocation() {
   const c = vscode.workspace.getConfiguration('struktogramm');
   const i = c.inspect('toolbarLocation') || {};
   const set = i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue;
-  const v = set !== undefined ? set : c.get('devPreview.toolbarLocation', 'editor');
-  return v === 'sidebar' ? 'sidebar' : 'editor';
+  const v = set !== undefined ? set : c.get('devPreview.toolbarLocation', 'sidebar');
+  return v === 'editor' ? 'editor' : 'sidebar';
 }
 
 /** Text für ein HTML-Attribut */

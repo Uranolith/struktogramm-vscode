@@ -25,6 +25,10 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   das Symbol oben in der Explorer-Leiste oder der Knopf *+ Neues Struktogramm* im Struktogramm-Editor.
   Nach Eingabe des Namens öffnet sich die neue `.nsd`-Datei mit einem leeren Hauptprogramm.
 - **Sprache**: Oberfläche auf Englisch oder Deutsch, je nach Anzeigesprache von VS Code (*Configure Display Language*).
+- **Arbeitsbereich**: Die Werkzeuge stehen in der Ansicht **Struktograf** (Symbol links in der Aktivitätsleiste),
+  die Ausführung (Konsole, Eingabe, Turtleizer, Variablen) im Panel **Struktograf** unten neben *Probleme* und
+  *Ausgabe*. Wer beides lieber direkt im Editor hat, stellt `struktogramm.toolbarLocation` bzw.
+  `struktogramm.executionPanelLocation` auf `editor` – oder schaltet live über die Knöpfe in den Titelleisten um.
 - **Code → Struktogramm**: Python, Java, C, C++, C#, JavaScript, TypeScript, Kotlin, Rust
   (Rechtsklick im Editor → *Struktogramm aus Code erzeugen*; mit Markierung nur der markierte Teil).
   Jede Funktion wird ein eigenes Diagramm, `main` bzw. Code auf oberster Ebene wird das Hauptprogramm.

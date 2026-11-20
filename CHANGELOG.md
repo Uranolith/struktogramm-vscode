@@ -1,6 +1,9 @@
 # Änderungen
 
 ## Unveröffentlicht
+- **Neue Standard-Anordnung:** Werkzeuge in der Ansicht *Struktograf* (Aktivitätsleiste links) und Ausführung im Panel
+  *Struktograf* unten in VS Code. Die bisherige Anordnung (beides im Editor) lässt sich in den Einstellungen
+  `struktogramm.toolbarLocation` und `struktogramm.executionPanelLocation` wieder wählen.
 - **Werkzeuge in der Seitenleiste:** die Werkzeuge des Struktogramm-Editors wahlweise als Ansicht *Struktograf* in der
   Aktivitätsleiste (wie der Explorer), im Stil der VS-Code-Seitenleiste. Kategorien lassen sich ein- und ausklappen
   und per Drag & Drop (oder Alt+↑/↓) umsortieren. Einstellung `struktogramm.toolbarLocation`, live umschaltbar per

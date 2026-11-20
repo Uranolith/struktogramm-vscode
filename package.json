@@ -543,7 +543,7 @@
             "editor",
             "panel"
           ],
-          "default": "editor",
+          "default": "panel",
           "enumDescriptions": [
             "%config.executionPanelLocation.enum0%",
             "%config.executionPanelLocation.enum1%"
@@ -556,7 +556,7 @@
             "editor",
             "sidebar"
           ],
-          "default": "editor",
+          "default": "sidebar",
           "enumDescriptions": [
             "%config.toolbarLocation.enum0%",
             "%config.toolbarLocation.enum1%"

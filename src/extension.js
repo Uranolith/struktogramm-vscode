@@ -67,6 +67,7 @@ class NsdEditorProvider {
     this.editors.add(state);
     this.setActive(state);
     this.updateOpenContext();
+    if (this.onFirstOpen) this.onFirstOpen();
     panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')] };
     panel.webview.html = webviewHtml(panel.webview, this.context.extensionUri, false);
     // Meldungen der Ausführung gehen an den Editor (Markierung im Diagramm) und an das Panel unten
@@ -673,6 +674,14 @@ function activate(context) {
     if (reveal && loc === 'sidebar') vscode.commands.executeCommand('workbench.view.extension.struktograf');
   };
   applyToolbarLocation(false);
+  // beim allerersten geöffneten Struktogramm die Werkzeug-Ansicht einmal zeigen (danach merkt sich VS Code die Ansicht)
+  provider.onFirstOpen = () => {
+    if (toolbarLocation() !== 'sidebar' || context.globalState.get('struktograf.toolsShown')) return;
+    context.globalState.update('struktograf.toolsShown', true);
+    vscode.commands.executeCommand('workbench.view.extension.struktograf').then(() => {
+      if (provider.active) provider.active.panel.reveal(provider.active.panel.viewColumn, false);
+    });
+  };
   // Ausführungsanzeige im Editor oder im Panel unten (Einstellung struktogramm.executionPanelLocation)
   const execView = new ExecViewProvider(context, provider);
   provider.execView = execView;
