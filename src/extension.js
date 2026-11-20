@@ -47,7 +47,7 @@ class NsdEditorProvider {
         model = fromNsd(document.getText());
         svg = render(model).svg;
       } catch (e) {
-        error = 'Die Datei kann nicht als Struktogramm gelesen werden: ' + e.message;
+        error = t('ext.cannotRead', e.message);
       }
       panel.webview.postMessage({ type: 'update', doc: model, svg, error, symbols: collectSymbols(model), select: state.select, editNew: state.editNew, settings: settings(), hasClipboard: !!this.clipboard });
       state.select = undefined;

@@ -66,6 +66,7 @@
  "ext.abortDiagramChanged": "■ Execution stopped because the diagram was changed.",
  "ext.aiCopied": "AI compact copied to the clipboard ({0} characters, about {1} tokens).",
  "ext.aiFileSuffix": ".ai.txt",
+ "ext.cannotRead": "The file cannot be read as a structogram: {0}",
  "ext.chooseFolder": "Choose Folder",
  "ext.chooseFormat": "Choose a format",
  "ext.clipboardEmpty": "The clipboard is empty.",

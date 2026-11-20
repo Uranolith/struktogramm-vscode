@@ -66,6 +66,7 @@
  "ext.abortDiagramChanged": "■ Ausführung abgebrochen, weil das Diagramm geändert wurde.",
  "ext.aiCopied": "KI-kompakt in die Zwischenablage kopiert ({0} Zeichen, ca. {1} Tokens).",
  "ext.aiFileSuffix": ".ki.txt",
+ "ext.cannotRead": "Die Datei kann nicht als Struktogramm gelesen werden: {0}",
  "ext.chooseFolder": "Ordner wählen",
  "ext.chooseFormat": "Format wählen",
  "ext.clipboardEmpty": "Die Zwischenablage ist leer.",

@@ -191,7 +191,7 @@ class ExecController {
   /** z.B. bei Änderungen am Diagramm */
   abort(reason) {
     if (this.session && this.session.state !== 'done') {
-      this.session.out(reason || '■ Abgebrochen.', 'info');
+      this.session.out(reason || t('exec.aborted'), 'info');
       this.session.stop();
     }
   }
