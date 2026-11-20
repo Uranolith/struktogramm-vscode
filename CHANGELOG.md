@@ -1,6 +1,6 @@
 # Änderungen
 
-## Unveröffentlicht
+## 0.9.1
 - **Parallelverarbeitung als echte Threads** im erzeugten Code: Python `threading`, Java Thread-Klassen,
   C# `Parallel.Invoke`, C++ `std::thread`, C OpenMP, Kotlin `thread { }`, Rust `std::thread::scope`,
   Pascal `BeginThread` (Hauptprogramm). Bisher liefen die Zweige nacheinander; JavaScript bleibt dabei.
