@@ -49,6 +49,13 @@ function linesOf(el) {
   return (el.text || []).map((l) => String(l)).filter((l) => l.trim());
 }
 
+/** Enthält die Routine eine (aktive) Parallelverarbeitung? */
+function hasParallel(root) {
+  let found = false;
+  walk(root.children, (el) => { if (el.disabled) return false; if (el.type === 'parallel') found = true; });
+  return found;
+}
+
 /* ==================================================================== */
 class BaseGen {
   constructor(doc, lang, opts) {
@@ -391,6 +398,52 @@ class BaseGen {
     return out;
   }
 
+  /** Variablen, die ein einzelnes Element (ohne Unterelemente) setzt oder liest */
+  elVars(el, v) {
+    const lines = linesOf(el);
+    if (['instruction', 'call', 'jump'].includes(el.type)) {
+      for (const l0 of lines) {
+        const l = this.procLine(l0);
+        if (l == null) continue;
+        const c = P.classifyLine(l);
+        if (c.kind === 'decl') c.decls.forEach((d) => v.locals.add(d.name));
+        else if (c.kind === 'assign') c.target.split(',').map((s) => s.trim()).filter((s) => SIMPLE_IDENT.test(s)).forEach((s) => v.writes.add(s));
+        else if (c.kind === 'input') c.vars.filter((s) => SIMPLE_IDENT.test(s)).forEach((s) => v.writes.add(s));
+        identsOf(l).forEach((n) => v.reads.add(n));
+      }
+      return;
+    }
+    if (el.type === 'for') {
+      const f = P.parseForText(lines.join(' '));
+      if (f && (f.kind === 'count' || f.kind === 'each') && SIMPLE_IDENT.test(f.var)) { v.writes.add(f.var); v.loops.add(f.var); }
+    }
+    if (el.type === 'try') v.writes.add(this.catchVar(el));
+    identsOf(lines.join(' ')).forEach((n) => v.reads.add(n));
+  }
+
+  /** Variablen eines Zweigs einer Parallelverarbeitung: gelesen, gesetzt, im Zweig deklariert, Zählvariablen */
+  parVars(seq) {
+    const v = { reads: new Set(), writes: new Set(), locals: new Set(), loops: new Set() };
+    walk(seq, (el) => { if (el.disabled) return false; this.elVars(el, v); });
+    return v;
+  }
+
+  nextThread() { return (this.threadCount = (this.threadCount || 0) + 1); }
+
+  /** Zweige mit Inhalt (leere Zweige brauchen keinen Thread) */
+  parBranches(el) {
+    return el.branches.filter((b) => b.some((e) => !e.disabled && (!['instruction', 'call'].includes(e.type) || linesOf(e).length)));
+  }
+
+  /** Parallelverarbeitung ohne Threads: Zweige nacheinander */
+  parallelSeq(el, ind, key) {
+    const out = [ind + this.comment(tr(key))];
+    el.branches.forEach((b, i) => { out.push(ind + this.comment(tr('gen.branch', i + 1))); out.push(...this.seq(b, ind)); });
+    return out;
+  }
+
+  parallelEl(el, ind) { return this.parallelSeq(el, ind, 'gen.parallelSeq'); }
+
   /** Wird diese Schleife von einem „leave n“ (n > 1) weiter innen verlassen? */
   loopNeedsLabel(loop) {
     const LOOPS = ['for', 'while', 'repeat', 'forever'];
@@ -467,10 +520,7 @@ class BaseGen {
       case 'while': out.push(...this.whileEl(this.cond(el.text, ['while', 'solange', 'während']), el.body, ind)); break;
       case 'repeat': out.push(...this.repeatEl(this.cond(el.text, ['until', 'bis', 'solange']), el.body, ind)); break;
       case 'forever': out.push(...this.whileEl('true', el.body, ind)); break;
-      case 'parallel':
-        out.push(ind + this.comment(tr('gen.parallel')));
-        el.branches.forEach((b, i) => { out.push(ind + this.comment(tr('gen.branch', i + 1))); out.push(...this.seq(b, ind)); });
-        break;
+      case 'parallel': out.push(...this.parallelEl(el, ind)); break;
       default: out.push(ind + this.comment(tr('gen.unknownEl', el.type)));
     }
     return out;
@@ -854,7 +904,7 @@ class CGen extends BaseGen {
     const text = linesOf(el).join(' ');
     const f = P.parseForText(text);
     const out = [];
-    // Zählvariable gilt im Rumpf als deklariert (keine zweite Deklaration bei Zuweisung im Rumpf)
+    // Zählvariable gilt im Rumpf als deklariert (wichtig für Threads in Java)
     const fv = f && SIMPLE_IDENT.test(f.var) && !this.cur.declared.has(f.var) ? f.var : null;
     if (fv) this.cur.declared.add(fv);
     let body;
@@ -996,6 +1046,62 @@ class CGen extends BaseGen {
     return [ind + 'do {', ...this.seq(body, ind + this.I), ind + `} while (${this.x(P.negateCond(cond))});`];
   }
 
+  /**
+   * Parallelverarbeitung als echte Threads:
+   * C: OpenMP-Sections, C++: std::thread, C#: Parallel.Invoke, Java: eigene Thread-Klasse je Zweig.
+   * JavaScript hat keine Threads mit gemeinsamen Variablen – dort bleibt es bei nacheinander.
+   */
+  parallelEl(el, ind) {
+    const L = this.lang, I = this.I;
+    if (L === 'javascript') return this.parallelSeq(el, ind, 'gen.parallelJs');
+    const branches = this.parBranches(el);
+    const out = [ind + this.comment(tr('gen.parallel'))];
+    if (!branches.length) return out;
+    if (L === 'c') {
+      out.push(ind + this.comment(tr('gen.parallelOmp')), ind + '#pragma omp parallel sections', ind + '{');
+      for (const b of branches) out.push(ind + I + '#pragma omp section', ind + I + '{', ...this.seq(b, ind + I + I), ind + I + '}');
+      out.push(ind + '}');
+      return out;
+    }
+    if (L === 'cpp') {
+      this.needs.add('thread');
+      const ids = branches.map(() => '_t' + this.nextThread());
+      branches.forEach((b, k) => out.push(ind + `thread ${ids[k]}([&] {`, ...this.seq(b, ind + I), ind + '});'));
+      ids.forEach((id) => out.push(ind + `${id}.join();`));
+      return out;
+    }
+    if (L === 'csharp') {
+      this.needs.add('tasks');
+      out.push(ind + 'Parallel.Invoke(');
+      branches.forEach((b, k) => out.push(ind + I + '() => {', ...this.seq(b, ind + I + I), ind + I + '}' + (k < branches.length - 1 ? ',' : '')));
+      out.push(ind + ');');
+      return out;
+    }
+    // Java: Lambdas dürfen lokale Variablen nicht ändern – jeder Zweig bekommt Kopien als Felder,
+    // geänderte Werte werden nach dem Ende aller Zweige zurückgeschrieben
+    out.push(ind + this.comment(tr('gen.parallelJava')));
+    const ws = [];
+    for (const b of branches) {
+      const n = this.nextThread();
+      const v = this.parVars(b);
+      const fields = [...new Set([...v.reads, ...v.writes])].filter((x) => !v.locals.has(x) && (this.cur.declared.has(x) || this.cur.params.has(x)));
+      const typed = fields.map((f) => `${this.typeName(this.declType(f) || 'int')} ${f}`);
+      const w = { cls: 'Worker' + n, obj: 'worker' + n, fields, writes: fields.filter((f) => v.writes.has(f)) };
+      out.push(ind + `class ${w.cls} extends Thread {`);
+      if (fields.length) {
+        typed.forEach((t) => out.push(ind + I + t + ';'));
+        out.push(ind + I + `${w.cls}(${typed.join(', ')}) {${fields.map((f) => ` this.${f} = ${f};`).join('')} }`);
+      }
+      out.push(ind + I + 'public void run() {', ...this.seq(b, ind + I + I), ind + I + '}', ind + '}');
+      ws.push(w);
+    }
+    ws.forEach((w) => out.push(ind + `${w.cls} ${w.obj} = new ${w.cls}(${w.fields.join(', ')});`));
+    ws.forEach((w) => out.push(ind + `${w.obj}.start();`));
+    out.push(ind + 'try {', ...ws.map((w) => ind + I + `${w.obj}.join();`), ind + '} catch (InterruptedException _e) {', ind + I + 'Thread.currentThread().interrupt();', ind + '}');
+    ws.forEach((w) => w.writes.forEach((f) => out.push(ind + `${f} = ${w.obj}.${f};`)));
+    return out;
+  }
+
   /** Funktionskopf + Körper */
   routine(root) {
     const L = this.lang;
@@ -1013,7 +1119,14 @@ class CGen extends BaseGen {
     const I = this.I;
     const bodyInd = L === 'java' || L === 'csharp' ? I + I : I;
     const head = [];
-    const hoisted = [...info.hoist].map((n) => bodyInd + this.declLine(n, info.types.get(n) || (L === 'javascript' ? null : 'int'), L === 'javascript' ? null : this.defaultValue(info.types.get(n))));
+    // Java/C#: Threads (Konstruktor bzw. Lambda) verlangen sicher belegte Variablen
+    const par = (L === 'java' || L === 'csharp') && hasParallel(root);
+    const initOf = (n) => {
+      const v = this.defaultValue(info.types.get(n));
+      if (v != null || !par) return v;
+      return /\[\]$/.test(this.typeName(info.types.get(n) || 'int')) || P.normType(info.types.get(n)) ? 'null' : '0';
+    };
+    const hoisted = [...info.hoist].map((n) => bodyInd + this.declLine(n, info.types.get(n) || (L === 'javascript' ? null : 'int'), L === 'javascript' ? null : initOf(n)));
     for (const n of info.hoist) info.declared.add(n);
     const body = this.seq(root.children, bodyInd);
     const ret = isMain ? null : this.retType(sig);
@@ -1077,7 +1190,7 @@ class CGen extends BaseGen {
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
       out.push('}');
     } else if (L === 'csharp') {
-      out.push('using System;', '', title, `class ${this.opts.className || toClassName(mainName)}`, '{');
+      out.push('using System;', ...(this.needs.has('tasks') ? ['using System.Threading.Tasks;'] : []), '', title, `class ${this.opts.className || toClassName(mainName)}`, '{');
       out.push(...td);
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines.map((l) => l.replace(/^(\s*)(.*) \{$/, (m0, a, b) => (/^(static|public)/.test(b.trim()) ? `${a}${b}\n${a}{` : m0)))); });
       out.push('}');
@@ -1105,6 +1218,7 @@ class CGen extends BaseGen {
         if (this.needs.has('math')) inc.push('#include <cmath>');
         if (this.needs.has('stdlib')) inc.push('#include <cstdlib>');
         if (this.needs.has('stdexcept')) inc.push('#include <stdexcept>');
+        if (this.needs.has('thread')) inc.push('#include <thread>');
         inc.push('', 'using namespace std;');
       }
       out.push(title, ...inc, '', ...td, ...helpers);
@@ -1254,6 +1368,46 @@ class PyGen extends BaseGen {
     return [ind + 'while True:', ...this.seq(body, ind + this.I), ind + this.I + `if ${this.x(cond)}:`, ind + this.I + this.I + 'break'];
   }
 
+  /**
+   * Parallelverarbeitung: je Zweig eine Funktion, die in einem eigenen Thread läuft.
+   * Gesetzte Variablen werden global (Hauptprogramm) bzw. nonlocal (Unterprogramm) erklärt.
+   */
+  parallelEl(el, ind) {
+    const I = this.I;
+    const branches = this.parBranches(el);
+    const out = [ind + this.comment(tr('gen.parallel'))];
+    if (!branches.length) return out;
+    this.needs.add('threading');
+    const scope = this.curIsMain ? 'global' : 'nonlocal';
+    const names = [], defs = [], written = new Set();
+    const outer = !this.inThread;
+    this.inThread = true;
+    try {
+      for (const b of branches) {
+        const fn = '_thread' + this.nextThread();
+        const v = this.parVars(b);
+        const w = [...new Set([...v.writes, ...v.locals])];
+        w.forEach((x) => written.add(x));
+        names.push(fn);
+        defs.push(ind + `def ${fn}():`);
+        if (w.length) defs.push(ind + I + `${scope} ${w.join(', ')}`);
+        defs.push(...this.block(b, ind + I));
+      }
+    } finally { this.inThread = !outer; }
+    if (scope === 'nonlocal' && outer) {
+      // nonlocal verlangt eine Bindung im Unterprogramm selbst (außerhalb der Thread-Funktionen)
+      const bound = new Set(this.cur.params);
+      const v = { reads: new Set(), writes: bound, locals: bound, loops: new Set() };
+      walk(this.curRoot.children, (e) => { if (e.disabled || e.type === 'parallel') return false; this.elVars(e, v); });
+      const pre = [...written].filter((x) => !bound.has(x));
+      if (pre.length) out.push(ind + `${pre.join(' = ')} = None`);
+    }
+    out.push(...defs);
+    out.push(ind + `_threads = [threading.Thread(target=f) for f in (${names.join(', ')}${names.length === 1 ? ',' : ''})]`);
+    out.push(ind + 'for _t in _threads:', ind + I + '_t.start()', ind + 'for _t in _threads:', ind + I + '_t.join()');
+    return out;
+  }
+
   x(text) {
     const toks = P.ptoks(text);
     const { splitTop } = require('./tokenizer');
@@ -1281,6 +1435,7 @@ class PyGen extends BaseGen {
       const sig = this.sigs.get(r);
       this.cur = this.analyze(r, sig);
       this.curIsMain = false;
+      this.curRoot = r;
       const ps = sig.params.map((p) => { const t = this.pyType(p.type); return t ? `${p.name}: ${t}` : p.name; });
       const rt = this.pyType(sig.returnType);
       const lines = [`def ${sig.name}(${ps.join(', ')})${rt ? ' -> ' + rt : ''}:`];
@@ -1293,6 +1448,7 @@ class PyGen extends BaseGen {
     for (const r of mains) {
       this.cur = this.analyze(r, { params: [] });
       this.curIsMain = true;
+      this.curRoot = r;
       const lines = [];
       lines.push(this.comment(tr('gen.pyMain', r.text.join(' '))));
       (r.comment || []).filter((s) => s.trim()).forEach((s) => lines.push(this.comment(s)));
@@ -1301,7 +1457,7 @@ class PyGen extends BaseGen {
     }
     const td = this.typeDefs();
     const head = [];
-    for (const m of ['math', 'random', 'sys', 'turtle']) if (this.needs.has(m)) head.push(`import ${m}`);
+    for (const m of ['math', 'random', 'sys', 'threading', 'turtle']) if (this.needs.has(m)) head.push(`import ${m}`);
     // Turtleizer: Farben 0–255, Blick nach oben wie im Structorizer
     if (this.needs.has('turtle')) head.push('', 'turtle.colormode(255)', 'turtle.setheading(90)');
     const out = [];
@@ -1440,6 +1596,39 @@ class PasGen extends BaseGen {
     return isArrayLit(expr) ? `[${arrayItems(expr).map((v) => this.x(v)).join(', ')}]` : this.x(expr);
   }
 
+  /**
+   * Parallelverarbeitung: je Zweig eine Thread-Funktion (BeginThread / WaitForThreadTerminate).
+   * Thread-Funktionen sehen nur globale Variablen – das sind die des Hauptprogramms. In Unterprogrammen
+   * laufen die Zweige daher nacheinander.
+   */
+  parallelEl(el, ind) {
+    if (!this.curIsMain || !this.pasThreads) return this.parallelSeq(el, ind, 'gen.parallelPas');
+    const I = this.I;
+    const branches = this.parBranches(el);
+    const out = [ind + this.comment(tr('gen.parallel'))];
+    if (!branches.length) return out;
+    this.needs.add('threads');
+    const ids = [];
+    for (const b of branches) {
+      const n = this.nextThread();
+      const fn = 'Thread' + n;
+      // Zählvariablen von for-Schleifen müssen in Funktionen lokal sein
+      const loops = [...this.parVars(b).loops];
+      const byType = new Map();
+      loops.forEach((v) => { const t = this.typeName(this.declType(v)); if (!byType.has(t)) byType.set(t, []); byType.get(t).push(v); });
+      // Rumpf zuerst erzeugen: Thread-Funktionen verschachtelter Parallelverarbeitung stehen so vor dieser
+      const body = this.seq(b, I);
+      this.pasThreads.funcs.push(`function ${fn}(_arg: Pointer): PtrInt;`,
+        ...(byType.size ? ['var', ...[...byType].map(([t, ns]) => I + `${ns.join(', ')}: ${t};`)] : []),
+        'begin', ...body, I + 'Result := 0;', 'end;', '');
+      ids.push({ fn, h: '_th' + n });
+    }
+    this.pasThreads.handles.push(...ids.map((x) => x.h));
+    ids.forEach((x) => out.push(ind + `${x.h} := BeginThread(@${x.fn});`));
+    ids.forEach((x) => out.push(ind + `WaitForThreadTerminate(${x.h}, 0);`));
+    return out;
+  }
+
   /** Sprungmarken für leave n (goto) */
   labelSection() {
     if (!this.pasLabels || !this.pasLabels.length) return [];
@@ -1484,12 +1673,22 @@ class PasGen extends BaseGen {
       this.cur = info; this.curIsMain = true;
       progName = toClassName(this.sigs.get(main).name);
       this.pasLabels = [];
+      this.pasThreads = { funcs: [], handles: [] };
       const be = this.beginEnd(main.children, '', '.');
-      mainLines = [...this.varSection(info, '', new Set()), ...this.labelSection(), '', ...be];
+      const vars = this.varSection(info, '', new Set());
+      const th = this.pasThreads;
+      if (th.handles.length) {
+        if (!vars.length) vars.push('var');
+        vars.push(this.I + `${th.handles.join(', ')}: TThreadID;`);
+      }
+      mainLines = [...vars, ...(th.funcs.length ? ['', ...th.funcs] : []), ...this.labelSection(), '', ...be];
+      this.pasThreads = null;
     }
     const td = this.typeDefs();
     out.push(`program ${progName};`, '', '{$mode objfpc}{$H+}' + (this.needs.has('goto') ? '{$goto on}' : ''), '');
     const uses = [];
+    // Threads unter Linux/macOS brauchen die Unit cthreads (als erste)
+    if (this.needs.has('threads')) { uses.push('{$ifdef unix}cthreads,{$endif} SysUtils'); this.needs.delete('sysutils'); }
     if (this.needs.has('math')) uses.push('Math');
     if (this.needs.has('sysutils')) uses.push('SysUtils');
     if (uses.length) out.push(`uses ${uses.join(', ')};`, '');
@@ -1729,6 +1928,19 @@ class KtGen extends CGen {
     return [ind + 'do {', ...this.seq(body, ind + this.I), ind + `} while (${this.x(P.negateCond(cond))})`];
   }
 
+  /** Parallelverarbeitung: je Zweig ein Thread (kotlin.concurrent.thread), danach join */
+  parallelEl(el, ind) {
+    const I = this.I;
+    const branches = this.parBranches(el);
+    const out = [ind + this.comment(tr('gen.parallel'))];
+    if (!branches.length) return out;
+    this.needs.add('thread');
+    const ids = branches.map(() => '_t' + this.nextThread());
+    branches.forEach((b, k) => out.push(ind + `val ${ids[k]} = thread {`, ...this.seq(b, ind + I), ind + '}'));
+    ids.forEach((id) => out.push(ind + `${id}.join()`));
+    return out;
+  }
+
   tryEl(el, ind) {
     const I = this.I, v = this.catchVar(el);
     const out = [ind + 'try {', ...this.seq(el.qTry, ind + I), ind + '} catch (_e: Exception) {', ind + I + `val ${v} = _e.message ?: ""`, ...this.seq(el.qCatch, ind + I)];
@@ -1770,6 +1982,7 @@ class KtGen extends CGen {
     if (mainRoot) gen.push(this.routine(mainRoot));
     for (const r of roots) if (r !== mainRoot) gen.push(this.routine(r));
     const out = [this.comment(tr('gen.generated', (mainRoot || roots[0]).text.join(' ')))];
+    if (this.needs.has('thread')) out.push('import kotlin.concurrent.thread');
     if (this.needs.has('exit')) out.push('import kotlin.system.exitProcess');
     out.push('', ...this.typeDefs());
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
@@ -1995,6 +2208,18 @@ class RsGen extends BaseGen {
   repeatEl(cond, body, ind) {
     const I = this.I;
     return [ind + 'loop {', ...this.seq(body, ind + I), ind + I + `if ${this.bare(cond)} {`, ind + I + I + 'break;', ind + I + '}', ind + '}'];
+  }
+
+  /** Parallelverarbeitung: Threads mit Gültigkeitsbereich (std::thread::scope) – sie dürfen lokale Variablen ausleihen */
+  parallelEl(el, ind) {
+    const I = this.I;
+    const branches = this.parBranches(el);
+    const out = [ind + this.comment(tr('gen.parallel'))];
+    if (!branches.length) return out;
+    out.push(ind + this.comment(tr('gen.parallelRust')), ind + 'std::thread::scope(|_scope| {');
+    for (const b of branches) out.push(ind + I + '_scope.spawn(|| {', ...this.seq(b, ind + I + I), ind + I + '});');
+    out.push(ind + '});');
+    return out;
   }
 
   /** TRY: Rust hat keine Ausnahmen – throw ist panic!, abgefangen mit catch_unwind (Hilfsfunktion try_block) */

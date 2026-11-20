@@ -112,6 +112,12 @@ Beim Erzeugen von Code werden diese Befehle in die Zielsprache übersetzt, z.B. 
 `catch_unwind`), Records → Klassen/Structs, `leave 2` → `break L1` bzw. `goto`. Turtle-Befehle werden für
 Python in das Modul `turtle` übersetzt; die Datei-API wird nur ausgeführt, nicht übersetzt.
 
+**Parallelverarbeitung** wird zu echten Threads: Python `threading`, Java je Zweig eine Thread-Klasse,
+C# `Parallel.Invoke`, C++ `std::thread`, C OpenMP (`#pragma omp parallel sections`, mit `-fopenmp` übersetzen),
+Kotlin `thread { }`, Rust `std::thread::scope`, Pascal `BeginThread`. Das Programm wartet, bis alle Zweige
+fertig sind. In Java arbeitet jeder Zweig mit Kopien der Variablen, geänderte Werte werden danach übernommen.
+Beim Ausführen im Editor laufen die Zweige dagegen nacheinander.
+
 Schlüsselwörter (blau, fett), Funktionsaufrufe (dunkelgelb, fett), Datentypen (petrol), Zeichenketten (rot),
 Operatoren (lila, fett: Zuweisung `:=`, Vergleiche `=` `<>` `<` `>` `≤` `≥`, Rechnen `+ - * / %` `mod`) werden im Diagramm farbig
 dargestellt; abschalten mit der Einstellung `struktogramm.highlightKeywords`.
@@ -200,6 +206,15 @@ Es ist kein vollständiger Compiler: Klassen, Zeiger und Bibliotheksaufrufe werd
 String-Verkettung mit `+` lässt sich nicht nach C übersetzen.
 Bei Kotlin und Rust werden Klassen, `impl`-Blöcke, Lambdas/Closures und Ownership vereinfacht; im erzeugten
 Rust-Code werden Zeichenketten und Arrays bei Funktionsaufrufen mit `.clone()` übergeben.
+
+Parallelverarbeitung im erzeugten Code:
+- **Rust** lässt nicht zu, dass ein Zweig eine Variable ändert, die ein anderer Zweig verwendet – der Compiler
+  meldet dann einen Fehler (das wäre ein Datenwettlauf).
+- **Pascal** erzeugt Threads nur im Hauptprogramm; in Unterprogrammen laufen die Zweige nacheinander, weil
+  Thread-Funktionen nur globale Variablen sehen. Felder brauchen Free Pascal ab 3.2.
+- **JavaScript** kennt keine Threads mit gemeinsamen Variablen, die Zweige laufen nacheinander. Für `INPUT`
+  braucht der erzeugte Code das Paket `prompt-sync` (`npm install prompt-sync`), das in einem Terminal laufen muss.
+- **C** braucht `-fopenmp`, sonst laufen die Zweige nacheinander.
 
 ## Lizenz
 Diese Extension steht unter der MIT-Lizenz. Structorizer (© Bob Fisch, Kay Gürtzig u.a.) ist ein
