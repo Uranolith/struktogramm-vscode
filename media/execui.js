@@ -14,7 +14,14 @@
   <div class="execbody">
     <div id="console"><div id="conout" role="log" aria-live="polite"></div><form id="conin" hidden><label id="conprompt" for="coninput"></label><input id="coninput" autocomplete="off" spellcheck="false"><button type="submit">OK</button></form></div>
     <div id="turtle" hidden title="Turtleizer"><svg id="turtlesvg" xmlns="http://www.w3.org/2000/svg"></svg></div>
-    <div id="vars"></div>
+    <div id="side">
+      <div class="stabs" role="tablist">
+        <button role="tab" id="tabVars" data-tab="vars" class="on" aria-selected="true" aria-controls="vars">${esc(T('web.tab.vars'))}</button>
+        <button role="tab" id="tabCalls" data-tab="calls" aria-selected="false" aria-controls="calls">${esc(T('web.tab.calls'))}</button>
+      </div>
+      <div id="vars" role="tabpanel" aria-labelledby="tabVars"></div>
+      <div id="calls" role="tabpanel" aria-labelledby="tabCalls" hidden></div>
+    </div>
   </div>`;
   }
 
@@ -51,11 +58,96 @@
       let html = '';
       for (let k = frames.length - 1; k >= 0; k--) {
         const f = frames[k];
-        html += `<div class="frame${k === frames.length - 1 ? ' top' : ''}">${callName(f)}${k === frames.length - 1 ? '' : ` <span class="muted">(${esc(T('web.vars.waiting'))})</span>`}</div>`;
+        html += `<div class="frame${k === frames.length - 1 ? ' top' : ''}" data-call="${f.id}">${callName(f)}${k === frames.length - 1 ? '' : ` <span class="muted">(${esc(T('web.vars.waiting'))})</span>`}</div>`;
         if (k === frames.length - 1 || frames.length <= 3) html += table(f.vars);
       }
       box.innerHTML = html;
     }
+    /* ---------- Reiter ---------- */
+    function showTab(tab) {
+      for (const b of document.querySelectorAll('.stabs [data-tab]')) {
+        const on = b.dataset.tab === tab;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-selected', String(on));
+        $(b.dataset.tab).hidden = !on;
+      }
+    }
+    document.querySelector('.stabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
+    document.querySelector('.stabs').addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const next = $('tabVars').classList.contains('on') ? 'calls' : 'vars';
+      showTab(next); $(next === 'vars' ? 'tabVars' : 'tabCalls').focus(); e.preventDefault();
+    });
+
+    /* ---------- Reiter „Aufrufe“: Aufrufstapel und Aufrufverlauf als Baum ---------- */
+    const calls = { nodes: new Map(), count: 0, total: 0 };
+    const argText = (args) => args.map((a) => `${a.name}=${a.value.length > 30 ? a.value.slice(0, 29) + '…' : a.value}`).join(', ');
+    function callsBox() {
+      const c = $('calls');
+      if (!c.querySelector('.cstack')) {
+        c.innerHTML = `<div class="vhead first">${esc(T('web.calls.stack'))}</div><div class="cstack"></div><div class="vhead chead"></div><div class="ctree" role="tree"></div><div class="cmore muted" hidden></div>`;
+      }
+      return c;
+    }
+    function stack(frames, state) {
+      const box = callsBox().querySelector('.cstack');
+      if (!frames.length) { box.innerHTML = `<div class="muted">${esc(T(state === 'done' ? 'web.calls.finished' : 'web.calls.none'))}</div>`; return; }
+      let h = '';
+      for (let k = frames.length - 1; k >= 0; k--) {
+        const f = frames[k];
+        const args = calls.nodes.get(f.id);
+        h += `<div class="crow${k === frames.length - 1 ? ' top' : ''}" data-call="${f.id}"><span class="cname">${callName(f)}</span>${args && args.args.length ? ` <span class="cargs">(${esc(argText(args.args))})</span>` : ''}</div>`;
+      }
+      box.innerHTML = h;
+      // laufende Aufrufe im Verlauf markieren
+      const live = new Set(frames.map((f) => f.id));
+      for (const [id, n] of calls.nodes) n.row.classList.toggle('live', live.has(id) && !n.done);
+    }
+    function callEvents(items, total) {
+      const c = callsBox();
+      const tree = c.querySelector('.ctree');
+      for (const e of items) {
+        if (e.ev === 'start') {
+          const el = document.createElement('div');
+          el.className = 'cnode';
+          el.setAttribute('role', 'treeitem');
+          el.innerHTML = `<div class="crow live" data-call="${e.id}"><span class="twist"></span><span class="cname">${callName(e)}</span>${e.args.length ? ` <span class="cargs">(${esc(argText(e.args))})</span>` : ''} <span class="cres muted">${esc(T('web.calls.running'))}</span></div><div class="kids" role="group"></div>`;
+          const parent = calls.nodes.get(e.parent);
+          (parent ? parent.kids : tree).appendChild(el);
+          if (parent) parent.row.querySelector('.twist').classList.add('has');
+          calls.nodes.set(e.id, { row: el.firstChild, kids: el.lastChild, el, args: e.args, done: false });
+          calls.count++;
+        } else if (e.ev === 'end') {
+          const n = calls.nodes.get(e.id);
+          if (!n) continue;
+          n.done = true;
+          n.row.classList.remove('live');
+          const r = n.row.querySelector('.cres');
+          r.className = 'cres' + (e.aborted ? ' err' : '');
+          r.textContent = e.aborted ? `(${T('web.vars.aborted')})` : e.result !== undefined ? `→ ${e.result}` : '✓';
+        }
+      }
+      calls.total = Math.max(calls.total, total || 0);
+      c.querySelector('.chead').textContent = T('web.calls.history', calls.total || calls.count);
+      const more = c.querySelector('.cmore');
+      more.hidden = calls.total <= calls.count;
+      if (!more.hidden) more.textContent = T('web.calls.truncated', calls.total - calls.count);
+    }
+    // Teilbäume ein-/ausklappen; Klick auf einen Aufruf zeigt seine Variablen
+    $('calls').addEventListener('click', (e) => {
+      const tw = e.target.closest('.twist.has');
+      if (tw) { tw.closest('.cnode').classList.toggle('closed'); return; }
+      const row = e.target.closest('.crow');
+      if (!row) return;
+      const id = row.dataset.call;
+      showTab('vars');
+      const target = $('vars').querySelector(`.doneframe[data-call="${id}"]`) || $('vars').querySelector(`.frame[data-call="${id}"]`);
+      if (target) {
+        target.scrollIntoView({ block: 'start' });
+        target.classList.remove('flash'); void target.offsetWidth; target.classList.add('flash');
+      }
+    });
+
     let doneCount = 0;
     function completed(items) {
       const v = varsBox();
@@ -63,6 +155,7 @@
       for (const c of items) {
         const d = document.createElement('div');
         d.className = 'doneframe';
+        d.dataset.call = c.id;
         d.innerHTML = `<div class="frame">${callName(c)} <span class="muted">(${esc(T(c.aborted ? 'web.vars.aborted' : 'web.vars.complete'))})</span>${c.result !== undefined ? ` <span class="ret">→ ${esc(c.result)}</span>` : ''}</div>` + table(c.vars);
         list.insertBefore(d, list.firstChild);
         doneCount++;
@@ -120,6 +213,8 @@
       reset(title) {
         $('conout').innerHTML = '';
         $('vars').innerHTML = '';
+        $('calls').innerHTML = '';
+        calls.nodes.clear(); calls.count = 0; calls.total = 0;
         doneCount = 0;
         turtleReset();
         show();
@@ -127,6 +222,7 @@
       },
       out(lines) { show(); for (const l of lines) line(l.text, l.kind); },
       completed(items) { completed(items); },
+      calls(items, total) { callEvents(items, total); },
       turtle(ops) {
         for (const o of ops) {
           if (o.op === 'line') tt.lines.push(o);
@@ -139,6 +235,7 @@
       },
       state(m, focusInput) {
         vars(m.frames || []);
+        stack(m.frames || [], m.state);
         const form = $('conin');
         if (m.state === 'input') {
           form.hidden = false;

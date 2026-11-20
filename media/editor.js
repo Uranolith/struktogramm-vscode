@@ -341,6 +341,7 @@
     else if (m.type === 'toolStateRequest') reportTools(true);
     else if (m.type === 'execTurtle') EX.turtle(m.ops);
     else if (m.type === 'execCompleted') EX.completed(m.items);
+    else if (m.type === 'execCalls') EX.calls(m.items, m.total);
     else if (m.type === 'execMode') setExecMode(m.mode);
     else if (m.type === 'preview') { if (picker && m.token === picker.token) showPreview(m.svg, m.path); }
     else if (m.type === 'execReset') {

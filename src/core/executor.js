@@ -435,7 +435,10 @@ class Interpreter {
     if (!this.callCounts) this.callCounts = new Map();
     const callNo = (this.callCounts.get(sig.name) || 0) + 1;
     this.callCounts.set(sig.name, callNo);
-    this.frames.push({ name: sig.name, rootIndex, vars, types, sig, callNo, main: !this.frames.length });
+    const parent = this.frame ? this.frame.id : 0;
+    const id = (this.callSeq = (this.callSeq || 0) + 1);
+    this.frames.push({ name: sig.name, rootIndex, vars, types, sig, callNo, main: !this.frames.length, id, parent });
+    this.recordCall({ ev: 'start', id, parent, name: sig.name, callNo, main: !parent, args: sig.params.map((p) => ({ name: p.name, value: fmt(vars.get(p.name), true) })) });
     let result;
     let finished = false;
     try {
@@ -1077,8 +1080,23 @@ class Interpreter {
   }
 
   /** Variablen für die Anzeige */
+  /** Aufruf-Ereignis für den Aufrufverlauf; aufgezeichnet werden die ersten 5000 Aufrufe, danach wird nur gezählt */
+  recordCall(e) {
+    if (!this.callEvents) this.callEvents = [];
+    if (e.id > CALL_LIMIT) return;
+    this.callEvents.push(e);
+  }
+
+  /** seit dem letzten Aufruf angefallene Aufruf-Ereignisse und die Gesamtzahl der Aufrufe */
+  takeCalls() {
+    const items = this.callEvents || [];
+    this.callEvents = [];
+    return { items, total: this.callSeq || 0 };
+  }
+
   /** beendeten Aufruf merken (nur Verweis, formatiert wird erst beim Senden); die letzten 500 bleiben erhalten */
   recordCompleted(f, result, aborted) {
+    this.recordCall({ ev: 'end', id: f.id, result: result === undefined ? undefined : fmt(result, true), aborted });
     if (!this.completed) { this.completed = []; this.completedSeq = 0; this.completedSent = 0; }
     this.completed.push({ seq: ++this.completedSeq, f, result, aborted });
     if (this.completed.length > 500) this.completed.shift();
@@ -1088,6 +1106,7 @@ class Interpreter {
   takeCompleted() {
     if (!this.completed) return [];
     const out = this.completed.filter((c) => c.seq > this.completedSent).map((c) => ({
+      id: c.f.id,
       name: c.f.name,
       callNo: c.f.callNo,
       main: c.f.main,
@@ -1101,6 +1120,7 @@ class Interpreter {
 
   snapshot() {
     return this.frames.map((f) => ({
+      id: f.id,
       name: f.name,
       callNo: f.callNo,
       main: f.main,
@@ -1108,6 +1128,8 @@ class Interpreter {
     }));
   }
 }
+
+const CALL_LIMIT = 5000; // so viele Aufrufe zeichnet der Aufrufverlauf höchstens auf
 
 function rootName(node) {
   while (node && (node.k === 'index' || node.k === 'member')) node = node.a;

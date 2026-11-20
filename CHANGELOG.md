@@ -16,6 +16,9 @@
 - **Abgeschlossene Aufrufe:** Die Variablenansicht zeigt unter den laufenden Aufrufen alle beendeten Funktionen mit
   ihrem Endzustand, „(beendet)“ und Rückgabewert, neueste zuerst. Mehrfache Aufrufe sind nummeriert (`summe #1`,
   `summe #2` …). Auch bei Tempo „Sofort“ bleibt so der Endzustand des Programms sichtbar.
+- **Reiter „Aufrufe“** neben den Variablen: oben der Aufrufstapel (laufende Aufrufe mit Argumenten), darunter der
+  Aufrufverlauf als Baum – wer hat wen mit welchen Argumenten aufgerufen, mit Rückgabewert oder Status. Teilbäume lassen
+  sich einklappen, ein Klick springt zu den Variablen des Aufrufs. Aufgezeichnet werden bis zu 5000 Aufrufe.
 - **Zoom als Eingabefeld:** Zoomstufe direkt eingeben (z.B. `150`, `150 %`, `1,5x`); Enter übernimmt, Esc verwirft,
   ↑/↓ ändern um 10 %.
 

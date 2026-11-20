@@ -72,6 +72,15 @@ class ExecViewProvider {
     // Konsole begrenzen: älteste Ausgaben verwerfen
     let lines = 0;
     for (const m of log) if (m.type === 'execOut') lines += m.lines.length;
+    // Aufruf-Ereignisse begrenzen (der Interpreter zeichnet höchstens 5000 Aufrufe auf, also 10000 Ereignisse)
+    let events = 0;
+    for (const m of log) if (m.type === 'execCalls') events += m.items.length;
+    while (events > 10000) {
+      const i = log.findIndex((m) => m.type === 'execCalls');
+      if (i < 0) break;
+      events -= log[i].items.length;
+      log.splice(i, 1);
+    }
     // abgeschlossene Aufrufe begrenzen (die Anzeige zeigt höchstens 500)
     let calls = 0;
     for (const m of log) if (m.type === 'execCompleted') calls += m.items.length;
