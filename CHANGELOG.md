@@ -1,6 +1,7 @@
 # Änderungen
 
 ## Unveröffentlicht
+- Pascal: Feld-Literale `{1, 2, 3}` werden als `[1, 2, 3]` erzeugt (vorher als Kommentar missverstanden).
 - Zählvariablen gelten im Schleifenrumpf als deklariert (keine doppelte Deklaration in C, C++, Java, C#).
 
 ## 0.9.0

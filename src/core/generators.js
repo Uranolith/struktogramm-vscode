@@ -1333,8 +1333,8 @@ class PasGen extends BaseGen {
   stmt(c, ind) {
     switch (c.kind) {
       case 'empty': return [];
-      case 'decl': return c.decls.filter((d) => d.init != null).map((d) => ind + `${d.name} := ${this.x(d.init)};`);
-      case 'assign': return [ind + `${this.x(c.target)} := ${this.x(c.expr)};`];
+      case 'decl': return c.decls.filter((d) => d.init != null).map((d) => ind + `${d.name} := ${this.pasVal(d.init)};`);
+      case 'assign': return [ind + `${this.x(c.target)} := ${this.pasVal(c.expr)};`];
       case 'input': {
         const out = [];
         if (c.prompt) out.push(ind + `write(${this.x(c.prompt)});`);
@@ -1434,6 +1434,11 @@ class PasGen extends BaseGen {
   whileEl(cond, body, ind) { return [ind + `while ${cond === 'true' ? 'true' : this.x(cond)} do`, ...this.beginEnd(body, ind)]; }
 
   repeatEl(cond, body, ind) { return [ind + 'repeat', ...this.seq(body, ind + this.I), ind + `until ${this.x(cond)};`]; }
+
+  /** Wert einer Zuweisung; Feld-Literale {1, 2, 3} werden zu [1, 2, 3] (dynamische Felder, Free Pascal ab 3.2) */
+  pasVal(expr) {
+    return isArrayLit(expr) ? `[${arrayItems(expr).map((v) => this.x(v)).join(', ')}]` : this.x(expr);
+  }
 
   /** Sprungmarken für leave n (goto) */
   labelSection() {
