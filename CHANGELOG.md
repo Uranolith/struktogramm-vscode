@@ -5,6 +5,10 @@
   Aktivitätsleiste (wie der Explorer), im Stil der VS-Code-Seitenleiste. Kategorien lassen sich ein- und ausklappen
   und per Drag & Drop (oder Alt+↑/↓) umsortieren. Einstellung `struktogramm.toolbarLocation`, live umschaltbar per
   Befehl oder Knopf in der Titelleiste.
+- **Ausführung im Panel unten:** Konsole, Eingabe, Turtleizer und Variablen wahlweise im Panel *Struktograf* unten in
+  VS Code (neben Probleme, Ausgabe, Debugkonsole) statt unter dem Diagramm. Einstellung
+  `struktogramm.executionPanelLocation`, live umschaltbar per Befehl, mit dem Knopf ⇲ in der Ausführungsanzeige oder in
+  der Kopfzeile des Panels (dort auch Ausführen, Schritt, Anhalten, Beenden, Leeren).
 - **Zoom als Eingabefeld:** Zoomstufe direkt eingeben (z.B. `150`, `150 %`, `1,5x`); Enter übernimmt, Esc verwirft,
   ↑/↓ ändern um 10 %.
 

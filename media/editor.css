@@ -205,47 +205,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .35));
   background: var(--vscode-panel-background, var(--vscode-editor-background));
 }
-#execpanel[hidden] { display: none; }
-.exechead { display: flex; align-items: center; gap: 8px; padding: 3px 8px; font-size: 12px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); }
-.exechead .spacer { flex: 1; }
-#execstate { opacity: .75; }
-.execbody { flex: 1; display: flex; min-height: 0; }
-#console { flex: 3; display: flex; flex-direction: column; min-width: 0; }
-#turtle { flex: 3; min-width: 0; border-left: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); background: #ffffff; }
-#turtle[hidden] { display: none; }
-#turtle svg { width: 100%; height: 100%; display: block; }
-#conout {
-  flex: 1;
-  overflow: auto;
-  padding: 4px 8px;
-  white-space: pre-wrap;
-  font-family: var(--vscode-editor-font-family, Consolas, monospace);
-  font-size: var(--vscode-editor-font-size, 13px);
-}
-#conout .line.in { color: var(--vscode-terminal-ansiCyan, #29b8db); }
-#conout .line.info { opacity: .7; font-style: italic; }
-#conout .line.err { color: var(--vscode-errorForeground, #f48771); }
-#conin { display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); }
-#conin[hidden] { display: none; }
-#conprompt { white-space: nowrap; }
-#coninput {
-  flex: 1;
-  font-family: var(--vscode-editor-font-family, Consolas, monospace);
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-focusBorder, #0078d4);
-  padding: 3px 5px;
-}
-#vars { flex: 2; overflow: auto; padding: 4px 8px; border-left: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); font-size: 12px; }
-#vars .frame { font-weight: bold; margin: 6px 0 2px; }
-#vars .frame.top { color: var(--vscode-textLink-foreground, #3794ff); }
-#vars .muted { opacity: .6; font-weight: normal; }
-#vars table { border-collapse: collapse; width: 100%; font-family: var(--vscode-editor-font-family, Consolas, monospace); }
-#vars td { padding: 1px 6px 1px 0; vertical-align: top; }
-#vars td.n { white-space: nowrap; }
-#vars td.v { word-break: break-all; }
-#vars td.t { opacity: .55; white-space: nowrap; }
-
+#execpanel[hidden], body.exec-in-panel #execpanel { display: none; }
 /* Autovervollständigung im Bearbeiten-Dialog */
 #complete {
   position: fixed;

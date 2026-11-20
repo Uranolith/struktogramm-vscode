@@ -3,6 +3,9 @@ const vscode = require('vscode');
 const { renderSvg } = require('./core/render');
 const { t, allStrings, getLanguage } = require('./i18n');
 
+/** Ausführungsanzeige im Editor ('editor') oder im Panel unten ('panel') */
+const executionLocation = () => (vscode.workspace.getConfiguration('struktogramm').get('executionPanelLocation', 'editor') === 'panel' ? 'panel' : 'editor');
+
 /** Werkzeuge in der Editor-Kopfzeile ('editor') oder in der Seitenleiste ('sidebar'); liest auch die frühere Dev-Vorschau-Einstellung */
 function toolbarLocation() {
   const c = vscode.workspace.getConfiguration('struktogramm');
@@ -35,24 +38,19 @@ function webviewHtml(webview, extensionUri, readonly) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: blob:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${n}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${css}">
+<link rel="stylesheet" href="${webview.asWebviewUri(vscode.Uri.joinPath(media, 'exec.css'))}">
 <title>${attr(t('ext.filterNsd'))}</title>
 </head>
-<body data-readonly="${readonly ? 1 : 0}" data-toolbar="${readonly ? 'editor' : toolbarLocation()}" data-l10n="${attr(JSON.stringify(allStrings()))}">
+<body data-readonly="${readonly ? 1 : 0}" data-toolbar="${readonly ? 'editor' : toolbarLocation()}" data-exec="${readonly ? 'editor' : executionLocation()}" data-l10n="${attr(JSON.stringify(allStrings()))}">
 <div id="toolbar" role="toolbar" aria-label="${attr(t('web.toolbarLabel'))}"></div>
 <div id="message" hidden></div>
 <div id="scroller"><div id="canvas"></div><div id="dropmark" hidden></div></div>
-<div id="execpanel" hidden>
-  <div class="exechead"><b>${attr(t('web.exec.title'))}</b> <span id="execstate"></span><span class="spacer"></span><button id="execClear" title="${attr(t('web.exec.clear.title'))}">${attr(t('web.exec.clear'))}</button><button id="execClose" title="${attr(t('web.exec.close.title'))}" aria-label="${attr(t('web.exec.close.title'))}">✕</button></div>
-  <div class="execbody">
-    <div id="console"><div id="conout"></div><form id="conin" hidden><label id="conprompt" for="coninput"></label><input id="coninput" autocomplete="off" spellcheck="false"><button type="submit">OK</button></form></div>
-    <div id="turtle" hidden title="Turtleizer"><svg id="turtlesvg" xmlns="http://www.w3.org/2000/svg"></svg></div>
-    <div id="vars"></div>
-  </div>
-</div>
+<div id="execpanel" hidden></div>
 <div id="statusbar" role="status" aria-live="polite"></div>
 <div id="menu" hidden></div>
 <div id="dialog" hidden></div>
 <script nonce="${n}" src="${webview.asWebviewUri(vscode.Uri.joinPath(media, 'icons.js'))}"></script>
+<script nonce="${n}" src="${webview.asWebviewUri(vscode.Uri.joinPath(media, 'execui.js'))}"></script>
 <script nonce="${n}" src="${js}"></script>
 </body>
 </html>`;
@@ -86,4 +84,4 @@ function render(model, overrides) {
   return renderSvg(model, { ...settings(), ...(overrides || {}) });
 }
 
-module.exports = { toolbarLocation, webviewHtml, settings, render, diagramTheme, editorTheme };
+module.exports = { executionLocation, toolbarLocation, webviewHtml, settings, render, diagramTheme, editorTheme };

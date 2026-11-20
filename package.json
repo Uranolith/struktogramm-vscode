@@ -60,6 +60,13 @@
           "title": "%container.struktograf%",
           "icon": "media/activity.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "struktografExecution",
+          "title": "%container.execution%",
+          "icon": "media/activity.svg"
+        }
       ]
     },
     "views": {
@@ -69,6 +76,14 @@
           "id": "struktograf.tools",
           "name": "%view.tools%",
           "when": "struktograf.toolsInSidebar"
+        }
+      ],
+      "struktografExecution": [
+        {
+          "type": "webview",
+          "id": "struktograf.execution",
+          "name": "%view.execution%",
+          "when": "struktograf.execInPanel"
         }
       ]
     },
@@ -205,6 +220,18 @@
         "icon": "$(layout-sidebar-left)"
       },
       {
+        "command": "struktogramm.execution.clear",
+        "title": "%cmd.execution.clear%",
+        "category": "%category%",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "struktogramm.toggleExecutionLocation",
+        "title": "%cmd.toggleExecutionLocation%",
+        "category": "%category%",
+        "icon": "$(layout-panel)"
+      },
+      {
         "command": "struktogramm.tools.resetLayout",
         "title": "%cmd.tools.resetLayout%",
         "category": "%category%",
@@ -251,6 +278,11 @@
           "command": "struktogramm.toggleToolbarLocation",
           "when": "activeCustomEditorId == struktogramm.editor",
           "group": "navigation@10"
+        },
+        {
+          "command": "struktogramm.toggleExecutionLocation",
+          "when": "activeCustomEditorId == struktogramm.editor",
+          "group": "1_struktogramm@2"
         }
       ],
       "file/newFile": [
@@ -269,6 +301,36 @@
           "command": "struktogramm.toggleToolbarLocation",
           "when": "view == struktograf.tools",
           "group": "navigation"
+        },
+        {
+          "command": "struktogramm.run",
+          "when": "view == struktograf.execution",
+          "group": "navigation@1"
+        },
+        {
+          "command": "struktogramm.step",
+          "when": "view == struktograf.execution",
+          "group": "navigation@2"
+        },
+        {
+          "command": "struktogramm.pause",
+          "when": "view == struktograf.execution",
+          "group": "navigation@3"
+        },
+        {
+          "command": "struktogramm.stop",
+          "when": "view == struktograf.execution",
+          "group": "navigation@4"
+        },
+        {
+          "command": "struktogramm.execution.clear",
+          "when": "view == struktograf.execution",
+          "group": "navigation@5"
+        },
+        {
+          "command": "struktogramm.toggleExecutionLocation",
+          "when": "view == struktograf.execution",
+          "group": "navigation@6"
         },
         {
           "command": "struktogramm.tools.resetLayout",
@@ -371,6 +433,10 @@
           "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview'"
         },
         {
+          "command": "struktogramm.execution.clear",
+          "when": "struktograf.execInPanel"
+        },
+        {
           "command": "struktogramm.tools.resetLayout",
           "when": "struktograf.toolsInSidebar"
         }
@@ -466,6 +532,19 @@
           },
           "default": [],
           "description": "%config.structorizer.exportOptions%"
+        },
+        "struktogramm.executionPanelLocation": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "panel"
+          ],
+          "default": "editor",
+          "enumDescriptions": [
+            "%config.executionPanelLocation.enum0%",
+            "%config.executionPanelLocation.enum1%"
+          ],
+          "markdownDescription": "%config.executionPanelLocation%"
         },
         "struktogramm.toolbarLocation": {
           "type": "string",

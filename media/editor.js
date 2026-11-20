@@ -339,82 +339,24 @@
     else if (m.type === 'tool') runTool(m);
     else if (m.type === 'toolbarMode') setToolbarMode(m.mode);
     else if (m.type === 'toolStateRequest') reportTools(true);
-    else if (m.type === 'execTurtle') turtleApply(m.ops);
+    else if (m.type === 'execTurtle') EX.turtle(m.ops);
+    else if (m.type === 'execMode') setExecMode(m.mode);
     else if (m.type === 'preview') { if (picker && m.token === picker.token) showPreview(m.svg, m.path); }
     else if (m.type === 'execReset') {
-      $('conout').innerHTML = '';
-      $('vars').innerHTML = '';
-      turtleReset();
       errPath = null;
-      showExecPanel();
-      conLine('▶ ' + (m.title || ''), 'info');
+      EX.reset(m.title);
     } else if (m.type === 'execOut') {
-      showExecPanel();
-      for (const l of m.lines) conLine(l.text, l.kind);
+      EX.out(m.lines);
     } else if (m.type === 'execState') {
       execState = m.state;
       runPath = m.state === 'done' ? null : m.path;
       if (m.errorPath) errPath = m.errorPath;
-      showVars(m.frames || []);
-      const form = $('conin');
-      if (m.state === 'input') {
-        form.hidden = false;
-        $('conprompt').textContent = m.prompt || T('web.inputPrompt');
-        const inp = $('coninput');
-        inp.value = '';
-        setTimeout(() => inp.focus(), 0);
-      } else form.hidden = true;
-      $('execstate').textContent = { running: T('web.state.running'), paused: T('web.state.paused'), input: T('web.state.input'), done: T('web.state.done') }[m.state] || '';
+      // Ausführung im Panel unten: dort wird eingegeben, der Editor behält den Fokus nicht
+      EX.state(m, !document.body.classList.contains('exec-in-panel'));
       updateExecButtons();
       markExec(m.state === 'paused' || m.state === 'input');
     }
   });
-
-  /* ------------------------------ Turtleizer ------------------------------ */
-  // Zeichenfläche für forward/left/… – erscheint, sobald das Programm die Turtle benutzt
-  const turtle = { lines: [], bg: '#ffffff', t: null };
-  function turtleReset() {
-    turtle.lines = []; turtle.bg = '#ffffff'; turtle.t = null;
-    const box = $('turtle');
-    if (box) { box.hidden = true; $('turtlesvg').innerHTML = ''; }
-  }
-  function turtleApply(ops) {
-    for (const o of ops) {
-      if (o.op === 'line') turtle.lines.push(o);
-      else if (o.op === 'clear') turtle.lines = [];
-      else if (o.op === 'bg') turtle.bg = o.c;
-      else if (o.op === 'turtle') turtle.t = o;
-    }
-    showExecPanel();
-    drawTurtle();
-  }
-  function drawTurtle() {
-    const box = $('turtle'), svg = $('turtlesvg');
-    if (!box || !svg) return;
-    box.hidden = false;
-    const t = turtle.t || { x: 0, y: 0, dir: 0, visible: true };
-    let x0 = t.x, x1 = t.x, y0 = t.y, y1 = t.y;
-    for (const l of turtle.lines) {
-      x0 = Math.min(x0, l.x1, l.x2); x1 = Math.max(x1, l.x1, l.x2);
-      y0 = Math.min(y0, l.y1, l.y2); y1 = Math.max(y1, l.y1, l.y2);
-    }
-    const pad = 20, w = Math.max(x1 - x0, 100) + 2 * pad, h = Math.max(y1 - y0, 100) + 2 * pad;
-    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    svg.setAttribute('viewBox', `${cx - w / 2} ${cy - h / 2} ${w} ${h}`);
-    // Linien je Farbe zu einem Pfad zusammenfassen (schnell auch bei vielen Linien)
-    const byColor = new Map();
-    for (const l of turtle.lines) {
-      const d = `M${l.x1.toFixed(2)} ${l.y1.toFixed(2)}L${l.x2.toFixed(2)} ${l.y2.toFixed(2)}`;
-      byColor.set(l.c, (byColor.get(l.c) || '') + d);
-    }
-    let s = `<rect x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}" fill="${turtle.bg}"/>`;
-    for (const [c, d] of byColor) s += `<path d="${d}" stroke="${c}" stroke-width="1.5" fill="none" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
-    if (t.visible) {
-      const sz = Math.max(w, h) / 30;
-      s += `<g transform="translate(${t.x} ${t.y}) rotate(${-t.dir})"><polygon points="0,${-sz} ${sz * 0.6},${sz * 0.6} ${-sz * 0.6},${sz * 0.6}" fill="#2e8b57" stroke="#14532d" vector-effect="non-scaling-stroke"/></g>`;
-    }
-    svg.innerHTML = s;
-  }
 
   /* ------------------------------ Ausführung ------------------------------ */
   function execCmd(cmd) {
@@ -487,41 +429,22 @@
     status(breakpoints.has(sel) ? T('web.bp.set') : T('web.bp.removed'));
   }
 
-  function showExecPanel() { $('execpanel').hidden = false; }
+  function showExecPanel() { if (!document.body.classList.contains('exec-in-panel')) $('execpanel').hidden = false; }
 
-  function conLine(text, kind) {
-    const out = $('conout');
-    const d = document.createElement('div');
-    d.className = 'line ' + (kind || 'out');
-    d.textContent = kind === 'in' ? '› ' + text : text;
-    out.appendChild(d);
-    while (out.childNodes.length > 2000) out.removeChild(out.firstChild);
-    out.scrollTop = out.scrollHeight;
+  /** Ausführungsanzeige im Editor ('editor') oder im Panel unten in VS Code ('panel') */
+  function setExecMode(mode) {
+    const inPanel = mode === 'panel';
+    document.body.classList.toggle('exec-in-panel', inPanel);
+    if (!inPanel && execState !== 'idle') $('execpanel').hidden = false;
   }
 
-  function showVars(frames) {
-    const v = $('vars');
-    if (!frames.length) return;
-    let html = '';
-    for (let k = frames.length - 1; k >= 0; k--) {
-      const f = frames[k];
-      html += `<div class="frame${k === frames.length - 1 ? ' top' : ''}">${escapeHtml(f.name)}${k === frames.length - 1 ? '' : ` <span class="muted">(${escapeHtml(T('web.vars.waiting'))})</span>`}</div>`;
-      if (k === frames.length - 1 || frames.length <= 3) {
-        html += '<table>' + (f.vars.length ? f.vars.map((x) => `<tr><td class="n">${escapeHtml(x.name)}</td><td class="v">${escapeHtml(x.value)}</td><td class="t">${escapeHtml(x.type || '')}</td></tr>`).join('') : `<tr><td class="muted">${escapeHtml(T('web.vars.none'))}</td></tr>`) + '</table>';
-      }
-    }
-    v.innerHTML = html;
-  }
+  // Konsole, Eingabe, Turtleizer und Variablen (gemeinsam mit dem Panel unten, siehe execui.js)
+  $('execpanel').innerHTML = window.StruktoExec.markup(T, escapeHtml, true);
+  const EX = window.StruktoExec.create({ T, esc: escapeHtml, post, onShow: showExecPanel });
+  setExecMode(document.body.dataset.exec);
 
-  $('conin').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const val = $('coninput').value;
-    $('conin').hidden = true;
-    post({ type: 'execInput', value: val });
-  });
+  $('execMove').addEventListener('click', () => post({ type: 'command', command: 'struktogramm.toggleExecutionLocation' }));
   $('execClose').addEventListener('click', () => { if (execState === 'running' || execState === 'paused' || execState === 'input') post({ type: 'exec', cmd: 'stop' }); $('execpanel').hidden = true; runPath = null; errPath = null; markExec(false); });
-  $('execClear').addEventListener('click', () => { $('conout').innerHTML = ''; });
-
   /* ------------------------------ Maus ------------------------------ */
   let drag = null;
   canvas.addEventListener('mousedown', (e) => {

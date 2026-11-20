@@ -1,0 +1,18 @@
+/* Panel „Struktogramm-Ausführung“ unten in VS Code */
+html, body { height: 100%; margin: 0; padding: 0; }
+body.execview {
+  display: flex; flex-direction: column; overflow: hidden;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+#exec { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#exec[hidden], #empty[hidden] { display: none; }
+/* Titel und „Leeren“ stehen schon in der Kopfzeile des Panels */
+.execview .exechead b, .execview #execClear { display: none; }
+.execview .exechead { border-bottom: 0; padding: 2px 8px 0; min-height: 0; }
+.execview .exechead:has(#execstate:empty) { display: none; }
+#empty { padding: 8px 12px; opacity: .8; }
+button { font: inherit; color: var(--vscode-button-secondaryForeground, inherit); background: var(--vscode-button-secondaryBackground, transparent); border: 0; padding: 2px 8px; border-radius: 2px; cursor: pointer; }
+button:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }

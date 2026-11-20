@@ -15,6 +15,8 @@ const S = require('./structorizer');
 const { t, setLanguage } = require('./i18n');
 const { ToolsViewProvider, VIEW_ID } = require('./toolsView');
 const { toolbarLocation } = require('./webview');
+const { ExecViewProvider, VIEW_ID: EXEC_VIEW_ID } = require('./execView');
+const { executionLocation } = require('./webview');
 
 let extContext = null;
 
@@ -33,6 +35,7 @@ class NsdEditorProvider {
     this.clipboard = null;   // kopiertes Element (zwischen allen Editoren)
     this.pending = new Map(); // uri -> 'run'|'step': nach dem Öffnen automatisch starten
     this.tools = null;       // Struktograf-Seitenleiste mit den Werkzeugen
+    this.execView = null;    // Panel „Struktogramm-Ausführung“ unten
   }
 
   /** aktiven Editor setzen und die Seitenleiste nachziehen */
@@ -40,6 +43,7 @@ class NsdEditorProvider {
     if (this.active === state) return;
     this.active = state;
     if (this.tools) this.tools.refresh(true);
+    if (this.execView && state) this.execView.showFor(state);
   }
 
   resolveCustomTextEditor(document, panel) {
@@ -48,7 +52,14 @@ class NsdEditorProvider {
     this.setActive(state);
     panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')] };
     panel.webview.html = webviewHtml(panel.webview, this.context.extensionUri, false);
-    state.exec = new ExecController(panel.webview, () => fromNsd(document.getText()),
+    // Meldungen der Ausführung gehen an den Editor (Markierung im Diagramm) und an das Panel unten
+    const execTarget = {
+      postMessage: (m) => {
+        if (this.execView) this.execView.forward(state, m);
+        return panel.webview.postMessage(m);
+      },
+    };
+    state.exec = new ExecController(execTarget, () => fromNsd(document.getText()),
       () => (document.uri.scheme === 'file' ? path.dirname(document.uri.fsPath) : undefined));
 
     const send = () => {
@@ -88,6 +99,7 @@ class NsdEditorProvider {
         if (state.exec.handle(msg) || handlePngData(msg)) return;
         switch (msg.type) {
           case 'toolState': if (this.tools) this.tools.setState(state, msg.state); break;
+          case 'command': if (/^struktogramm\./.test(msg.command)) vscode.commands.executeCommand(msg.command); break;
           case 'ready': {
             send();
             const key = document.uri.toString();
@@ -634,6 +646,16 @@ function activate(context) {
     if (reveal && loc === 'sidebar') vscode.commands.executeCommand('workbench.view.extension.struktograf');
   };
   applyToolbarLocation(false);
+  // Ausführungsanzeige im Editor oder im Panel unten (Einstellung struktogramm.executionPanelLocation)
+  const execView = new ExecViewProvider(context, provider);
+  provider.execView = execView;
+  const applyExecutionLocation = (reveal) => {
+    const loc = executionLocation();
+    vscode.commands.executeCommand('setContext', 'struktograf.execInPanel', loc === 'panel');
+    provider.editors.forEach((s) => s.panel.webview.postMessage({ type: 'execMode', mode: loc }));
+    if (reveal && loc === 'panel' && provider.active) execView.reveal(provider.active);
+  };
+  applyExecutionLocation(false);
   const activeEditorDoc = () => (provider.active ? provider.active.document : null);
   /**
    * Ausführung steuern (F5 / F10 / F6 / Shift+F5). Ziel: aktive Live-Vorschau, sonst der aktive .nsd-Editor.
@@ -655,10 +677,17 @@ function activate(context) {
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider('struktogramm.editor', provider, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerWebviewViewProvider(VIEW_ID, tools),
+    vscode.window.registerWebviewViewProvider(EXEC_VIEW_ID, execView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('struktogramm.toolbarLocation') || e.affectsConfiguration('struktogramm.devPreview.toolbarLocation')) applyToolbarLocation(true);
+      if (e.affectsConfiguration('struktogramm.executionPanelLocation')) applyExecutionLocation(true);
     }),
+    vscode.commands.registerCommand('struktogramm.execution.clear', () => execView.clear()),
     vscode.commands.registerCommand('struktogramm.tools.resetLayout', () => tools.resetLayout()),
+    vscode.commands.registerCommand('struktogramm.toggleExecutionLocation', () => {
+      const next = executionLocation() === 'panel' ? 'editor' : 'panel';
+      return vscode.workspace.getConfiguration('struktogramm').update('executionPanelLocation', next, vscode.ConfigurationTarget.Global);
+    }),
     vscode.commands.registerCommand('struktogramm.toggleToolbarLocation', async () => {
       const next = toolbarLocation() === 'sidebar' ? 'editor' : 'sidebar';
       const c = vscode.workspace.getConfiguration('struktogramm');
@@ -729,6 +758,9 @@ function activate(context) {
     vscode.workspace.onDidCloseTextDocument((d) => endLive(d.uri.toString())),
     vscode.window.onDidChangeActiveTextEditor(() => updateLiveStatus()),
   );
+  // nur für automatische Tests: Zugriff auf Editoren und Ausführungs-Panel
+  if (context.extensionMode === vscode.ExtensionMode.Test) return { _test: { provider, execView, tools } };
+  return undefined;
 }
 
 function deactivate() {}
