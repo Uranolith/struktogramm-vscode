@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.0
+- README an den neuen Arbeitsbereich angepasst: Werkzeug-Ansicht, Ausführungs-Panel mit den Reitern
+  „Variablen“ und „Aufrufe“, aktuelle Befehlsnamen, alle Exportformate.
+
 ## 0.8.4
 - **Neue Standard-Anordnung:** Werkzeuge in der Ansicht *Struktograf* (Aktivitätsleiste links) und Ausführung im Panel
   *Struktograf* unten in VS Code. Die bisherige Anordnung (beides im Editor) lässt sich in den Einstellungen

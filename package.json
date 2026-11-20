@@ -2,7 +2,7 @@
   "name": "struktogramm",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.8.4",
+  "version": "0.9.0",
   "publisher": "Uranolith",
   "icon": "media/icon.png",
   "preview": true,
