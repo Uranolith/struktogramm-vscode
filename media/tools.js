@@ -34,7 +34,7 @@
     reset: '<path d="M3.5 8a4.5 4.5 0 1 0 1.3-3.2 M3 2.5v2.8h2.8"/>',
   };
   const KINDS = ['instruction', 'alternative', 'case', 'for', 'while', 'repeat', 'forever', 'call', 'jump', 'try', 'parallel'];
-  const ctrl = T('web.key.ctrl');
+  const combo = (k) => T('web.key.combo', k); // Strg+… bzw. auf dem Mac ⌘…
   // Pfeile der Abschnittsköpfe: Codicons chevron-down / chevron-right
   const TWISTY_DOWN = '<svg class="twisty" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.976 10.072l4.357-4.357.62.618L8.284 11h-.618L3 6.333l.619-.618 4.357 4.357z"/></svg>';
   const TWISTY_RIGHT = '<svg class="twisty" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>';
@@ -60,15 +60,15 @@
       ['edit', T('tools.section.edit'), [
         { id: 'a:edit', label: T('web.tb.edit'), icon: G.edit, key: 'Enter', msg: { a: 'edit' } },
         { id: 'a:delete', label: T('web.tb.delete'), icon: G.delete, key: T('web.key.del'), msg: { a: 'delete' } },
-        { id: 'a:up', label: T('web.menu.up'), icon: G.up, key: ctrl + '+↑', msg: { a: 'up' } },
-        { id: 'a:down', label: T('web.menu.down'), icon: G.down, key: ctrl + '+↓', msg: { a: 'down' } },
-        { id: 'a:undo', label: T('web.tb.undo'), icon: G.undo, key: ctrl + '+Z', msg: { a: 'undo' } },
-        { id: 'a:redo', label: T('web.tb.redo'), icon: G.redo, key: ctrl + '+Y', msg: { a: 'redo' } },
+        { id: 'a:up', label: T('web.menu.up'), icon: G.up, key: combo('↑'), msg: { a: 'up' } },
+        { id: 'a:down', label: T('web.menu.down'), icon: G.down, key: combo('↓'), msg: { a: 'down' } },
+        { id: 'a:undo', label: T('web.tb.undo'), icon: G.undo, key: combo('Z'), msg: { a: 'undo' } },
+        { id: 'a:redo', label: T('web.tb.redo'), icon: G.redo, key: T('web.key.redo'), msg: { a: 'redo' } },
       ]],
       ['clipboard', T('tools.section.clipboard'), [
-        { id: 'a:copy', label: T('web.tb.copy'), icon: G.copy, key: ctrl + '+C', msg: { a: 'copy' } },
-        { id: 'a:cut', label: T('web.tb.cut'), icon: G.cut, key: ctrl + '+X', msg: { a: 'cut' } },
-        { id: 'a:paste', label: T('web.tb.paste'), icon: G.paste, key: ctrl + '+V', msg: { a: 'paste' } },
+        { id: 'a:copy', label: T('web.tb.copy'), icon: G.copy, key: combo('C'), msg: { a: 'copy' } },
+        { id: 'a:cut', label: T('web.tb.cut'), icon: G.cut, key: combo('X'), msg: { a: 'cut' } },
+        { id: 'a:paste', label: T('web.tb.paste'), icon: G.paste, key: combo('V'), msg: { a: 'paste' } },
       ]],
       ['diagram', T('tools.section.diagram'), [
         { id: 'a:addSub', label: T('tools.addSub'), icon: G.sub, title: T('web.tb.addSub.title'), msg: { a: 'addSub' } },

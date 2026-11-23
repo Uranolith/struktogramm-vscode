@@ -26,9 +26,37 @@ function t(key, ...args) {
   return args.length ? s.replace(/\{(\d+)\}/g, (m, i) => (args[i] !== undefined ? String(args[i]) : m)) : s;
 }
 
-/** alle Texte der aktuellen Sprache (für die Webview), englische als Rückfall */
-function allStrings() {
-  return { ...DICTS.en, ...(DICTS[lang] || {}) };
+/** alle Texte der aktuellen Sprache (für die Webview), englische als Rückfall; auf dem Mac mit Mac-Tasten */
+function allStrings(platform = process.platform) {
+  const s = { ...DICTS.en, ...(DICTS[lang] || {}) };
+  return platform === 'darwin' ? macKeys(s) : s;
 }
 
-module.exports = { t, setLanguage, getLanguage, allStrings };
+/** Tasten, die es auf dem Mac nicht gibt oder die dort anders heißen (sprachunabhängig) */
+const MAC_KEYS = {
+  'web.key.del': '⌫',
+  'web.key.redo': '⇧⌘Z',
+  'web.help.k5': 'Fn+← / Fn+→',
+  'web.help.k6': 'Fn+↑ / Fn+↓',
+  'web.help.k11': '⇧F10',
+};
+
+/**
+ * Tastenhinweise für macOS: Strg/Ctrl → ⌘ (die Webview wertet ⌘ wie Strg aus), Strg+Leertaste bleibt ⌃
+ * (dazu ⌘I), Entf/Del → ⌫, Einfg/Insert entfällt (gibt es auf Mac-Tastaturen nicht).
+ */
+function macKeys(strings) {
+  const out = {};
+  for (const [k, v] of Object.entries(strings)) {
+    out[k] = typeof v !== 'string' ? v : v
+      .replace(/\s+(?:bzw\.|or)\s+(?:Umschalt|Shift)\s*\+\s*(?:Einfg|Insert)\b/g, '')
+      .replace(/(?:Strg|Ctrl)\s*\+\s*(?:Umschalt|Shift)\s*\+\s*/g, '⇧⌘')
+      .replace(/(?:Strg|Ctrl)\s*\+\s*(Leertaste|Space)/g, '⌃$1 / ⌘I')
+      .replace(/(?:Strg|Ctrl)\s*\+\s*/g, '⌘')
+      .replace(/\s*\/\s*(?:Einfg|Insert)\b/g, '')
+      .replace(/\b(?:Entf|Del)\b(?=\s*[:·)]|\s*$)/g, '⌫');
+  }
+  return Object.assign(out, MAC_KEYS);
+}
+
+module.exports = { t, setLanguage, getLanguage, allStrings, macKeys };

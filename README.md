@@ -164,6 +164,9 @@ Debugger, startet F5 das geöffnete Struktogramm; in der Debugger-Auswahl von VS
 
 Der Editor ist vollständig per Tastatur bedienbar; **?** zeigt alle Tastenkürzel.
 
+**Mac:** ⌘ statt Strg (z.B. ⌘↑/↓ verschieben, ⌘Enter einfügen, ⇧⌘Enter davor einfügen), ⌫ löscht,
+Fn+← / Fn+→ und Fn+↑ / Fn+↓ ersetzen Pos1/Ende und Bild↑/↓. Im Bearbeiten-Dialog öffnet neben ⌃Leertaste auch ⌘I die
+Vorschläge. Tooltips, Statuszeile und die Übersicht (**?**) zeigen auf dem Mac automatisch die Mac-Tasten.
 Die Zoom-Tasten (Strg/⌘ + `+` / `−` / `0`) zoomen nur das Struktogramm, solange es den Fokus hat – nicht zusätzlich
 die ganze VS-Code-Oberfläche.
 

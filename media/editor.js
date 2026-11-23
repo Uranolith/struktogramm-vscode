@@ -562,11 +562,11 @@
     if (el && !isRoot) items.push(['sub:before', T('web.menu.insertBefore') + ' ▸']);
     if (el && !isRoot && ['instruction', 'call', 'jump', 'alternative', 'case', 'for', 'while', 'repeat', 'forever', 'try', 'parallel'].includes(el.type)) items.push(['sub:wrap', T('web.menu.wrap') + ' ▸']);
     items.push(['-']);
-    if (el && !isRoot) { items.push(['copy', T('web.tb.copy'), T('web.key.ctrl') + '+C'], ['cut', T('web.tb.cut'), T('web.key.ctrl') + '+X']); }
-    items.push(['paste', T('web.tb.paste'), T('web.key.ctrl') + '+V', !hasClipboard]);
+    if (el && !isRoot) { items.push(['copy', T('web.tb.copy'), T('web.key.combo', 'C')], ['cut', T('web.tb.cut'), T('web.key.combo', 'X')]); }
+    items.push(['paste', T('web.tb.paste'), T('web.key.combo', 'V'), !hasClipboard]);
     if (el && !isRoot) items.push(['toggleDisabled', el.disabled ? T('web.menu.enable') : T('web.menu.disable')]);
     if (el && !isRoot) items.push(['toggleBp', breakpoints.has(sel) ? T('web.menu.bpRemove') : T('web.menu.bpSet'), 'F9']);
-    if (el) items.push(['-'], ['up', T('web.menu.up'), T('web.key.ctrl') + '+↑'], ['down', T('web.menu.down'), T('web.key.ctrl') + '+↓'], ['delete', isRoot ? T('web.menu.deleteDiagram') : T('web.tb.delete'), T('web.key.del')]);
+    if (el) items.push(['-'], ['up', T('web.menu.up'), T('web.key.combo', '↑')], ['down', T('web.menu.down'), T('web.key.combo', '↓')], ['delete', isRoot ? T('web.menu.deleteDiagram') : T('web.tb.delete'), T('web.key.del')]);
     items.push(['-'], ['addSub', T('web.menu.addSub')], ['addMain', T('web.menu.addMain')]);
     menu.innerHTML = items.filter((it, i, a) => !(it[0] === '-' && (i === 0 || a[i - 1][0] === '-'))).map((it) => {
       if (it[0] === '-') return '<div class="sep"></div>';
@@ -1315,7 +1315,8 @@
     return {
       /** true = Taste verbraucht */
       key(e) {
-        if (e.key === ' ' && e.ctrlKey) { forced = true; update(); return true; }
+        // Strg+Leertaste wie in VS Code; auf dem Mac belegt das System ⌃Leertaste oft (Eingabequelle) – dort auch ⌘I
+        if ((e.key === ' ' && e.ctrlKey) || (e.metaKey && e.key.toLowerCase() === 'i')) { forced = true; update(); return true; }
         if (box.hidden) return false;
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           idx = (idx + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length;
