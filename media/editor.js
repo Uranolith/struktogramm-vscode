@@ -1364,7 +1364,13 @@
   }
 
   scroller.addEventListener('wheel', (e) => {
-    if (e.ctrlKey) { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }
+    // Strg+Mausrad bzw. Pinch auf dem Trackpad (kommt als Wheel mit ctrlKey): Zoom proportional zur Bewegung –
+    // eine Mausrad-Raste (100 px) ≈ 10 %, die vielen kleinen Pinch-Schritte zoomen entsprechend sanft
+    if (e.ctrlKey) {
+      e.preventDefault();
+      const dy = Math.max(-100, Math.min(100, e.deltaY * (e.deltaMode === 1 ? 33 : 1)));
+      setZoom(zoom * Math.exp(-dy * Math.log(1.1) / 100));
+    }
   }, { passive: false });
 
   buildToolbar();

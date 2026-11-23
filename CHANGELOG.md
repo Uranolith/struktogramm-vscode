@@ -7,6 +7,7 @@
 - **macOS:** Tooltips, Statuszeile, Kontextmenü, Werkzeug-Ansicht und Tastenübersicht zeigen ⌘, ⇧⌘Z, ⌫ und Fn+Pfeile
   statt Strg, Strg+Y, Entf, Pos1/Ende; Tasten, die es am Mac nicht gibt (Einfg, Menütaste), entfallen.
   Vorschläge im Bearbeiten-Dialog zusätzlich mit ⌘I (⌃Leertaste ist oft vom System belegt).
+- Pinch-Zoom auf dem Trackpad und Strg+Mausrad zoomen proportional zur Bewegung (vorher viel zu schnell).
 
 ## 0.9.1
 - **Parallelverarbeitung als echte Threads** im erzeugten Code: Python `threading`, Java Thread-Klassen,
