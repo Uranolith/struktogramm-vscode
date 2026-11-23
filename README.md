@@ -164,6 +164,9 @@ Debugger, startet F5 das geöffnete Struktogramm; in der Debugger-Auswahl von VS
 
 Der Editor ist vollständig per Tastatur bedienbar; **?** zeigt alle Tastenkürzel.
 
+Die Zoom-Tasten (Strg/⌘ + `+` / `−` / `0`) zoomen nur das Struktogramm, solange es den Fokus hat – nicht zusätzlich
+die ganze VS-Code-Oberfläche.
+
 | Taste | Wirkung |
 |---|---|
 | ↑ / ↓ | vorheriges / nächstes Element (am Blockende weiter hinter dem umgebenden Element) |

@@ -113,6 +113,7 @@ class NsdEditorProvider {
       panel.onDidChangeViewState(() => { if (panel.active) this.setActive(state); }),
     ];
     panel.onDidDispose(() => {
+      handleDiagramFocus(panel.webview, { type: 'diagramFocus', focused: false });
       state.exec.abort();
       subs.forEach((s) => s.dispose());
       this.editors.delete(state);
@@ -124,7 +125,7 @@ class NsdEditorProvider {
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {
-        if (state.exec.handle(msg) || handlePngData(msg)) return;
+        if (state.exec.handle(msg) || handlePngData(msg) || handleDiagramFocus(panel.webview, msg)) return;
         switch (msg.type) {
           case 'toolState': if (this.tools) this.tools.setState(state, msg.state); break;
           case 'command': if (/^struktogramm\./.test(msg.command)) vscode.commands.executeCommand(msg.command); break;
@@ -220,10 +221,11 @@ class PreviewPanel {
         vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('struktogramm')) this.update(); }),
         vscode.window.onDidChangeActiveColorTheme(() => this.update()),
       ];
-      this.panel.onDidDispose(() => { this.exec.abort(); subs.forEach((s) => s.dispose()); this.panel = null; });
+      const webview = this.panel.webview;
+      this.panel.onDidDispose(() => { handleDiagramFocus(webview, { type: 'diagramFocus', focused: false }); this.exec.abort(); subs.forEach((s) => s.dispose()); this.panel = null; });
       this.panel.webview.onDidReceiveMessage(async (msg) => {
         try {
-          if (this.exec.handle(msg) || handlePngData(msg)) return;
+          if (this.exec.handle(msg) || handlePngData(msg) || handleDiagramFocus(webview, msg)) return;
           const doc = this.document();
           if (!doc) return;
           if (msg.type === 'ready') this.update();
@@ -548,6 +550,24 @@ function requestPng(webview, svg) {
     setTimeout(() => { if (pngWaiters.delete(id)) reject(new Error('PNG-Erzeugung hat zu lange gedauert.')); }, 20000);
   });
 }
+/**
+ * Welches Struktogramm (Editor oder Vorschau) hat den Tastaturfokus? VS Code reicht jeden Tastendruck aus einer
+ * Webview an seine eigenen Tastenkürzel weiter – Strg/⌘ + = / − / 0 würden sonst zusätzlich die ganze Oberfläche
+ * zoomen bzw. in die Seitenleiste springen. Die Zoom-Tasten sind deshalb als Tastenbelegung mit dem Kontext
+ * struktograf.diagramFocus registriert und werden hierher an die Webview geschickt.
+ */
+let focusedDiagram = null;
+function handleDiagramFocus(webview, msg) {
+  if (!msg || msg.type !== 'diagramFocus') return false;
+  if (msg.focused) focusedDiagram = webview;
+  else if (focusedDiagram === webview) focusedDiagram = null;
+  vscode.commands.executeCommand('setContext', 'struktograf.diagramFocus', !!focusedDiagram);
+  return true;
+}
+function zoomFocusedDiagram(step) {
+  if (focusedDiagram) focusedDiagram.postMessage({ type: 'zoomKey', step });
+}
+
 function handlePngData(msg) {
   if (!msg || msg.type !== 'pngData') return false;
   const w = pngWaiters.get(msg.id);
@@ -724,6 +744,9 @@ function activate(context) {
       if (e.affectsConfiguration('struktogramm.executionPanelLocation')) applyExecutionLocation(true);
     }),
     vscode.commands.registerCommand('struktogramm.execution.clear', () => execView.clear()),
+    vscode.commands.registerCommand('struktogramm.zoomIn', () => zoomFocusedDiagram('in')),
+    vscode.commands.registerCommand('struktogramm.zoomOut', () => zoomFocusedDiagram('out')),
+    vscode.commands.registerCommand('struktogramm.zoomReset', () => zoomFocusedDiagram('reset')),
     vscode.commands.registerCommand('struktogramm.tools.resetLayout', () => tools.resetLayout()),
     vscode.commands.registerCommand('struktogramm.toggleExecutionLocation', () => {
       const next = executionLocation() === 'panel' ? 'editor' : 'panel';

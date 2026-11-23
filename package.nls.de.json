@@ -64,5 +64,8 @@
   "debugger.stopOnEntry": "Am ersten Element anhalten (wie F10) statt durchzulaufen.",
   "debugger.configName": "Struktogramm ausführen",
   "debugger.snippet": "Struktograf: Struktogramm ausführen",
-  "debugger.snippet.desc": "Führt ein Struktogramm (.nsd) in Struktograf aus."
+  "debugger.snippet.desc": "Führt ein Struktogramm (.nsd) in Struktograf aus.",
+  "cmd.zoomIn": "Struktogramm vergrößern",
+  "cmd.zoomOut": "Struktogramm verkleinern",
+  "cmd.zoomReset": "Struktogramm-Zoom zurücksetzen"
 }

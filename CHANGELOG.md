@@ -1,5 +1,10 @@
 # Änderungen
 
+## Unveröffentlicht
+- **Zoom-Tasten** (Strg/⌘ + `+` / `−` / `0`) zoomen nur noch das Struktogramm: VS Code reicht jeden Tastendruck
+  aus der Webview weiter, dadurch wurde zusätzlich die ganze Oberfläche gezoomt bzw. (Strg/⌘+0) in die
+  Seitenleiste gesprungen. Die Tasten sind jetzt Tastenbelegungen, die nur bei Fokus im Struktogramm greifen.
+
 ## 0.9.1
 - **Parallelverarbeitung als echte Threads** im erzeugten Code: Python `threading`, Java Thread-Klassen,
   C# `Parallel.Invoke`, C++ `std::thread`, C OpenMP, Kotlin `thread { }`, Rust `std::thread::scope`,

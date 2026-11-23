@@ -64,5 +64,8 @@
   "debugger.stopOnEntry": "Pause at the first element (like F10) instead of running.",
   "debugger.configName": "Run Structogram",
   "debugger.snippet": "Struktograf: Run Structogram",
-  "debugger.snippet.desc": "Runs a structogram (.nsd) in Struktograf."
+  "debugger.snippet.desc": "Runs a structogram (.nsd) in Struktograf.",
+  "cmd.zoomIn": "Zoom In Structogram",
+  "cmd.zoomOut": "Zoom Out Structogram",
+  "cmd.zoomReset": "Reset Structogram Zoom"
 }

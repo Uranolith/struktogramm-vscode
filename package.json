@@ -240,6 +240,21 @@
         "title": "%cmd.tools.resetLayout%",
         "category": "%category%",
         "icon": "$(discard)"
+      },
+      {
+        "command": "struktogramm.zoomIn",
+        "title": "%cmd.zoomIn%",
+        "category": "%category%"
+      },
+      {
+        "command": "struktogramm.zoomOut",
+        "title": "%cmd.zoomOut%",
+        "category": "%category%"
+      },
+      {
+        "command": "struktogramm.zoomReset",
+        "title": "%cmd.zoomReset%",
+        "category": "%category%"
       }
     ],
     "icons": {
@@ -443,6 +458,18 @@
         {
           "command": "struktogramm.tools.resetLayout",
           "when": "struktograf.toolsInSidebar"
+        },
+        {
+          "command": "struktogramm.zoomIn",
+          "when": "false"
+        },
+        {
+          "command": "struktogramm.zoomOut",
+          "when": "false"
+        },
+        {
+          "command": "struktogramm.zoomReset",
+          "when": "false"
         }
       ]
     },
@@ -600,6 +627,54 @@
         "command": "struktogramm.step",
         "key": "f10",
         "when": "struktograf.editorOpen && !debuggerInterestedInActiveEditor && !inDebugMode && !struktograf.execActive"
+      },
+      {
+        "command": "struktogramm.zoomIn",
+        "key": "ctrl+=",
+        "mac": "cmd+=",
+        "when": "struktograf.diagramFocus"
+      },
+      {
+        "command": "struktogramm.zoomIn",
+        "key": "ctrl+shift+=",
+        "mac": "cmd+shift+=",
+        "when": "struktograf.diagramFocus"
+      },
+      {
+        "command": "struktogramm.zoomIn",
+        "key": "ctrl+numpad_add",
+        "mac": "cmd+numpad_add",
+        "when": "struktograf.diagramFocus"
+      },
+      {
+        "command": "struktogramm.zoomOut",
+        "key": "ctrl+-",
+        "mac": "cmd+-",
+        "when": "struktograf.diagramFocus"
+      },
+      {
+        "command": "struktogramm.zoomOut",
+        "key": "ctrl+shift+-",
+        "mac": "cmd+shift+-",
+        "when": "struktograf.diagramFocus"
+      },
+      {
+        "command": "struktogramm.zoomOut",
+        "key": "ctrl+numpad_subtract",
+        "mac": "cmd+numpad_subtract",
+        "when": "struktograf.diagramFocus"
+      },
+      {
+        "command": "struktogramm.zoomReset",
+        "key": "ctrl+0",
+        "mac": "cmd+0",
+        "when": "struktograf.diagramFocus"
+      },
+      {
+        "command": "struktogramm.zoomReset",
+        "key": "ctrl+numpad0",
+        "mac": "cmd+numpad0",
+        "when": "struktograf.diagramFocus"
       }
     ],
     "debuggers": [

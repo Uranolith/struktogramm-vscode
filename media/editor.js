@@ -342,6 +342,7 @@
     } else if (m.type === 'renderPng') renderPng(m.svg, m.id);
     else if (m.type === 'execCommand') execCmd(m.cmd);
     else if (m.type === 'tool') runTool(m);
+    else if (m.type === 'zoomKey') setZoom(m.step === 'reset' ? 1 : m.step === 'in' ? zoom * 1.15 : zoom / 1.15);
     else if (m.type === 'toolbarMode') setToolbarMode(m.mode);
     else if (m.type === 'toolStateRequest') reportTools(true);
     else if (m.type === 'execTurtle') EX.turtle(m.ops);
@@ -465,6 +466,12 @@
   window.addEventListener('focus', () => {
     if (execState === 'input' && !document.body.classList.contains('exec-in-panel')) setTimeout(() => $('coninput').focus(), 0);
   });
+
+  // Fokus melden: die Zoom-Tasten (Strg/⌘ + = / − / 0) sind VS-Code-Tastenbelegungen, die nur dann greifen –
+  // sonst würde VS Code zusätzlich die ganze Oberfläche zoomen
+  window.addEventListener('focus', () => post({ type: 'diagramFocus', focused: true }));
+  window.addEventListener('blur', () => post({ type: 'diagramFocus', focused: false }));
+  if (document.hasFocus()) post({ type: 'diagramFocus', focused: true });
 
   // Konsole, Eingabe, Turtleizer und Variablen (gemeinsam mit dem Panel unten, siehe execui.js)
   $('execpanel').innerHTML = window.StruktoExec.markup(T, escapeHtml, true);
@@ -977,10 +984,8 @@
     }
     // Werkzeugleiste: normale Tastaturbedienung der Knöpfe
     if (e.target.closest && e.target.closest('#toolbar, #execpanel') && (e.key === 'Enter' || e.key === ' ')) return;
+    // Strg oder ⌘ (Mac); Zoom-Tasten kommen als Tastenbelegung über die Extension (zoomKey)
     const ctrl = e.ctrlKey || e.metaKey;
-    if (ctrl && (e.key === '+' || e.key === '=')) { setZoom(zoom * 1.15); e.preventDefault(); return; }
-    if (ctrl && e.key === '-') { setZoom(zoom / 1.15); e.preventDefault(); return; }
-    if (ctrl && e.key === '0') { setZoom(1); e.preventDefault(); return; }
     if (e.key === '?') { showHelp(); e.preventDefault(); return; }
     if (e.key === 'Escape') { hideMenu(); return; }
     if (e.key === 'F9') { toggleBreakpoint(); e.preventDefault(); return; }
