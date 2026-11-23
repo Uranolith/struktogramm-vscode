@@ -174,7 +174,7 @@ die ganze VS-Code-Oberfläche.
 |---|---|
 | ↑ / ↓ | vorheriges / nächstes Element (am Blockende weiter hinter dem umgebenden Element) |
 | → / ← | in den ersten Block hinein / zum umgebenden Element |
-| Strg + → / ← | nächster / vorheriger Zweig: Ja/Nein, Fälle, try/catch/finally, parallele Zweige |
+| Strg + → / ← | nächster / vorheriger Zweig: true/false, Fälle, try/catch/finally, parallele Zweige |
 | Pos1 / Ende · Bild ↑ / ↓ | erstes / letztes Element im Block · vorheriges / nächstes Diagramm |
 | Enter / F2 | bearbeiten (im leeren Block: Anweisung einfügen) |
 | Strg+Enter / Einfg | **Einfügen mit Vorschau:** An der Einfügestelle öffnet sich eine Auswahl; Tippen filtert nach Name, Kürzel oder Stichwort (**I** Anweisung, **V** Verzweigung, **F** Fallauswahl, **Z** Zählschleife, **K** Kopfschleife, **U** Fußschleife, **E** Endlosschleife, **A** Aufruf, **S** Sprung, **T** Try, **P** Parallel – oder `if`, `while`, `try` …). Das gewählte Element erscheint gestrichelt als Vorschau im Diagramm. ↑/↓ wählt, **Enter** fügt ein, ein weiteres **Enter** öffnet die Detailbearbeitung, Esc bricht ab. Strg+Umschalt+Enter bzw. Umschalt+Einfg fügt davor ein. |

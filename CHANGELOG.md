@@ -7,6 +7,8 @@
 - **macOS:** Tooltips, Statuszeile, Kontextmenü, Werkzeug-Ansicht und Tastenübersicht zeigen ⌘, ⇧⌘Z, ⌫ und Fn+Pfeile
   statt Strg, Strg+Y, Entf, Pos1/Ende; Tasten, die es am Mac nicht gibt (Einfg, Menütaste), entfallen.
   Vorschläge im Bearbeiten-Dialog zusätzlich mit ⌘I (⌃Leertaste ist oft vom System belegt).
+- Verzweigungen sind standardmäßig mit **true / false** beschriftet (vorher ja/nein bzw. yes/no); änderbar über
+  `struktogramm.trueLabel` und `struktogramm.falseLabel`.
 - Pinch-Zoom auf dem Trackpad und Strg+Mausrad zoomen proportional zur Bewegung (vorher viel zu schnell).
 
 ## 0.9.1

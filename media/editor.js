@@ -914,7 +914,7 @@
     }
     if (!s) return null;
     if (ctrl && (key === 'ArrowRight' || key === 'ArrowLeft')) {
-      // anderer Zweig desselben Elements: Ja/Nein, Fälle, try/catch/finally, parallele Zweige
+      // anderer Zweig desselben Elements: true/false, Fälle, try/catch/finally, parallele Zweige
       const keys = blockKeys(getAt(s.owner));
       const k = keys.indexOf(s.key) + (key === 'ArrowRight' ? 1 : -1);
       return k >= 0 && k < keys.length ? blockFirst(s.owner, keys[k]) : null;

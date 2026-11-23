@@ -72,7 +72,7 @@ function settings() {
   const c = vscode.workspace.getConfiguration('struktogramm');
   return {
     theme: diagramTheme(),
-    // leer = Standard der Sprache (yes/no bzw. ja/nein)
+    // leer = Standard: true / false
     trueLabel: c.get('trueLabel') || t('core.trueLabel'),
     falseLabel: c.get('falseLabel') || t('core.falseLabel'),
     pretty: c.get('prettyOperators', true),
