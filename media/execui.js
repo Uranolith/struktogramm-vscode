@@ -23,6 +23,8 @@
       </div>
       <div id="vars" role="tabpanel" aria-labelledby="tabVars"></div>
       <div id="calls" role="tabpanel" aria-labelledby="tabCalls" hidden></div>
+      <div class="sash csash" id="colSash0" role="separator" aria-orientation="vertical" tabindex="0" title="${esc(T('web.vars.resizeCol'))}" aria-label="${esc(T('web.vars.resizeCol'))}"></div>
+      <div class="sash csash" id="colSash1" role="separator" aria-orientation="vertical" tabindex="0" title="${esc(T('web.vars.resizeCol'))}" aria-label="${esc(T('web.vars.resizeCol'))}"></div>
     </div>
   </div>`;
   }
@@ -34,10 +36,13 @@
    */
   const SPLIT_DEFAULT = { side: 0.4, turtle: 0.3 };
   const MIN_PANE = 110, MIN_CONSOLE = 150;
+  const COLS_DEFAULT = [1 / 3, 1 / 3, 1 / 3]; // Variablentabelle: Name | Wert | Typ – anfangs gleich breit
+  const MIN_COL = 0.08;
   function initSplit(post) {
     let saved = {};
     try { saved = JSON.parse(document.body.dataset.split || '{}') || {}; } catch (e) { saved = {}; }
-    const split = { side: saved.side || SPLIT_DEFAULT.side, turtle: saved.turtle || SPLIT_DEFAULT.turtle };
+    const validCols = Array.isArray(saved.cols) && saved.cols.length === 3 && saved.cols.every((x) => x >= MIN_COL - 1e-6) && Math.abs(saved.cols.reduce((a, b) => a + b, 0) - 1) < 0.01;
+    const split = { side: saved.side || SPLIT_DEFAULT.side, turtle: saved.turtle || SPLIT_DEFAULT.turtle, cols: validCols ? saved.cols.slice() : COLS_DEFAULT.slice() };
     const body = document.querySelector('.execbody');
     const apply = () => {
       $('side').style.flex = `0 0 ${(split.side * 100).toFixed(2)}%`;
@@ -84,6 +89,70 @@
       });
     }
     apply();
+
+    /*
+     * Spalten der Variablentabelle (Name | Wert | Typ): Anteile an der Breite, gemeinsam für alle Aufrufe.
+     * Zwei Trennbalken liegen auf den Spaltengrenzen über der ganzen Liste (die Kopfzeile ist ausgeblendet).
+     */
+    const vars = $('vars');
+    const handles = [$('colSash0'), $('colSash1')];
+    const layoutCols = () => {
+      const c = split.cols;
+      vars.style.setProperty('--vn', `${(c[0] * 100).toFixed(3)}%`);
+      vars.style.setProperty('--vt', `${(c[2] * 100).toFixed(3)}%`);
+      // Balken auf die Spaltengrenzen setzen (innerhalb des sichtbaren Bereichs der Liste)
+      const cs = getComputedStyle(vars);
+      const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+      const w = vars.clientWidth - padL - padR;
+      [c[0], c[0] + c[1]].forEach((f, k) => {
+        handles[k].style.left = `${vars.offsetLeft + padL + f * w}px`;
+        handles[k].style.top = `${vars.offsetTop}px`;
+        handles[k].style.height = `${vars.clientHeight}px`;
+      });
+    };
+    // Grenze b (0: Name|Wert, 1: Wert|Typ) auf den Anteil rel der Tabellenbreite setzen
+    const setBoundary = (b, rel) => {
+      const c = split.cols;
+      if (b === 0) { c[0] = Math.min(1 - c[2] - MIN_COL, Math.max(MIN_COL, rel)); c[1] = 1 - c[0] - c[2]; }
+      else { c[2] = Math.min(1 - c[0] - MIN_COL, Math.max(MIN_COL, 1 - rel)); c[1] = 1 - c[0] - c[2]; }
+      layoutCols();
+    };
+    const relAt = (x) => {
+      const r = vars.getBoundingClientRect(), cs = getComputedStyle(vars);
+      const left = r.left + (parseFloat(cs.paddingLeft) || 0);
+      const w = vars.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+      return w > 0 ? (x - left) / w : 0.5;
+    };
+    handles.forEach((h, b) => {
+      h.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        try { h.setPointerCapture(e.pointerId); } catch (err) { /* Zeiger schon weg */ }
+        h.classList.add('active');
+        const move = (ev) => setBoundary(b, relAt(ev.clientX));
+        const end = () => {
+          h.removeEventListener('pointermove', move);
+          h.removeEventListener('pointerup', end);
+          h.removeEventListener('lostpointercapture', end);
+          if (h.classList.contains('active')) { h.classList.remove('active'); save(); }
+        };
+        h.addEventListener('pointermove', move);
+        h.addEventListener('pointerup', end);
+        h.addEventListener('lostpointercapture', end);
+      });
+      h.addEventListener('dblclick', () => { split.cols = COLS_DEFAULT.slice(); layoutCols(); save(); });
+      h.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        const c = split.cols;
+        setBoundary(b, (b === 0 ? c[0] : c[0] + c[1]) + (e.key === 'ArrowLeft' ? -0.02 : 0.02));
+        save();
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+    if (window.ResizeObserver) new ResizeObserver(() => layoutCols()).observe(vars);
+    layoutCols();
+    return { layoutCols };
   }
 
   /**
@@ -93,7 +162,7 @@
   function create(opts) {
     const { T, esc, post } = opts;
     const show = () => { if (opts.onShow) opts.onShow(); };
-    initSplit(post);
+    const splitApi = initSplit(post);
 
     function line(text, kind) {
       const out = $('conout');
@@ -107,14 +176,26 @@
 
     // Name eines Aufrufs; Unterprogramme mit Aufrufnummer, damit mehrfache Aufrufe unterscheidbar sind
     const callName = (f) => esc(f.name) + (f.main || !f.callNo ? '' : ` <span class="callno">#${f.callNo}</span>`);
-    const table = (list) => '<table>' + (list.length ? list.map((x) => `<tr><td class="n">${esc(x.name)}</td><td class="v">${esc(x.value)}</td><td class="t">${esc(x.type || '')}</td></tr>`).join('') : `<tr><td class="muted">${esc(T('web.vars.none'))}</td></tr>`) + '</table>';
+    // Alle Variablentabellen haben dieselben Spalten (colgroup + feste Breiten), damit Namen, Werte und Typen
+    // über alle Aufrufe hinweg untereinander stehen; die Breiten setzt alignVars()
+    const COLS = '<colgroup><col class="cn"><col class="cv"><col class="ct"></colgroup>';
+    const table = (list) => `<table>${COLS}` + (list.length ? list.map((x) => `<tr><td class="vname">${esc(x.name)}</td><td class="vval">${esc(x.value)}</td><td class="vtype">${esc(x.type || '')}</td></tr>`).join('') : `<tr><td class="muted" colspan="3">${esc(T('web.vars.none'))}</td></tr>`) + '</table>';
 
-    // Variablenansicht: oben die laufenden Aufrufe, darunter die abgeschlossenen (neueste zuerst)
+    // Variablenansicht: Kopfzeile, oben die laufenden Aufrufe, darunter die abgeschlossenen (neueste zuerst)
     function varsBox() {
       const v = $('vars');
-      if (!v.querySelector('.vactive')) v.innerHTML = '<div class="vactive"></div><div class="vdone" hidden><div class="vhead"></div><div class="vlist"></div></div>';
+      if (!v.querySelector('.vactive')) {
+        // Spaltenköpfe nur für Screenreader (optisch ausgeblendet)
+        v.innerHTML = `<table class="vcols">${COLS}<tr><th>${esc(T('web.vars.colName'))}</th><th>${esc(T('web.vars.colValue'))}</th><th>${esc(T('web.vars.colType'))}</th></tr></table>`
+          + '<div class="vactive"></div><div class="vdone" hidden><div class="vhead"></div><div class="vlist"></div></div>';
+      }
       return v;
     }
+    /**
+     * Spaltenbreiten für alle Tabellen: Anteile (anfangs je ein Drittel), per Trennbalken verstellbar (initSplit).
+     * Nach dem Neuzeichnen neu ausrichten – die Höhe der Liste und damit der Trennbalken kann sich ändern.
+     */
+    function alignVars() { splitApi.layoutCols(); }
     function vars(frames) {
       const box = varsBox().querySelector('.vactive');
       let html = '';
@@ -124,6 +205,7 @@
         if (k === frames.length - 1 || frames.length <= 3) html += table(f.vars);
       }
       box.innerHTML = html;
+      alignVars();
     }
     /* ---------- Reiter ---------- */
     function showTab(tab) {
@@ -225,6 +307,7 @@
       while (list.childNodes.length > 500) list.removeChild(list.lastChild);
       sec.hidden = !doneCount;
       v.querySelector('.vhead').textContent = T('web.vars.doneHeader', doneCount);
+      alignVars();
     }
 
     // Turtleizer: Zeichenfläche für forward/left/… – erscheint, sobald das Programm die Turtle benutzt

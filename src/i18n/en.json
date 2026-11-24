@@ -529,8 +529,12 @@
  "web.type.try": "Try",
  "web.type.while": "While Loop",
  "web.vars.aborted": "aborted",
+ "web.vars.colName": "Name",
+ "web.vars.colType": "Type",
+ "web.vars.colValue": "Value",
  "web.vars.complete": "complete",
  "web.vars.doneHeader": "Completed calls ({0})",
  "web.vars.none": "no variables",
+ "web.vars.resizeCol": "Drag to resize the column · double-click: equal widths · ←/→ with the keyboard",
  "web.vars.waiting": "waiting"
 }

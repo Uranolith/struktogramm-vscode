@@ -15,6 +15,10 @@
   - Variablen: Felder und Records aufklappbar, Werte änderbar; Vorschläge in der Debugkonsole.
 - **Ausführen-Menü (▷) im Editor** mit *Struktogramm debuggen* und *Struktogramm ohne Debuggen ausführen*, dieselben
   Links in der leeren Ansicht *Ausführen und Debuggen*. Ersetzt den eigenen Ausführen-Knopf in der Titelleiste.
+- **Variablenanzeige als durchgehende Tabelle:** Namen, Werte und Typen stehen über alle (auch abgeschlossenen)
+  Aufrufe hinweg untereinander. Die drei Spalten sind anfangs gleich breit und lassen sich an den Spaltengrenzen
+  breiter und schmaler ziehen (Doppelklick: gleich breit, ←/→ per Tastatur); die Aufteilung bleibt gespeichert.
+  Typen wurden vorher im Editor zu groß dargestellt (Namensgleichheit mit einer CSS-Klasse der Diagrammgrafik).
 - **F5 nach VS-Code-Standard:** Struktograf greift nicht mehr in die Wahl des Debuggers ein. F5 startet das
   Struktogramm nur im Struktogramm-Editor; sonst entscheidet VS Code (`launch.json`, Debugger der aktiven Datei).
   Weggefallen: F5/F10 starten das offene Struktogramm, wenn die aktive Datei keinen Debugger hat; Tasten einer

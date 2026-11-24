@@ -36,7 +36,10 @@
   padding: 3px 5px;
 }
 /* rechte Seite: Reiter „Variablen“ und „Aufrufe“ (wie die Reiter im Panel von VS Code) */
-#side { flex: 0 0 40%; display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); }
+#side { position: relative; flex: 0 0 40%; display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); }
+/* Trennbalken zwischen den Spalten der Variablentabelle: liegen über der Liste, sichtbar beim Überfahren */
+.sash.csash { position: absolute; margin: 0; transform: translateX(-2px); cursor: col-resize; }
+#vars[hidden] ~ .csash { display: none; }
 .stabs { display: flex; gap: 16px; padding: 0 8px; flex: none; border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); }
 .stabs button {
   padding: 4px 0 3px; border: 0; border-bottom: 1px solid transparent; background: transparent; cursor: pointer;
@@ -73,8 +76,15 @@
 #vars .vhead, #calls .vhead { margin: 10px 0 2px; padding-top: 6px; border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); font-size: 11px; text-transform: uppercase; opacity: .7; }
 #vars .doneframe .frame { font-weight: normal; }
 #vars .doneframe table { opacity: .85; }
-#vars table { border-collapse: collapse; width: 100%; font-family: var(--vscode-editor-font-family, Consolas, monospace); }
-#vars td { padding: 1px 6px 1px 0; vertical-align: top; }
-#vars td.n { white-space: nowrap; }
-#vars td.v { word-break: break-all; }
-#vars td.t { opacity: .55; white-space: nowrap; }
+/* alle Variablentabellen mit denselben Spalten (Breiten aus alignVars): Name | Wert | Typ stehen untereinander */
+#vars table { border-collapse: collapse; width: 100%; table-layout: fixed; font-family: var(--vscode-editor-font-family, Consolas, monospace); }
+#vars col.cn { width: var(--vn, 10ch); }
+#vars col.ct { width: var(--vt, 8ch); }
+#vars td, #vars th { padding: 1px 6px 1px 0; vertical-align: top; text-align: left; }
+#vars td.vname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#vars td.vval { word-break: break-all; }
+#vars td.vtype { opacity: .55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Spaltenköpfe Name · Wert · Typ: vorhanden (Screenreader), aber nicht sichtbar */
+#vars table.vcols { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Zeilen leicht abgesetzt, damit die Spalten über Aufrufe hinweg gut lesbar sind */
+#vars table:not(.vcols) tr:hover td { background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, .1)); }

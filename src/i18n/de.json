@@ -529,8 +529,12 @@
  "web.type.try": "Try",
  "web.type.while": "Kopfschleife",
  "web.vars.aborted": "abgebrochen",
+ "web.vars.colName": "Name",
+ "web.vars.colType": "Typ",
+ "web.vars.colValue": "Wert",
  "web.vars.complete": "beendet",
  "web.vars.doneHeader": "Abgeschlossene Aufrufe ({0})",
  "web.vars.none": "keine Variablen",
+ "web.vars.resizeCol": "Spaltenbreite ziehen · Doppelklick: gleich breit · ←/→ per Tastatur",
  "web.vars.waiting": "wartet"
 }
