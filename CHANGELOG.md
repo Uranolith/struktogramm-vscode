@@ -1,6 +1,6 @@
 # Änderungen
 
-## Unveröffentlicht
+## 0.9.2
 - **Zoom-Tasten** (Strg/⌘ + `+` / `−` / `0`) zoomen nur noch das Struktogramm: VS Code reicht jeden Tastendruck
   aus der Webview weiter, dadurch wurde zusätzlich die ganze Oberfläche gezoomt bzw. (Strg/⌘+0) in die
   Seitenleiste gesprungen. Die Tasten sind jetzt Tastenbelegungen, die nur bei Fokus im Struktogramm greifen.
