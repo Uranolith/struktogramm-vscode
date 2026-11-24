@@ -583,7 +583,7 @@
             "editor",
             "sidebar"
           ],
-          "default": "sidebar",
+          "default": "editor",
           "enumDescriptions": [
             "%config.toolbarLocation.enum0%",
             "%config.toolbarLocation.enum1%"

@@ -12,8 +12,8 @@ function toolbarLocation() {
   const c = vscode.workspace.getConfiguration('struktogramm');
   const i = c.inspect('toolbarLocation') || {};
   const set = i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue;
-  const v = set !== undefined ? set : c.get('devPreview.toolbarLocation', 'sidebar');
-  return v === 'editor' ? 'editor' : 'sidebar';
+  const v = set !== undefined ? set : c.get('devPreview.toolbarLocation', 'editor');
+  return v === 'sidebar' ? 'sidebar' : 'editor';
 }
 
 /** Text für ein HTML-Attribut */

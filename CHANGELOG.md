@@ -8,6 +8,8 @@
 - **Ausführungsanzeige verstellbar:** Die Bereiche Konsole, Turtleizer und Variablen/Aufrufe lassen sich an den
   Trennlinien breiter und schmaler ziehen (Doppelklick setzt zurück, ←/→ per Tastatur). Die Aufteilung gilt für Editor
   und Panel und bleibt gespeichert.
+- **Standard: Werkzeugleiste wieder im Editor.** Die Ansicht *Struktograf* in der Aktivitätsleiste gibt es weiter mit
+  `struktogramm.toolbarLocation` = `sidebar`.
 
 ## 0.9.3
 - **Fallauswahl mit `true` (bzw. `false`) als Ausdruck** und Bedingungen als Marken – `case true of  kdnr < 2000: …` –

@@ -25,11 +25,12 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   das Symbol oben in der Explorer-Leiste oder *Neues Struktogramm...* in der Werkzeug-Ansicht *Struktograf*.
   Nach Eingabe des Namens öffnet sich die neue `.nsd`-Datei mit einem leeren Hauptprogramm.
 - **Sprache**: Oberfläche auf Englisch oder Deutsch, je nach Anzeigesprache von VS Code (*Configure Display Language*).
-- **Arbeitsbereich**: Die Werkzeuge stehen in der Ansicht **Struktograf** (Symbol links in der Aktivitätsleiste),
-  die Ausführung (Konsole, Eingabe, Turtleizer, Variablen) im Panel **Struktograf** unten neben *Probleme* und
-  *Ausgabe*. Wer beides lieber direkt im Editor hat, stellt `struktogramm.toolbarLocation` bzw.
-  `struktogramm.executionPanelLocation` auf `editor` – oder schaltet live über die Knöpfe in den Titelleisten um.
-  Die Kategorien der Werkzeug-Ansicht lassen sich ein- und ausklappen und per Drag & Drop (oder Alt+↑/↓) umsortieren.
+- **Arbeitsbereich**: Die Werkzeuge stehen in der Werkzeugleiste oben im Struktogramm-Editor, die Ausführung
+  (Konsole, Eingabe, Turtleizer, Variablen) im Panel **Struktograf** unten neben *Probleme* und *Ausgabe*.
+  Mit `struktogramm.toolbarLocation` = `sidebar` stehen die Werkzeuge stattdessen in der Ansicht **Struktograf**
+  (Symbol links in der Aktivitätsleiste), mit `struktogramm.executionPanelLocation` = `editor` steht die Ausführung
+  im Editor – beides lässt sich auch live über die Knöpfe in den Titelleisten umschalten. Die Kategorien der
+  Werkzeug-Ansicht lassen sich ein- und ausklappen und per Drag & Drop (oder Alt+↑/↓) umsortieren.
   Die Bereiche der Ausführungsanzeige (Konsole, Turtleizer, Variablen/Aufrufe) lassen sich an den Trennlinien
   breiter und schmaler ziehen.
 - **Code → Struktogramm**: Python, Java, C, C++, C#, JavaScript, TypeScript, Kotlin, Rust
