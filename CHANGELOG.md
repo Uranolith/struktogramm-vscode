@@ -1,8 +1,5 @@
 # Änderungen
 
-## Unveröffentlicht
-- Startzeile der Ausführung: Das ▶ steht aufrecht, nur der Name des Struktogramms ist kursiv.
-
 ## 0.9.5
 - **Echte Debug-Sitzung in VS Code:** Jede Ausführung eines gespeicherten Struktogramms läuft als Debug-Sitzung
   (eigener Debug-Adapter): Debug-Leiste mit Fortsetzen, Schritt über (F10), Schritt hinein (F11), Rücksprung
@@ -30,6 +27,7 @@
   Weggefallen: F5/F10 starten das offene Struktogramm, wenn die aktive Datei keinen Debugger hat; Tasten einer
   laufenden Ausführung gelten überall (übernimmt jetzt die Debug-Sitzung); der Struktograf-Eintrag steht nicht mehr
   künstlich an erster Stelle der Debugger-Auswahl.
+- Startzeile der Ausführung: Das ▶ steht aufrecht, nur der Name des Struktogramms ist kursiv.
 
 ## 0.9.4
 - **← / → wechseln zwischen Fällen:** In Fallauswahl, Verzweigung (true/false) und Parallelverarbeitung gehen die
