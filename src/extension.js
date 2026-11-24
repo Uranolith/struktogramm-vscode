@@ -18,6 +18,7 @@ const { toolbarLocation } = require('./webview');
 const { ExecViewProvider, VIEW_ID: EXEC_VIEW_ID } = require('./execView');
 const { executionLocation } = require('./webview');
 const execSplit = require('./execSplit');
+const { BreakpointSync } = require('./breakpoints');
 const { registerDebugger } = require('./debugLaunch');
 
 let extContext = null;
@@ -39,6 +40,7 @@ class NsdEditorProvider {
     this.tools = null;       // Struktograf-Seitenleiste mit den Werkzeugen
     this.execView = null;    // Panel „Struktogramm-Ausführung“ unten
     this.execEditor = null;  // Editor mit der zuletzt gestarteten Ausführung
+    this.execListeners = new Set(); // (state, msg) – z.B. die Debug-Sitzung von VS Code
   }
 
   /** ist irgendein Struktogramm offen? (F5/F10 starten es, wenn die aktive Datei keinen eigenen Debugger hat) */
@@ -75,6 +77,7 @@ class NsdEditorProvider {
     const execTarget = {
       postMessage: (m) => {
         if (this.execView) this.execView.forward(state, m);
+        for (const l of this.execListeners) l(state, m);
         const r = panel.webview.postMessage(m);
         if (m.type === 'execState') {
           this.execEditor = state;
@@ -99,6 +102,8 @@ class NsdEditorProvider {
       panel.webview.postMessage({ type: 'update', doc: model, svg, error, symbols: collectSymbols(model), select: state.select, editNew: state.editNew, settings: settings(), hasClipboard: !!this.clipboard });
       state.select = undefined;
       state.editNew = false;
+      // Haltepunkte (VS Code) nach jedem Neuzeichnen: Zeilen im XML können sich verschoben haben
+      if (this.bpSync) this.bpSync.push(state);
     };
     state.send = send;
 
@@ -130,12 +135,14 @@ class NsdEditorProvider {
         switch (msg.type) {
           case 'toolState': if (this.tools) this.tools.setState(state, msg.state); break;
           case 'execSplit': execSplit.setSplit(msg.split); break;
+          case 'toggleBreakpoint': if (this.bpSync) this.bpSync.toggle(state, msg.path); break;
+          case 'editBreakpoint': if (this.bpSync) await this.bpSync.edit(state, msg.path, msg.what); break;
           case 'command': if (/^struktogramm\./.test(msg.command)) vscode.commands.executeCommand(msg.command); break;
           case 'ready': {
             send();
             const key = document.uri.toString();
             const pend = this.pending.get(key);
-            if (pend) { this.pending.delete(key); panel.webview.postMessage({ type: 'execCommand', cmd: pend }); }
+            if (pend) { this.pending.delete(key); panel.webview.postMessage({ type: 'execCommand', ...pend }); }
             break;
           }
           case 'op': {
@@ -687,6 +694,8 @@ function activate(context) {
   extContext = context;
   setLanguage(vscode.env.language); // Englisch, bei deutscher VS-Code-Oberfläche Deutsch
   const provider = new NsdEditorProvider(context);
+  // Haltepunkte der Struktogramme = VS-Code-Haltepunkte (Ansicht „Haltepunkte“, Bedingungen, Logpoints …)
+  provider.bpSync = new BreakpointSync(context, provider);
   const preview = new PreviewPanel(context);
   // Werkzeuge in der Editor-Kopfzeile oder in der Struktograf-Seitenleiste (Einstellung struktogramm.toolbarLocation)
   const tools = new ToolsViewProvider(context, provider);
@@ -721,12 +730,12 @@ function activate(context) {
    * Ausführung steuern (F5 / F10 / F6 / Shift+F5). Ziel: aktive Live-Vorschau, sonst der aktive .nsd-Editor.
    * Mit uri (Explorer, Titelleiste): Datei im Struktogramm-Editor öffnen und danach starten.
    */
-  async function execCommand(cmd, uri) {
-    const msg = { type: 'execCommand', cmd };
-    if (uri && uri.fsPath && /\.nsd$/i.test(uri.fsPath)) {
+  async function execCommand(cmd, uri, extra) {
+    const msg = { type: 'execCommand', cmd, ...(extra || {}) };
+    if (uri && (uri.fsPath || uri.path) && /\.nsd$/i.test(uri.fsPath || uri.path)) {
       const open = [...provider.editors].find((s) => s.document.uri.toString() === uri.toString());
       if (open) { open.panel.reveal(); open.panel.webview.postMessage(msg); return; }
-      if (cmd === 'run' || cmd === 'step') provider.pending.set(uri.toString(), cmd);
+      if (cmd === 'run' || cmd === 'step') provider.pending.set(uri.toString(), { cmd, ...(extra || {}) });
       await vscode.commands.executeCommand('vscode.openWith', uri, 'struktogramm.editor');
       return;
     }
@@ -738,7 +747,7 @@ function activate(context) {
     if (cmd === 'run') vscode.window.showInformationMessage(t('ext.runHint'));
   }
   // Struktograf als „Debugger“: F5 ohne Struktogramm im Fokus bietet es in der Debugger-Auswahl ganz oben an
-  registerDebugger(context, provider, (cmd, uri) => execCommand(cmd, uri));
+  registerDebugger(context, provider, (cmd, uri, extra) => execCommand(cmd, uri, extra));
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider('struktogramm.editor', provider, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerWebviewViewProvider(VIEW_ID, tools),

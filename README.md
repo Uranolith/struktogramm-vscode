@@ -57,6 +57,24 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
     Rückgabewert; mehrfache Aufrufe sind nummeriert (`summe #1`, `summe #2` …).
   - Reiter **Aufrufe**: Aufrufstapel und Aufrufverlauf als Baum mit Argumenten und Rückgabewerten; ein Klick
     springt zu den Variablen des Aufrufs.
+  - **Debuggen mit VS Code**: Jede Ausführung eines gespeicherten Struktogramms ist eine echte Debug-Sitzung –
+    mit der Debug-Leiste (Fortsetzen, Schritt über, Schritt hinein, Rücksprung, Anhalten, Neustart, Beenden),
+    Variablen und Aufrufliste in *Ausführen und Debuggen*, Ausdrücken unter *Überwachen* und in der Debugkonsole.
+    Wartet das Programm auf `INPUT`, kann man den Wert auch in der Debugkonsole eingeben. *Ohne Debuggen ausführen*
+    (Strg+F5) ignoriert die Haltepunkte.
+  - **Haltepunkte** (F9 im Struktogramm) sind echte VS-Code-Haltepunkte: Sie stehen in der Ansicht *Haltepunkte*,
+    lassen sich dort aktivieren, deaktivieren und entfernen und bleiben gespeichert. Über das Kontextmenü im
+    Struktogramm bekommen sie eine **Bedingung** (`i > 5`), eine **Trefferzahl** (`3`, `>= 3`, `% 2`) oder werden zum
+    **Logpoint** (schreibt `i = {i}` in die Debugkonsole, ohne anzuhalten). **Funktionshaltepunkte** (Name eines
+    Unterprogramms) halten beim Aufruf. *Bei Laufzeitfehlern anhalten* (Ansicht *Haltepunkte*) zeigt Variablen und
+    Aufrufliste an der Fehlerstelle. Im Diagramm: rot = Haltepunkt, gestrichelt = mit Bedingung, orange = Logpoint,
+    grau = deaktiviert.
+  - **Aufrufliste** mit dem Element und seiner Zeile in der `.nsd`; ein Klick auf einen Aufruf markiert die Stelle im
+    Struktogramm. **Variablen**: Felder und Records lassen sich aufklappen, Werte ändern (*Wert festlegen*, ein
+    Ausdruck). Die Debugkonsole schlägt Variablen und Unterprogramme vor.
+  - Wie bei anderen Debuggern
+    speichert VS Code die Datei vor dem Start (`debug.saveBeforeStart`); unbenannte Struktogramme laufen ohne
+    Debug-Sitzung.
 - **Original-Structorizer** (optional, benötigt Java 11+): wird beim ersten Gebrauch von GitHub
   heruntergeladen (Befehl *Structorizer herunterladen oder einrichten...*).
   - *Code aus Struktogramm erzeugen...* bietet zusätzlich alle 18 Structorizer-Generatoren an (u.a. PHP, Perl, BASIC,
@@ -162,9 +180,10 @@ return a + b
 ```
 
 ## Tastatur im Editor
-**F5** ausführen / fortsetzen · **F10** (oder F11) Einzelschritt · **F6** anhalten · **Umschalt+F5** beenden ·
-**F9** Haltepunkt. Im Explorer: Rechtsklick auf eine `.nsd` → *Ausführen oder fortsetzen*.
-Läuft oder pausiert eine Ausführung, wirken diese Tasten überall in VS Code. Hat die aktive Datei keinen eigenen
+**F5** ausführen / fortsetzen · **F10** Schritt über · **F11** Schritt hinein · **Umschalt+F11** Rücksprung ·
+**F6** anhalten · **Umschalt+F5** beenden · **Strg+F5** ohne Debuggen · **F9** Haltepunkt.
+Im Explorer: Rechtsklick auf eine `.nsd` → *Ausführen oder fortsetzen*.
+Während einer Ausführung gelten die Debug-Tasten von VS Code überall. Hat die aktive Datei keinen eigenen
 Debugger, startet F5 das geöffnete Struktogramm; in der Debugger-Auswahl von VS Code steht
 *▶ Struktogramm ausführen (Struktograf)* ganz oben.
 

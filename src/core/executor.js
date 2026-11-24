@@ -448,7 +448,11 @@ class Interpreter {
     } catch (e) {
       if (e instanceof Signal && e.kind === 'return') { result = e.value; finished = true; }
       else if (e instanceof Signal && (e.kind === 'leave' || e.kind === 'continue')) { finished = true; /* außerhalb einer Schleife: ignorieren */ }
-      else throw e;
+      else {
+        // Laufzeitfehler: Aufrufe zum Zeitpunkt des Fehlers merken (der Debugger zeigt sie beim Anhalten)
+        if (e && typeof e === 'object' && !(e instanceof Signal) && !e.frames) e.frames = this.frames.slice();
+        throw e;
+      }
     } finally {
       const f = this.frames.pop();
       if (result === undefined) {
@@ -1124,6 +1128,7 @@ class Interpreter {
       name: f.name,
       callNo: f.callNo,
       main: f.main,
+      at: f.at || null, // zuletzt ausgeführtes Element dieses Aufrufs (bei Aufrufern: die Aufrufstelle)
       vars: [...f.vars].map(([k, v]) => ({ name: k, value: fmt(v, true), type: f.types.get(k) || typeLabel(v) })),
     }));
   }
@@ -1137,4 +1142,4 @@ function rootName(node) {
 }
 function joinTokensSafe(t) { return String(t); }
 
-module.exports = { Interpreter, ExecError, Signal, fmt, parseExpr };
+module.exports = { Interpreter, ExecError, Signal, fmt, parseExpr, truthy, isRecord, typeLabel };

@@ -596,27 +596,27 @@
       {
         "command": "struktogramm.run",
         "key": "f5",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
+        "when": "activeCustomEditorId == 'struktogramm.editor' && debugType != 'struktogramm' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
       },
       {
         "command": "struktogramm.step",
         "key": "f10",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
+        "when": "activeCustomEditorId == 'struktogramm.editor' && debugType != 'struktogramm' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
       },
       {
         "command": "struktogramm.step",
         "key": "f11",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
+        "when": "activeCustomEditorId == 'struktogramm.editor' && debugType != 'struktogramm' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
       },
       {
         "command": "struktogramm.pause",
         "key": "f6",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
+        "when": "activeCustomEditorId == 'struktogramm.editor' && debugType != 'struktogramm' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
       },
       {
         "command": "struktogramm.stop",
         "key": "shift+f5",
-        "when": "activeCustomEditorId == 'struktogramm.editor' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
+        "when": "activeCustomEditorId == 'struktogramm.editor' && debugType != 'struktogramm' || activeWebviewPanelId == 'struktogramm.preview' || struktograf.execActive && !inDebugMode"
       },
       {
         "command": "struktogramm.run",
@@ -720,6 +720,11 @@
             }
           }
         ]
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "nsd"
       }
     ]
   }

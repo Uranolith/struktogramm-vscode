@@ -1,5 +1,19 @@
 # Änderungen
 
+## Unveröffentlicht
+- **Echte Debug-Sitzung in VS Code:** Jede Ausführung eines gespeicherten Struktogramms läuft als Debug-Sitzung
+  (eigener Debug-Adapter): Debug-Leiste mit Fortsetzen, Schritt über (F10), Schritt hinein (F11), Rücksprung
+  (Umschalt+F11), Anhalten, Neustart und Beenden; Variablen und Aufrufliste in *Ausführen und Debuggen*; Ausdrücke
+  unter *Überwachen* und in der Debugkonsole; Programmausgabe auch in der Debugkonsole, `INPUT` lässt sich dort
+  eingeben. *Ohne Debuggen ausführen* (Strg+F5) ignoriert Haltepunkte. Auch im Editor gestartete Ausführungen
+  bekommen eine Sitzung (ohne zur Debug-Ansicht zu wechseln). Unbenannte Struktogramme laufen weiter ohne Sitzung.
+- **Debug-Menü vollständig nutzbar:**
+  - Haltepunkte (F9) sind VS-Code-Haltepunkte: Ansicht *Haltepunkte* (aktivieren, deaktivieren, entfernen, gespeichert),
+    Bedingung, Trefferzahl und Logpoints (im Kontextmenü des Struktogramms), Funktionshaltepunkte (Unterprogramm),
+    *Bei Laufzeitfehlern anhalten* mit Variablen und Aufrufliste an der Fehlerstelle.
+  - Aufrufliste mit Element, Datei und Zeile; ein Klick markiert die Stelle im Struktogramm.
+  - Variablen: Felder und Records aufklappbar, Werte änderbar; Vorschläge in der Debugkonsole.
+
 ## 0.9.4
 - **← / → wechseln zwischen Fällen:** In Fallauswahl, Verzweigung (true/false) und Parallelverarbeitung gehen die
   Pfeiltasten in den Nachbarzweig auf gleicher Höhe, auch aus verschachtelten Elementen heraus. Ohne Nachbarn wie

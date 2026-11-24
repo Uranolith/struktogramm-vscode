@@ -1,12 +1,14 @@
 'use strict';
 /**
- * „Debugger“ für Struktogramme: macht Struktograf in der Debugger-Auswahl von VS Code (F5 ohne launch.json,
- * „Ausführen und Debuggen“) und in launch.json verfügbar. Es wird keine echte Debug-Sitzung gestartet:
- * das Struktogramm läuft wie mit F5 im Struktogramm-Editor, VS Code bricht den Start danach still ab.
+ * Debugger für Struktogramme: macht Struktograf in der Debugger-Auswahl von VS Code (F5 ohne launch.json,
+ * „Ausführen und Debuggen“, Strg+F5 „Ohne Debuggen ausführen“) und in launch.json verfügbar. Gestartet wird eine
+ * echte Debug-Sitzung (Adapter in debugAdapter.js); ausgeführt wird im Struktogramm-Editor.
+ * Unbenannte Struktogramme laufen ohne Sitzung (VS Code würde vor dem Start „Speichern unter“ verlangen).
  */
 const vscode = require('vscode');
 const path = require('path');
 const { t } = require('./i18n');
+const { registerDebugAdapter } = require('./debugAdapter');
 
 const TYPE = 'struktogramm';
 
@@ -37,14 +39,28 @@ class StruktogrammDebugProvider {
   }
 
   resolveDebugConfiguration(folder, config) {
+    // nachträglich angehängte Sitzung (Ausführung wurde im Editor gestartet)
+    if (config && config.__attach) return config;
     const uri = this.target(config, folder);
     if (!uri) {
       vscode.window.showInformationMessage(t('ext.runHint'));
       return undefined;
     }
-    this.run(config && config.stopOnEntry ? 'step' : 'run', uri);
-    // undefined: VS Code bricht den Debug-Start ohne Meldung ab – ausgeführt wird in Struktograf
-    return undefined;
+    if (uri.scheme !== 'file') {
+      // unbenannt: ohne Debug-Sitzung ausführen; undefined bricht den Start in VS Code still ab
+      this.run(config && config.stopOnEntry ? 'step' : 'run', uri, { noDebug: !!(config && config.noDebug) });
+      return undefined;
+    }
+    return {
+      ...config,
+      type: TYPE,
+      request: 'launch',
+      name: config.name || t('ext.debugConfigName', path.basename(uri.fsPath)),
+      program: uri.fsPath,
+      __uri: uri.toString(),
+      // die Ausgabe steht im Struktograf-Panel (mit Eingabe) – die Debugkonsole nicht automatisch davorschieben
+      internalConsoleOptions: config.internalConsoleOptions || 'neverOpen',
+    };
   }
 
   /** Einträge für „Ausführen und Debuggen“ (dynamisch): je offenes Struktogramm einer */
@@ -63,6 +79,7 @@ class StruktogrammDebugProvider {
 
 function registerDebugger(context, editors, run) {
   const provider = new StruktogrammDebugProvider(editors, run);
+  registerDebugAdapter(context, editors, run);
   context.subscriptions.push(
     vscode.debug.registerDebugConfigurationProvider(TYPE, provider),
     vscode.debug.registerDebugConfigurationProvider(TYPE, { provideDebugConfigurations: () => provider.provideDebugConfigurations() }, vscode.DebugConfigurationProviderTriggerKind.Dynamic),

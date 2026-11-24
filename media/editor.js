@@ -31,13 +31,17 @@
   const OLD_SPEEDS = { 800: 400, 250: 400, 100: 200, 40: 50 };
   const savedSpeed = saved.speed != null ? Number(saved.speed) : null;
   let speed = savedSpeed == null ? 200 : SPEEDS.includes(savedSpeed) ? savedSpeed : (OLD_SPEEDS[savedSpeed] ?? 200);
-  let breakpoints = new Set(saved.bps || []);
+  // Haltepunkte: im Struktogramm-Editor verwaltet sie VS Code (Meldung 'breakpoints'), in der Live-Vorschau die Seite
+  let breakpoints = new Set(READONLY ? saved.bps || [] : []);
+  let bpKinds = new Map();      // Pfad -> 'bp' | 'cond' (Bedingung/Trefferzahl) | 'log' (Logpoint)
+  let bpDisabled = new Set();   // deaktivierte Haltepunkte (nur Anzeige)
+  let framePath = null;         // in der Aufrufliste von VS Code gewählter Aufruf (Stelle im Diagramm)
   let execState = 'idle';
   let runPath = null;
   let errPath = null;
   let symbols = { funcs: [], roots: [] };
 
-  const save = () => vscode.setState({ sel, zoom, where, speed, bps: [...breakpoints] });
+  const save = () => vscode.setState({ sel, zoom, where, speed, bps: READONLY ? [...breakpoints] : undefined });
   const post = (m) => vscode.postMessage(m);
   const op = (cmd) => post({ type: 'op', cmd });
 
@@ -219,6 +223,9 @@
       case 'openText': post({ type: 'openText' }); break;
       case 'structorizer': post({ type: 'openStructorizer' }); break;
       case 'toggleBp': toggleBreakpoint(); break;
+      case 'bpCond': case 'bpHit': case 'bpLog': case 'bpEnable':
+        if (sel) post({ type: 'editBreakpoint', path: sel, what: { bpCond: 'cond', bpHit: 'hit', bpLog: 'log', bpEnable: 'enable' }[a] });
+        break;
       case 'help': showHelp(); break;
       case 'newFile': post({ type: 'newFile' }); break;
       default: break;
@@ -340,7 +347,18 @@
     } else if (m.type === 'clipboard') {
       hasClipboard = m.has; updateButtons();
     } else if (m.type === 'renderPng') renderPng(m.svg, m.id);
-    else if (m.type === 'execCommand') execCmd(m.cmd);
+    else if (m.type === 'execCommand') execCmd(m.cmd, m.noDebug);
+    else if (m.type === 'breakpoints') {
+      breakpoints = new Set(m.active.map((b) => b.path));
+      bpKinds = new Map(m.active.map((b) => [b.path, b.kind]));
+      bpDisabled = new Set(m.disabled || []);
+      markExec(false);
+    } else if (m.type === 'execFocus') {
+      framePath = m.path || null;
+      markExec(false);
+      const g = nodeFor(framePath);
+      if (g) followExec(g);
+    }
     else if (m.type === 'tool') runTool(m);
     else if (m.type === 'zoomKey') setZoom(m.step === 'reset' ? 1 : m.step === 'in' ? zoom * 1.15 : zoom / 1.15);
     else if (m.type === 'toolbarMode') setToolbarMode(m.mode);
@@ -358,6 +376,7 @@
     } else if (m.type === 'execState') {
       execState = m.state;
       runPath = m.state === 'done' ? null : m.path;
+      if (!m.refresh) framePath = null; // neuer Halt oder weiter: Auswahl aus der Aufrufliste gilt nicht mehr
       if (m.errorPath) errPath = m.errorPath;
       // Ausführung im Panel unten: dort wird eingegeben, der Editor behält den Fokus nicht
       EX.state(m, !document.body.classList.contains('exec-in-panel'));
@@ -367,14 +386,18 @@
   });
 
   /* ------------------------------ Ausführung ------------------------------ */
-  function execCmd(cmd) {
-    if (cmd === 'run' || cmd === 'step') {
-      showExecPanel();
+  /**
+   * Ausführung steuern. run/step starten auch neu; over (Schritt über Aufrufe) und out (Rücksprung) kommen aus
+   * der Debug-Sitzung von VS Code. noDebug: „Ausführen ohne Debuggen“ (Strg+F5) – Haltepunkte gelten nicht.
+   */
+  function execCmd(cmd, noDebug) {
+    if (['run', 'step', 'over', 'out'].includes(cmd)) {
       const fresh = execState === 'idle' || execState === 'done';
+      if (!fresh || cmd === 'run' || cmd === 'step') showExecPanel();
       let root;
       const mm = sel && /^roots\/(\d+)/.exec(sel);
       if (fresh && mm) root = parseInt(mm[1], 10);
-      post({ type: 'exec', cmd, root, delay: speed, breakpoints: [...breakpoints] });
+      post({ type: 'exec', cmd, root, delay: speed, breakpoints: READONLY && !noDebug ? [...breakpoints] : undefined, noDebug: !!noDebug });
     } else post({ type: 'exec', cmd });
   }
 
@@ -433,19 +456,29 @@
     if (!layer) { layer = document.createElementNS(NS, 'g'); layer.id = 'bpLayer'; }
     while (layer.firstChild) layer.removeChild(layer.firstChild);
     svg.appendChild(layer); // immer als letztes Kind = oberste Ebene
-    for (const p of breakpoints) {
+    const frame = (p, cls) => {
       const g = nodeFor(p);
       const bg = g && g.querySelector(':scope > rect.bg');
-      if (!bg) continue;
+      if (!bg) return;
       const r = document.createElementNS(NS, 'rect');
       for (const a of ['x', 'y', 'width', 'height', 'rx', 'ry']) if (bg.hasAttribute(a)) r.setAttribute(a, bg.getAttribute(a));
-      r.setAttribute('class', 'bp-frame');
+      r.setAttribute('class', cls);
       layer.appendChild(r);
-    }
+    };
+    for (const p of bpDisabled) if (!breakpoints.has(p)) frame(p, 'bp-frame off');
+    for (const p of breakpoints) frame(p, 'bp-frame ' + (bpKinds.get(p) || 'bp'));
+    // in der Aufrufliste von VS Code gewählter Aufruf
+    if (framePath && framePath !== runPath) frame(framePath, 'frame-focus');
   }
 
   function toggleBreakpoint() {
     if (!sel || sel.endsWith('/#') || /^roots\/\d+$/.test(sel)) { status(T('web.bp.onlyElements')); return; }
+    if (!READONLY) {
+      // VS Code setzt/entfernt den Haltepunkt und meldet den neuen Stand zurück
+      status(breakpoints.has(sel) || bpDisabled.has(sel) ? T('web.bp.removed') : T('web.bp.set'));
+      post({ type: 'toggleBreakpoint', path: sel });
+      return;
+    }
     if (breakpoints.has(sel)) breakpoints.delete(sel); else breakpoints.add(sel);
     save();
     markExec(false);
@@ -565,7 +598,13 @@
     if (el && !isRoot) { items.push(['copy', T('web.tb.copy'), T('web.key.combo', 'C')], ['cut', T('web.tb.cut'), T('web.key.combo', 'X')]); }
     items.push(['paste', T('web.tb.paste'), T('web.key.combo', 'V'), !hasClipboard]);
     if (el && !isRoot) items.push(['toggleDisabled', el.disabled ? T('web.menu.enable') : T('web.menu.disable')]);
-    if (el && !isRoot) items.push(['toggleBp', breakpoints.has(sel) ? T('web.menu.bpRemove') : T('web.menu.bpSet'), 'F9']);
+    const hasBp = breakpoints.has(sel) || bpDisabled.has(sel);
+    if (el && !isRoot) items.push(['toggleBp', hasBp ? T('web.menu.bpRemove') : T('web.menu.bpSet'), 'F9']);
+    // Bedingung, Trefferzahl, Logmeldung (VS-Code-Haltepunkte; nicht in der Live-Vorschau)
+    if (el && !isRoot && !READONLY) {
+      if (hasBp) items.push(['bpCond', T('web.menu.bpCond')], ['bpHit', T('web.menu.bpHit')], ['bpLog', T('web.menu.bpLog')], ['bpEnable', bpDisabled.has(sel) ? T('web.menu.bpEnable') : T('web.menu.bpDisable')]);
+      else items.push(['bpLog', T('web.menu.bpLogAdd')]);
+    }
     if (el) items.push(['-'], ['up', T('web.menu.up'), T('web.key.combo', '↑')], ['down', T('web.menu.down'), T('web.key.combo', '↓')], ['delete', isRoot ? T('web.menu.deleteDiagram') : T('web.tb.delete'), T('web.key.del')]);
     items.push(['-'], ['addSub', T('web.menu.addSub')], ['addMain', T('web.menu.addMain')]);
     menu.innerHTML = items.filter((it, i, a) => !(it[0] === '-' && (i === 0 || a[i - 1][0] === '-'))).map((it) => {

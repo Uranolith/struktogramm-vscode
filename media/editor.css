@@ -197,6 +197,13 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 #canvas svg.theme-dark .el.running > rect.bg { fill: #1f4d2c !important; }
 #canvas svg.theme-dark .el.errorel > rect.bg { fill: #5c2222 !important; }
 #canvas svg.theme-dark .bp-frame { stroke: #ff5a4d; }
+/* Haltepunkt mit Bedingung/Trefferzahl: gestrichelt; Logpoint: orange gepunktet; deaktiviert: grau */
+#canvas .bp-frame.cond { stroke-dasharray: 7 3; }
+#canvas .bp-frame.log { stroke: #c27d00; stroke-dasharray: 2 3; }
+#canvas svg.theme-dark .bp-frame.log { stroke: #f2b14a; }
+#canvas .bp-frame.off { stroke: #9a9a9a; stroke-width: 2; stroke-dasharray: 4 3; }
+/* in der Aufrufliste von VS Code gewählter Aufruf */
+#canvas .frame-focus { fill: none; stroke: var(--vscode-focusBorder, #0078d4); stroke-width: 2; stroke-dasharray: 5 3; pointer-events: none; }
 #execpanel {
   height: 34vh;
   min-height: 150px;

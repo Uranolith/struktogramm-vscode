@@ -37,7 +37,7 @@ function parseXml(text) {
     // Start-Tag
     let j = lt + 1;
     while (j < n && !/[\s/>]/.test(text[j])) j++;
-    const el = { name: text.slice(lt + 1, j), attrs: {}, children: [] };
+    const el = { name: text.slice(lt + 1, j), attrs: {}, children: [], pos: lt };
     const attrRe = /\s*([^\s=/>]+)\s*=\s*("([^"]*)"|'([^']*)')/y;
     for (;;) {
       attrRe.lastIndex = j;
@@ -158,6 +158,53 @@ function readRoot(x) {
   return r;
 }
 
+/**
+ * Zeile (0-basiert) jedes Elements in der .nsd-Datei – für die zeilenbasierten Haltepunkte von VS Code.
+ * Liefert { pathToLine, lineToPath } mit Pfaden wie im Modell (roots/0/children/2, …/qTrue/0, …/branches/1/0).
+ * Beginnen mehrere Elemente in derselben Zeile, gilt das erste.
+ */
+function elementLines(text) {
+  const pathToLine = new Map(), lineToPath = new Map();
+  if (!text || !text.trim()) return { pathToLine, lineToPath };
+  const nl = [];
+  for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) nl.push(i);
+  const lineOf = (pos) => { let lo = 0, hi = nl.length; while (lo < hi) { const m = (lo + hi) >> 1; if (nl[m] < pos) lo = m + 1; else hi = m; } return lo; };
+  const note = (path, x) => {
+    const line = lineOf(x.pos);
+    pathToLine.set(path, line);
+    if (!lineToPath.has(line)) lineToPath.set(line, path);
+  };
+  const seq = (container, base) => {
+    if (!container) return;
+    container.children.forEach((c, k) => element(c, `${base}/${k}`));
+  };
+  const element = (x, path) => {
+    note(path, x);
+    switch (x.name) {
+      case 'alternative': seq(child(x, 'qTrue'), path + '/qTrue'); seq(child(x, 'qFalse'), path + '/qFalse'); break;
+      case 'case': x.children.filter((c) => c.name === 'qCase').forEach((c, k) => seq(c, `${path}/branches/${k}`)); break;
+      case 'for': seq(child(x, 'qFor'), path + '/body'); break;
+      case 'while': seq(child(x, 'qWhile'), path + '/body'); break;
+      case 'repeat': seq(child(x, 'qRepeat'), path + '/body'); break;
+      case 'forever': seq(child(x, 'qForever'), path + '/body'); break;
+      case 'try': seq(child(x, 'qTry'), path + '/qTry'); seq(child(x, 'qCatch'), path + '/qCatch'); seq(child(x, 'qFinally'), path + '/qFinally'); break;
+      case 'parallel': {
+        let paras = x.children.filter((c) => c.name === 'qPara');
+        if (paras.length === 1 && paras[0].children.every((c) => c.name === 'qPara')) paras = paras[0].children;
+        paras.forEach((c, k) => seq(c, `${path}/branches/${k}`));
+        break;
+      }
+      default: break;
+    }
+  };
+  const doc = parseXml(text);
+  const top = doc.children.find((c) => c.name === 'root' || c.name === 'roots');
+  if (!top) return { pathToLine, lineToPath };
+  const roots = top.name === 'root' ? [top] : top.children.filter((c) => c.name === 'root');
+  roots.forEach((r, i) => { note(`roots/${i}`, r); seq(child(r, 'children'), `roots/${i}/children`); });
+  return { pathToLine, lineToPath };
+}
+
 /** XML-Text -> Dokument {roots} */
 function fromNsd(text) {
   if (!text || !text.trim()) return { roots: [] };
@@ -239,4 +286,4 @@ function rootToNsd(root) {
   return '<?xml version="1.0" encoding="UTF-8"?>\n' + writeRoot(normalize({ roots: [clone(root)] }).roots[0], '', true);
 }
 
-module.exports = { fromNsd, toNsd, rootToNsd, parseCommaText, toCommaText, parseXml };
+module.exports = { fromNsd, toNsd, rootToNsd, parseCommaText, toCommaText, parseXml, elementLines };
