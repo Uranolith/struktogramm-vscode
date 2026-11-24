@@ -1740,6 +1740,10 @@ class PasGen extends BaseGen {
       const info = this.analyze(main, { params: [] });
       this.cur = info; this.curIsMain = true;
       progName = toClassName(this.sigs.get(main).name);
+      // Pascal unterscheidet nicht zwischen Groß- und Kleinschreibung: Programm „Rabatt“ und Variable „rabatt“
+      // wären derselbe Bezeichner
+      const taken = new Set([...info.all, ...this.funcs.keys(), ...this.recordTypes.keys(), ...this.enumConsts.map((e) => e.name)].map((n) => n.toLowerCase()));
+      if (taken.has(progName.toLowerCase())) { let n = progName + 'Prog', i = 2; while (taken.has(n.toLowerCase())) n = progName + 'Prog' + i++; progName = n; }
       this.pasLabels = [];
       this.pasThreads = { funcs: [], handles: [] };
       const be = this.beginEnd(main.children, '', '.');

@@ -10,6 +10,8 @@
   wird sie als Kommazahl deklariert.
 - C#: Kommazahlen werden unabhängig von der Ländereinstellung mit Punkt geschrieben und gelesen (vorher `0,15` und
   `double.Parse("0.5")` = 5 auf deutschem Windows).
+- Pascal: Heißt das Programm wie eine Variable (`Rabatt` / `rabatt`), wird der Programmname angepasst – Pascal
+  unterscheidet keine Groß- und Kleinschreibung.
 
 ## 0.9.2
 - **Zoom-Tasten** (Strg/⌘ + `+` / `−` / `0`) zoomen nur noch das Struktogramm: VS Code reicht jeden Tastendruck
