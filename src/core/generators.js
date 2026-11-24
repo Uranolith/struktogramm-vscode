@@ -1247,7 +1247,18 @@ class CGen extends BaseGen {
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
       out.push('}');
     } else if (L === 'csharp') {
-      out.push('using System;', ...(this.needs.has('tasks') ? ['using System.Threading.Tasks;'] : []), '', title, `class ${this.opts.className || toClassName(mainName)}`, '{');
+      // Kommazahlen: C# schreibt und liest sie in der Ländereinstellung (deutsch: 0,15 – und double.Parse("0.5") ergibt 5).
+      // Wie im Struktogramm mit Punkt: Kultur des Programms (auch der Threads) auf invariant stellen
+      const main = gen.find((g) => g.isMain);
+      const usesReal = /\b(?:double|float)\b|\d\.\d/.test(gen.map((g) => g.lines.join('\n')).join('\n'));
+      if (main && usesReal) {
+        const k = main.lines.findIndex((l) => /static void Main\(/.test(l));
+        const I2 = this.I + this.I;
+        main.lines.splice(k + 1, 0, I2 + this.comment(tr('gen.csCulture')),
+          I2 + 'CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;',
+          I2 + 'CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;');
+      }
+      out.push('using System;', ...(main && usesReal ? ['using System.Globalization;'] : []), ...(this.needs.has('tasks') ? ['using System.Threading.Tasks;'] : []), '', title, `class ${this.opts.className || toClassName(mainName)}`, '{');
       out.push(...td);
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines.map((l) => l.replace(/^(\s*)(.*) \{$/, (m0, a, b) => (/^(static|public)/.test(b.trim()) ? `${a}${b}\n${a}{` : m0)))); });
       out.push('}');

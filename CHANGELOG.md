@@ -8,6 +8,8 @@
   die nie zutraf.
 - Wird einer Variablen erst eine Ganzzahl und später eine Kommazahl zugewiesen (`rabatt := 0` … `rabatt := 0.15`),
   wird sie als Kommazahl deklariert.
+- C#: Kommazahlen werden unabhängig von der Ländereinstellung mit Punkt geschrieben und gelesen (vorher `0,15` und
+  `double.Parse("0.5")` = 5 auf deutschem Windows).
 
 ## 0.9.2
 - **Zoom-Tasten** (Strg/⌘ + `+` / `−` / `0`) zoomen nur noch das Struktogramm: VS Code reicht jeden Tastendruck

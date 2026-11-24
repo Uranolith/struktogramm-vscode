@@ -145,6 +145,7 @@
  "gen.branch": "Zweig {0}",
  "gen.cThrow": "/* throw: zum nächsten try springen oder Programm beenden */",
  "gen.cppFinally": "finally (C++ hat kein finally)",
+ "gen.csCulture": "Kommazahlen mit Punkt schreiben und lesen (wie im Struktogramm), unabhängig von der Ländereinstellung",
  "gen.disabled": "(deaktiviert) {0}",
  "gen.foreachC": "foreach {0} in {1}: Länge des Arrays ggf. anpassen",
  "gen.generated": "Erzeugt aus Struktogramm \"{0}\"",

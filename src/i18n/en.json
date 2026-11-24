@@ -145,6 +145,7 @@
  "gen.branch": "Branch {0}",
  "gen.cThrow": "/* throw: jump to the nearest try or end the program */",
  "gen.cppFinally": "finally (C++ has no finally)",
+ "gen.csCulture": "Write and read decimal numbers with a point (as in the structogram), regardless of the regional settings",
  "gen.disabled": "(disabled) {0}",
  "gen.foreachC": "foreach {0} in {1}: adjust the array length if necessary",
  "gen.generated": "Generated from structogram \"{0}\"",
