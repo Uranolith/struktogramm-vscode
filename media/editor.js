@@ -887,16 +887,6 @@
     return arr && arr.length ? `${owner}/${key}/${arr.length - 1}` : `${owner}/${key}/#`;
   }
   /** nächstes Element nach path – am Blockende weiter hinter dem Elternelement */
-  function nextOut(path) {
-    for (let p = path; ;) {
-      const s = splitPath(p);
-      if (!s) return null;
-      const arr = getAt(`${s.owner}/${s.key}`) || [];
-      if (s.index >= 0 && s.index + 1 < arr.length) return `${s.owner}/${s.key}/${s.index + 1}`;
-      if (isRootPath(s.owner)) return null;
-      p = s.owner;
-    }
-  }
 
   /** Ziel der Pfeil-/Navigationstasten (oder null) */
   function navTarget(key, ctrl) {
@@ -913,20 +903,76 @@
       return null;
     }
     if (!s) return null;
-    if (ctrl && (key === 'ArrowRight' || key === 'ArrowLeft')) {
-      // anderer Zweig desselben Elements: true/false, Fälle, try/catch/finally, parallele Zweige
-      const keys = blockKeys(getAt(s.owner));
-      const k = keys.indexOf(s.key) + (key === 'ArrowRight' ? 1 : -1);
-      return k >= 0 && k < keys.length ? blockFirst(s.owner, keys[k]) : null;
-    }
+    const enter = () => { const keys = blockKeys(el); return keys.length ? blockFirst(sel, keys[0]) : null; };
+    // Strg/⌘ + → / ←: immer hinein (erster Block) bzw. hinaus (umgebendes Element)
+    if (ctrl && key === 'ArrowRight') return enter();
+    if (ctrl && key === 'ArrowLeft') return s.owner;
     switch (key) {
-      case 'ArrowUp': return s.index > 0 ? `${s.owner}/${s.key}/${s.index - 1}` : s.owner;
-      case 'ArrowDown': return nextOut(sel) || null;
-      case 'ArrowLeft': return s.owner;
-      case 'ArrowRight': { const keys = blockKeys(el); return keys.length ? blockFirst(sel, keys[0]) : null; }
+      case 'ArrowUp': {
+        if (s.index > 0) return `${s.owner}/${s.key}/${s.index - 1}`;
+        // TRY: try/catch/finally liegen untereinander – vom Anfang eines Teils ans Ende des vorherigen
+        const tk = TRY_KEYS.indexOf(s.key);
+        if (tk > 0 && getAt(s.owner) && getAt(s.owner).type === 'try') return blockLast(s.owner, TRY_KEYS[tk - 1]);
+        return s.owner;
+      }
+      case 'ArrowDown': return downFrom(sel);
+      // → / ←: in den Nachbarzweig (Fälle, true/false, parallel) auf gleicher Höhe;
+      // ohne Nachbarn hinein bzw. hinaus
+      case 'ArrowLeft': return sideways(sel, -1) || s.owner;
+      case 'ArrowRight': return sideways(sel, 1) || enter();
       case 'Home': return blockFirst(s.owner, s.key);
       case 'End': return blockLast(s.owner, s.key);
       default: return null;
+    }
+  }
+
+  const TRY_KEYS = ['qTry', 'qCatch', 'qFinally'];
+
+  /** ↓: nächstes Element; am Blockende hinter das umgebende Element – bei TRY erst in den nächsten Teil */
+  function downFrom(path) {
+    for (let p = path; ;) {
+      const s = splitPath(p);
+      if (!s) return null;
+      const arr = getAt(`${s.owner}/${s.key}`) || [];
+      if (s.index >= 0 && s.index + 1 < arr.length) return `${s.owner}/${s.key}/${s.index + 1}`;
+      const tk = TRY_KEYS.indexOf(s.key);
+      if (tk >= 0 && tk < 2 && getAt(s.owner) && getAt(s.owner).type === 'try') return blockFirst(s.owner, TRY_KEYS[tk + 1]);
+      if (isRootPath(s.owner)) return null;
+      p = s.owner;
+    }
+  }
+
+  /**
+   * Nachbarzweig links (dir = -1) oder rechts (dir = 1) – bei Fallauswahl, Verzweigung und Parallelverarbeitung,
+   * deren Zweige nebeneinander liegen. Steht die Auswahl tiefer verschachtelt und hat ihr Block keinen Nachbarn
+   * in dieser Richtung, gilt der nächste umgebende Zweig mit Nachbarn. Gewählt wird das Element des Nachbarzweigs
+   * auf gleicher Höhe (sonst das letzte darüber).
+   */
+  function sideways(path, dir) {
+    const SIDE = ['alternative', 'case', 'parallel'];
+    const here = nodeFor(path);
+    const y = here ? here.getBoundingClientRect().top + 1 : 0;
+    for (let p = path; ;) {
+      const s = splitPath(p);
+      if (!s) return null;
+      const owner = getAt(s.owner);
+      if (owner && SIDE.includes(owner.type)) {
+        // nur sichtbare Zweige (ein Standardzweig „%“ wird nicht gezeichnet)
+        const keys = blockKeys(owner).filter((k) => nodeFor(blockFirst(s.owner, k)));
+        const k = keys.indexOf(s.key) + dir;
+        if (k >= 0 && k < keys.length) {
+          const arr = getAt(`${s.owner}/${keys[k]}`) || [];
+          if (!arr.length) return `${s.owner}/${keys[k]}/#`;
+          let pick = 0;
+          for (let i = 0; i < arr.length; i++) {
+            const n = nodeFor(`${s.owner}/${keys[k]}/${i}`);
+            if (n && n.getBoundingClientRect().top <= y) pick = i;
+          }
+          return `${s.owner}/${keys[k]}/${pick}`;
+        }
+      }
+      if (isRootPath(s.owner)) return null;
+      p = s.owner;
     }
   }
 

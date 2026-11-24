@@ -1,5 +1,11 @@
 # Änderungen
 
+## Unveröffentlicht
+- **← / → wechseln zwischen Fällen:** In Fallauswahl, Verzweigung (true/false) und Parallelverarbeitung gehen die
+  Pfeiltasten in den Nachbarzweig auf gleicher Höhe, auch aus verschachtelten Elementen heraus. Ohne Nachbarn wie
+  bisher hinein bzw. hinaus. Strg/⌘ + → / ← geht immer hinein bzw. hinaus (vorher: Zweig wechseln).
+  ↓ / ↑ gehen bei Try von try über catch nach finally.
+
 ## 0.9.3
 - **Fallauswahl mit `true` (bzw. `false`) als Ausdruck** und Bedingungen als Marken – `case true of  kdnr < 2000: …` –
   übersetzt jetzt in allen Sprachen: `switch (true)` in JavaScript, `case true when …` in C#, `when { … }` in Kotlin,
