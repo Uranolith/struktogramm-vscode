@@ -218,17 +218,22 @@ class Renderer {
       out.push(`<g class="el empty" data-path="${esc(path + '/#')}">`, this.rect(x, y, w, h, null), this.text(x + w / 2, y + VPAD + LH * 0.74, '∅', 'middle', 'muted'), '</g>');
       return;
     }
+    // ist der Block höher als sein Inhalt (kürzerer Zweig einer Verzweigung, Fallauswahl oder Parallelverarbeitung),
+    // wird das letzte Element auf die volle Höhe gestreckt – wie im Structorizer
+    const total = seq.reduce((a, el) => a + this.size(el).h, 0);
+    const extra = h > total ? h - total : 0;
     let cy = y;
     seq.forEach((el, i) => {
-      const s = this.size(el);
-      this.draw(el, x, cy, w, `${path}/${i}`, out);
-      cy += s.h;
+      const eh = this.size(el).h + (i === seq.length - 1 ? extra : 0);
+      this.draw(el, x, cy, w, `${path}/${i}`, out, eh);
+      cy += eh;
     });
   }
 
-  draw(el, x, y, w, path, out) {
+  /** Element zeichnen; hh = Höhe, falls es gestreckt wird (sonst seine eigene) */
+  draw(el, x, y, w, path, out, hh) {
     const s = this.size(el);
-    const h = s.h;
+    const h = hh > s.h ? hh : s.h;
     const lines = this.disp(el.text);
     out.push(this.open(el, path));
     const tcls = el.disabled ? 'muted' : '';
@@ -325,7 +330,7 @@ class Renderer {
         for (const [head, seq, key] of parts) {
           out.push(this.textBlock([head], x + PAD, cy, tcls));
           cy += hdr;
-          const sh = this.seqSize(seq).h;
+          const sh = key === '/qFinally' ? y + h - FOOT - cy : this.seqSize(seq).h;
           this.seq(seq, x + BAR, cy, w - BAR, sh, path + key, out);
           cy += sh;
         }

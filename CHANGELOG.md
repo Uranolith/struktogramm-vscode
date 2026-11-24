@@ -13,6 +13,9 @@
 - Pascal: Heißt das Programm wie eine Variable (`Rabatt` / `rabatt`), wird der Programmname angepasst – Pascal
   unterscheidet keine Groß- und Kleinschreibung.
 - `test/sprachtest.js`: mehrere Eingaben mit `--input 1500,1000`.
+- **Ungleich lange Zweige** in Verzweigung, Fallauswahl und Parallelverarbeitung: Das letzte Element des kürzeren
+  Zweigs wird auf die volle Höhe gestreckt (wie im Structorizer) statt eine leere Fläche zu lassen. Schleifen,
+  Verzweigungen, Try und Parallelverarbeitung geben die zusätzliche Höhe an ihren Inhalt weiter.
 
 ## 0.9.2
 - **Zoom-Tasten** (Strg/⌘ + `+` / `−` / `0`) zoomen nur noch das Struktogramm: VS Code reicht jeden Tastendruck
