@@ -177,9 +177,11 @@ class BaseGen {
               if (t && d.suffix) t += '[]';
               if (t) types.set(d.name, t);
             }
-          } else if (c.kind === 'assign' && SIMPLE_IDENT.test(c.target) && !types.has(c.target)) {
+          } else if (c.kind === 'assign' && SIMPLE_IDENT.test(c.target)) {
             const t = P.inferType(c.expr, types, fnTypes);
-            if (t) types.set(c.target, t);
+            if (!types.has(c.target)) { if (t) types.set(c.target, t); }
+            // rabatt := 0 … rabatt := 0.15 → Kommazahl (sonst passt 0.15 nicht in die Ganzzahl-Variable)
+            else if (t === 'double' && types.get(c.target) === 'int' && !explicit.has(c.target) && !params.has(c.target)) types.set(c.target, 'double');
           }
         }
       });

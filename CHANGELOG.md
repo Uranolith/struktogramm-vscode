@@ -6,6 +6,8 @@
   `match true` mit Guards in Rust, sonst als `if / else if`-Kette. Vorher entstand ein `switch` mit Bedingungen als
   Marken, das Java, C, C++, C#, Rust und Pascal ablehnen; in Python ergab `True == kdnr < 2000` eine Vergleichskette,
   die nie zutraf.
+- Wird einer Variablen erst eine Ganzzahl und später eine Kommazahl zugewiesen (`rabatt := 0` … `rabatt := 0.15`),
+  wird sie als Kommazahl deklariert.
 
 ## 0.9.2
 - **Zoom-Tasten** (Strg/⌘ + `+` / `−` / `0`) zoomen nur noch das Struktogramm: VS Code reicht jeden Tastendruck
