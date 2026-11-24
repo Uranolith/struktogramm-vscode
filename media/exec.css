@@ -23,6 +23,7 @@
 }
 #conout .line.in { color: var(--vscode-terminal-ansiCyan, #29b8db); }
 #conout .line.info { opacity: .7; font-style: italic; }
+#conout .line .mark { font-style: normal; }
 #conout .line.err { color: var(--vscode-errorForeground, #f48771); }
 #conin { display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, .25)); }
 #conin[hidden] { display: none; }

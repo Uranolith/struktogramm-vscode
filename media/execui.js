@@ -172,6 +172,7 @@
       out.appendChild(d);
       while (out.childNodes.length > 2000) out.removeChild(out.firstChild);
       out.scrollTop = out.scrollHeight;
+      return d;
     }
 
     // Name eines Aufrufs; Unterprogramme mit Aufrufnummer, damit mehrfache Aufrufe unterscheidbar sind
@@ -363,7 +364,12 @@
         doneCount = 0;
         turtleReset();
         show();
-        line('▶ ' + (title || ''), 'info');
+        // Startzeile: Name des Struktogramms kursiv, das ▶ davor aufrecht
+        const head = line(title || '', 'info');
+        const mark = document.createElement('span');
+        mark.className = 'mark';
+        mark.textContent = '▶ ';
+        head.insertBefore(mark, head.firstChild);
       },
       out(lines) { show(); for (const l of lines) line(l.text, l.kind); },
       completed(items) { completed(items); },
