@@ -59,7 +59,7 @@
   "config.toolbarLocation": "Where the structogram tools are shown: in the toolbar at the top of the editor or in the *Struktograf* view in the activity bar (like the Explorer). Can be switched live, also with the command *Struktograf: Show Tools in Editor or Sidebar* or the button in the editor title bar.",
   "config.toolbarLocation.enum0": "Toolbar at the top of the structogram editor",
   "config.toolbarLocation.enum1": "Struktograf view in the activity bar (like the Explorer)",
-  "debugger.label": " ▶ Run Structogram (Struktograf)",
+  "debugger.label": "▶ Run Structogram (Struktograf)",
   "debugger.program": "Structogram file (.nsd) to run. Default: the open structogram.",
   "debugger.stopOnEntry": "Pause at the first element (like F10) instead of running.",
   "debugger.configName": "Run Structogram",

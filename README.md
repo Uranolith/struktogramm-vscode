@@ -183,9 +183,10 @@ return a + b
 **F5** ausführen / fortsetzen · **F10** Schritt über · **F11** Schritt hinein · **Umschalt+F11** Rücksprung ·
 **F6** anhalten · **Umschalt+F5** beenden · **Strg+F5** ohne Debuggen · **F9** Haltepunkt.
 Im Explorer: Rechtsklick auf eine `.nsd` → *Ausführen oder fortsetzen*.
-Während einer Ausführung gelten die Debug-Tasten von VS Code überall. Hat die aktive Datei keinen eigenen
-Debugger, startet F5 das geöffnete Struktogramm; in der Debugger-Auswahl von VS Code steht
-*▶ Struktogramm ausführen (Struktograf)* ganz oben.
+Im Struktogramm-Editor startet F5 das Struktogramm als Debug-Sitzung; während der Sitzung gelten die Debug-Tasten
+von VS Code überall. Außerhalb des Struktogramm-Editors entscheidet VS Code wie gewohnt, was F5 startet
+(`launch.json` bzw. der Debugger der aktiven Datei); in der Debugger-Auswahl steht
+*▶ Struktogramm ausführen (Struktograf)*.
 
 Der Editor ist vollständig per Tastatur bedienbar; **?** zeigt alle Tastenkürzel.
 

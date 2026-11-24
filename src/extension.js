@@ -43,20 +43,6 @@ class NsdEditorProvider {
     this.execListeners = new Set(); // (state, msg) – z.B. die Debug-Sitzung von VS Code
   }
 
-  /** ist irgendein Struktogramm offen? (F5/F10 starten es, wenn die aktive Datei keinen eigenen Debugger hat) */
-  updateOpenContext() {
-    vscode.commands.executeCommand('setContext', 'struktograf.editorOpen', this.editors.size > 0);
-  }
-
-  /** läuft oder pausiert irgendwo eine Ausführung? Dann gehören F5/F10/F6/Umschalt+F5 ihr, egal wo der Fokus ist */
-  updateExecContext() {
-    const busy = [...this.editors].some((s) => s.exec && s.exec.running);
-    if (busy !== this.execBusy) {
-      this.execBusy = busy;
-      vscode.commands.executeCommand('setContext', 'struktograf.execActive', busy);
-    }
-  }
-
   /** aktiven Editor setzen und die Seitenleiste nachziehen */
   setActive(state) {
     if (this.active === state) return;
@@ -69,7 +55,6 @@ class NsdEditorProvider {
     const state = { document, panel, select: undefined, editNew: false };
     this.editors.add(state);
     this.setActive(state);
-    this.updateOpenContext();
     if (this.onFirstOpen) this.onFirstOpen();
     panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')] };
     panel.webview.html = webviewHtml(panel.webview, this.context.extensionUri, false);
@@ -81,7 +66,6 @@ class NsdEditorProvider {
         const r = panel.webview.postMessage(m);
         if (m.type === 'execState') {
           this.execEditor = state;
-          this.updateExecContext();
           // Eingabe erwartet: Fokus in den Editor, damit der Cursor direkt im Eingabefeld steht
           if (m.state === 'input' && executionLocation() !== 'panel') panel.reveal(panel.viewColumn, false);
         }
@@ -124,8 +108,6 @@ class NsdEditorProvider {
       subs.forEach((s) => s.dispose());
       this.editors.delete(state);
       if (this.execEditor === state) this.execEditor = null;
-      this.updateExecContext();
-      this.updateOpenContext();
       if (this.active === state) this.setActive(null);
     });
 
