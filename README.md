@@ -109,7 +109,10 @@ Ausführung, Hervorhebung und Autovervollständigung kennen den Befehlssatz des 
 
 Beim Erzeugen von Code werden diese Befehle in die Zielsprache übersetzt, z.B. `uppercase(s)` →
 `s.upper()` (Python) / `s.toUpperCase()` (Java), `try` → `try/catch/finally` (in C mit `setjmp`, in Rust mit
-`catch_unwind`), Records → Klassen/Structs, `leave 2` → `break L1` bzw. `goto`. Turtle-Befehle werden für
+`catch_unwind`), Records → Klassen/Structs, `leave 2` → `break L1` bzw. `goto`. Eine Fallauswahl mit `true` als Ausdruck und
+Bedingungen als Marken (`case true of  kdnr < 2000: …`) wird zu `switch (true)` (JavaScript),
+`switch (true) { case true when … }` (C#), `when { … }` (Kotlin) bzw. `match true { _ if … }` (Rust); in Java, C, C++,
+Pascal und Python, wo `case`-Marken Konstanten sein müssen, zu einer `if / else if`-Kette. Turtle-Befehle werden für
 Python in das Modul `turtle` übersetzt; die Datei-API wird nur ausgeführt, nicht übersetzt.
 
 **Parallelverarbeitung** wird zu echten Threads: Python `threading`, Java je Zweig eine Thread-Klasse,

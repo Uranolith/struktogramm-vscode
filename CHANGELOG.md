@@ -1,5 +1,12 @@
 # Änderungen
 
+## Unveröffentlicht
+- **Fallauswahl mit `true` (bzw. `false`) als Ausdruck** und Bedingungen als Marken – `case true of  kdnr < 2000: …` –
+  übersetzt jetzt in allen Sprachen: `switch (true)` in JavaScript, `case true when …` in C#, `when { … }` in Kotlin,
+  `match true` mit Guards in Rust, sonst als `if / else if`-Kette. Vorher entstand ein `switch` mit Bedingungen als
+  Marken, das Java, C, C++, C#, Rust und Pascal ablehnen; in Python ergab `True == kdnr < 2000` eine Vergleichskette,
+  die nie zutraf.
+
 ## 0.9.2
 - **Zoom-Tasten** (Strg/⌘ + `+` / `−` / `0`) zoomen nur noch das Struktogramm: VS Code reicht jeden Tastendruck
   aus der Webview weiter, dadurch wurde zusätzlich die ganze Oberfläche gezoomt bzw. (Strg/⌘+0) in die

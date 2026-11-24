@@ -515,7 +515,7 @@ class BaseGen {
       }
       case 'try': out.push(...this.tryEl(el, ind)); break;
       case 'alternative': out.push(...this.ifEl(el, ind)); break;
-      case 'case': out.push(...this.caseEl(el, ind)); break;
+      case 'case': { const cb = this.condCaseBranches(el); out.push(...(cb ? this.condCaseEl(el, ind, cb) : this.caseEl(el, ind))); break; }
       case 'for': out.push(...this.forEl(el, ind)); break;
       case 'while': out.push(...this.whileEl(this.cond(el.text, ['while', 'solange', 'während']), el.body, ind)); break;
       case 'repeat': out.push(...this.repeatEl(this.cond(el.text, ['until', 'bis', 'solange']), el.body, ind)); break;
@@ -636,6 +636,39 @@ class BaseGen {
       res.push({ isDefault: isLast, values, body: el.branches[k] });
     }
     return res;
+  }
+
+  /**
+   * Fallauswahl mit Bedingungen statt Konstanten: „case true of  kdnr < 2000: …“ (bzw. „case false of“).
+   * Wie im Interpreter (und im Structorizer) wird der Ausdruck mit jeder Marke verglichen – bei true/false ist
+   * die Marke also eine Bedingung. Liefert je Zweig die Bedingung (Pseudocode) – [{ cond, body, isDefault }] –
+   * oder null für eine gewöhnliche Fallauswahl.
+   */
+  condCaseBranches(el) {
+    const lit = String(el.text[0] || '').trim().toLowerCase();
+    if (!['true', 'false', 'wahr', 'falsch'].includes(lit)) return null;
+    const neg = lit === 'false' || lit === 'falsch';
+    const par = (v) => (this.needsParens(v) ? `(${v})` : v);
+    const condOf = (vals) => {
+      if (!vals.length) return 'false';
+      if (neg) return vals.map((v) => `not ${par(v)}`).join(' or ');
+      // Klammern nur bei mehreren Marken (… or …)
+      return vals.length === 1 ? vals[0] : vals.map(par).join(' or ');
+    };
+    return this.caseInfo(el).map((b) => ({ cond: b.isDefault ? null : condOf(b.values), body: b.body, isDefault: b.isDefault }));
+  }
+
+  /**
+   * Fallauswahl mit Bedingungen erzeugen. Standard: if/else-if-Kette, weil switch/case in den meisten Sprachen
+   * konstante Marken verlangt. Sprachen mit „switch auf true“ (JavaScript, C#, Kotlin, Rust) überschreiben das.
+   */
+  condCaseEl(el, ind, branches) {
+    const def = branches.find((b) => b.isDefault);
+    let tail = def ? def.body : [];
+    for (const b of branches.filter((x) => !x.isDefault).reverse()) {
+      tail = [{ type: 'alternative', text: [b.cond], qTrue: b.body, qFalse: tail }];
+    }
+    return this.seq(tail, ind);
   }
 
   run() { throw new Error('abstract'); }
@@ -885,15 +918,37 @@ class CGen extends BaseGen {
 
   caseEl(el, ind) {
     const out = [ind + `switch (${this.x(el.text[0] || '')}) {`];
-    const I2 = ind + this.I + this.I;
     for (const b of this.caseInfo(el)) {
       if (b.isDefault) out.push(ind + this.I + 'default:');
       else for (const v of b.values) out.push(ind + this.I + `case ${this.x(v)}:`);
-      const body = this.seq(b.body, I2);
-      out.push(...body);
-      const last = b.body[b.body.length - 1];
-      const ends = last && last.type === 'jump' && /^(return|exit|throw|leave|break|continue)\b/i.test(linesOf(last).join(' ').trim() || 'leave');
-      if (!ends) out.push(I2 + 'break;');
+      out.push(...this.switchBody(b.body, ind));
+    }
+    out.push(ind + '}');
+    return out;
+  }
+
+  /** Rumpf eines switch-Zweigs samt break (entfällt, wenn der Zweig ohnehin mit einem Sprung endet) */
+  switchBody(body, ind) {
+    const I2 = ind + this.I + this.I;
+    const out = this.seq(body, I2);
+    const last = body[body.length - 1];
+    const ends = last && last.type === 'jump' && /^(return|exit|throw|leave|break|continue)\b/i.test(linesOf(last).join(' ').trim() || 'leave');
+    if (!ends) out.push(I2 + 'break;');
+    return out;
+  }
+
+  /**
+   * Fallauswahl mit Bedingungen: JavaScript kennt switch (true) mit Bedingungen als Marken,
+   * C# switch (true) mit „case true when Bedingung“; Java, C und C++ verlangen Konstanten → if/else-if-Kette.
+   */
+  condCaseEl(el, ind, branches) {
+    const L = this.lang;
+    if (L !== 'javascript' && L !== 'csharp') return super.condCaseEl(el, ind, branches);
+    const out = [ind + 'switch (true) {'];
+    for (const b of branches) {
+      if (b.isDefault) out.push(ind + this.I + 'default:');
+      else out.push(ind + this.I + (L === 'csharp' ? `case true when ${this.x(b.cond)}:` : `case ${this.x(b.cond)}:`));
+      out.push(...this.switchBody(b.body, ind));
     }
     out.push(ind + '}');
     return out;
@@ -1899,6 +1954,20 @@ class KtGen extends CGen {
     return out;
   }
 
+  /** Fallauswahl mit Bedingungen: when ohne Argument, je Zweig eine Bedingung */
+  condCaseEl(el, ind, branches) {
+    const I = this.I;
+    const out = [ind + 'when {'];
+    for (const b of branches) {
+      const head = b.isDefault ? 'else' : this.x(b.cond);
+      const body = this.seq(b.body, ind + I + I);
+      if (!body.length) out.push(ind + I + `${head} -> {}`);
+      else out.push(ind + I + `${head} -> {`, ...body, ind + I + '}');
+    }
+    out.push(ind + '}');
+    return out;
+  }
+
   forEl(el, ind) {
     const text = linesOf(el).join(' ');
     const f = P.parseForText(text);
@@ -2170,6 +2239,21 @@ class RsGen extends BaseGen {
       else out.push(ind + I + `${head} => {`, ...body, ind + I + '}');
     }
     if (!hasDefault) out.push(ind + I + '_ => {}');
+    out.push(ind + '}');
+    return out;
+  }
+
+  /** Fallauswahl mit Bedingungen: match true mit Guards (_ if Bedingung => …) */
+  condCaseEl(el, ind, branches) {
+    const I = this.I;
+    const out = [ind + 'match true {'];
+    for (const b of branches) {
+      const head = b.isDefault ? '_' : `_ if ${this.bare(b.cond)}`;
+      const body = this.seq(b.body, ind + I + I);
+      if (!body.length) out.push(ind + I + `${head} => {}`);
+      else out.push(ind + I + `${head} => {`, ...body, ind + I + '}');
+    }
+    if (!branches.some((b) => b.isDefault)) out.push(ind + I + '_ => {}');
     out.push(ind + '}');
     return out;
   }
