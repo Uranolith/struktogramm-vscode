@@ -1,6 +1,6 @@
 # Änderungen
 
-## Unveröffentlicht
+## 0.9.3
 - **Fallauswahl mit `true` (bzw. `false`) als Ausdruck** und Bedingungen als Marken – `case true of  kdnr < 2000: …` –
   übersetzt jetzt in allen Sprachen: `switch (true)` in JavaScript, `case true when …` in C#, `when { … }` in Kotlin,
   `match true` mit Guards in Rust, sonst als `if / else if`-Kette. Vorher entstand ein `switch` mit Bedingungen als
