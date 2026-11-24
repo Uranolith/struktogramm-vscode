@@ -17,6 +17,7 @@ const { ToolsViewProvider, VIEW_ID } = require('./toolsView');
 const { toolbarLocation } = require('./webview');
 const { ExecViewProvider, VIEW_ID: EXEC_VIEW_ID } = require('./execView');
 const { executionLocation } = require('./webview');
+const execSplit = require('./execSplit');
 const { registerDebugger } = require('./debugLaunch');
 
 let extContext = null;
@@ -128,6 +129,7 @@ class NsdEditorProvider {
         if (state.exec.handle(msg) || handlePngData(msg) || handleDiagramFocus(panel.webview, msg)) return;
         switch (msg.type) {
           case 'toolState': if (this.tools) this.tools.setState(state, msg.state); break;
+          case 'execSplit': execSplit.setSplit(msg.split); break;
           case 'command': if (/^struktogramm\./.test(msg.command)) vscode.commands.executeCommand(msg.command); break;
           case 'ready': {
             send();
@@ -226,6 +228,7 @@ class PreviewPanel {
       this.panel.webview.onDidReceiveMessage(async (msg) => {
         try {
           if (this.exec.handle(msg) || handlePngData(msg) || handleDiagramFocus(webview, msg)) return;
+          if (msg.type === 'execSplit') { execSplit.setSplit(msg.split); return; }
           const doc = this.document();
           if (!doc) return;
           if (msg.type === 'ready') this.update();
@@ -680,6 +683,7 @@ async function setupStructorizer(context) {
 }
 
 function activate(context) {
+  execSplit.init(context);
   extContext = context;
   setLanguage(vscode.env.language); // Englisch, bei deutscher VS-Code-Oberfläche Deutsch
   const provider = new NsdEditorProvider(context);

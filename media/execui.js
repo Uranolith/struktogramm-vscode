@@ -13,7 +13,9 @@
       + `</div>
   <div class="execbody">
     <div id="console"><div id="conout" role="log" aria-live="polite"></div><form id="conin" hidden><label id="conprompt" for="coninput"></label><input id="coninput" autocomplete="off" spellcheck="false"><button type="submit">OK</button></form></div>
+    <div class="sash" id="sashTurtle" role="separator" aria-orientation="vertical" tabindex="0" title="${esc(T('web.exec.resize'))}" aria-label="${esc(T('web.exec.resize'))}"></div>
     <div id="turtle" hidden title="Turtleizer"><svg id="turtlesvg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div class="sash" id="sashSide" role="separator" aria-orientation="vertical" tabindex="0" title="${esc(T('web.exec.resize'))}" aria-label="${esc(T('web.exec.resize'))}"></div>
     <div id="side">
       <div class="stabs" role="tablist">
         <button role="tab" id="tabVars" data-tab="vars" class="on" aria-selected="true" aria-controls="vars">${esc(T('web.tab.vars'))}</button>
@@ -26,12 +28,72 @@
   }
 
   /**
+   * Breite der Bereiche per Trennbalken ziehen (wie die Sashes in VS Code): Konsole | Turtleizer | Variablen/Aufrufe.
+   * Turtleizer und rechter Bereich haben einen Anteil an der Breite, die Konsole bekommt den Rest.
+   * Doppelklick setzt zurück, ←/→ verstellen per Tastatur. Die Aufteilung speichert die Extension (execSplit).
+   */
+  const SPLIT_DEFAULT = { side: 0.4, turtle: 0.3 };
+  const MIN_PANE = 110, MIN_CONSOLE = 150;
+  function initSplit(post) {
+    let saved = {};
+    try { saved = JSON.parse(document.body.dataset.split || '{}') || {}; } catch (e) { saved = {}; }
+    const split = { side: saved.side || SPLIT_DEFAULT.side, turtle: saved.turtle || SPLIT_DEFAULT.turtle };
+    const body = document.querySelector('.execbody');
+    const apply = () => {
+      $('side').style.flex = `0 0 ${(split.side * 100).toFixed(2)}%`;
+      $('turtle').style.flex = `0 0 ${(split.turtle * 100).toFixed(2)}%`;
+    };
+    // neue Breite in Pixeln für einen Bereich, begrenzt: jeder Bereich min. MIN_PANE, Konsole min. MIN_CONSOLE
+    const setWidth = (which, px) => {
+      const W = body.getBoundingClientRect().width;
+      if (!W) return;
+      const other = which === 'side' ? ($('turtle').hidden ? 0 : $('turtle').getBoundingClientRect().width) : $('side').getBoundingClientRect().width;
+      const max = Math.max(MIN_PANE, W - MIN_CONSOLE - other);
+      split[which] = Math.min(max, Math.max(MIN_PANE, px)) / W;
+      apply();
+    };
+    const save = () => post({ type: 'execSplit', split: { ...split } });
+    for (const [id, which] of [['sashSide', 'side'], ['sashTurtle', 'turtle']]) {
+      const sash = $(id);
+      // Breite des Bereichs rechts vom Balken = rechter Rand des Bereichs − Mausposition
+      const widthAt = (x) => $(which).getBoundingClientRect().right - x;
+      sash.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        try { sash.setPointerCapture(e.pointerId); } catch (err) { /* Zeiger schon weg */ }
+        sash.classList.add('active');
+        const move = (ev) => setWidth(which, widthAt(ev.clientX));
+        const end = () => {
+          sash.removeEventListener('pointermove', move);
+          sash.removeEventListener('pointerup', end);
+          sash.removeEventListener('lostpointercapture', end);
+          if (sash.classList.contains('active')) { sash.classList.remove('active'); save(); }
+        };
+        sash.addEventListener('pointermove', move);
+        sash.addEventListener('pointerup', end);
+        sash.addEventListener('lostpointercapture', end);
+      });
+      sash.addEventListener('dblclick', () => { split[which] = SPLIT_DEFAULT[which]; apply(); save(); });
+      sash.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        // ← macht den Bereich rechts vom Balken breiter, → schmaler
+        setWidth(which, $(which).getBoundingClientRect().width + (e.key === 'ArrowLeft' ? 20 : -20));
+        save();
+        e.preventDefault();
+        e.stopPropagation(); // nicht zur Diagramm-Navigation des Editors
+      });
+    }
+    apply();
+  }
+
+  /**
    * opts: { T, esc, post(msg), onShow(), onEscape() }
    * Liefert { reset(title), out(lines), state(msg), turtle(ops), clear() }
    */
   function create(opts) {
     const { T, esc, post } = opts;
     const show = () => { if (opts.onShow) opts.onShow(); };
+    initSplit(post);
 
     function line(text, kind) {
       const out = $('conout');

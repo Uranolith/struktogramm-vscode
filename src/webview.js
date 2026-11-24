@@ -2,6 +2,7 @@
 const vscode = require('vscode');
 const { renderSvg } = require('./core/render');
 const { t, allStrings, getLanguage } = require('./i18n');
+const { getSplit } = require('./execSplit');
 
 /** Ausführungsanzeige im Panel unten ('panel', Standard) oder im Editor unter dem Diagramm ('editor') */
 const executionLocation = () => (vscode.workspace.getConfiguration('struktogramm').get('executionPanelLocation', 'panel') === 'editor' ? 'editor' : 'panel');
@@ -41,7 +42,7 @@ function webviewHtml(webview, extensionUri, readonly) {
 <link rel="stylesheet" href="${webview.asWebviewUri(vscode.Uri.joinPath(media, 'exec.css'))}">
 <title>${attr(t('ext.filterNsd'))}</title>
 </head>
-<body data-readonly="${readonly ? 1 : 0}" data-toolbar="${readonly ? 'editor' : toolbarLocation()}" data-exec="${readonly ? 'editor' : executionLocation()}" data-l10n="${attr(JSON.stringify(allStrings()))}">
+<body data-readonly="${readonly ? 1 : 0}" data-toolbar="${readonly ? 'editor' : toolbarLocation()}" data-exec="${readonly ? 'editor' : executionLocation()}" data-split="${attr(JSON.stringify(getSplit() || {}))}" data-l10n="${attr(JSON.stringify(allStrings()))}">
 <div id="toolbar" role="toolbar" aria-label="${attr(t('web.toolbarLabel'))}"></div>
 <div id="message" hidden></div>
 <div id="scroller"><div id="canvas"></div><div id="dropmark" hidden></div></div>

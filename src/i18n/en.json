@@ -273,6 +273,7 @@
  "web.exec.clear": "Clear",
  "web.exec.clear.title": "Clear output",
  "web.exec.close.title": "Close (stops execution)",
+ "web.exec.resize": "Drag to resize · double-click: reset · ←/→ with the keyboard",
  "web.exec.title": "Execution",
  "web.exec.toPanel.title": "Show the execution in the panel at the bottom of VS Code (next to Problems, Output, ...)",
  "web.help.d1": "",

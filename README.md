@@ -30,6 +30,8 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   *Ausgabe*. Wer beides lieber direkt im Editor hat, stellt `struktogramm.toolbarLocation` bzw.
   `struktogramm.executionPanelLocation` auf `editor` – oder schaltet live über die Knöpfe in den Titelleisten um.
   Die Kategorien der Werkzeug-Ansicht lassen sich ein- und ausklappen und per Drag & Drop (oder Alt+↑/↓) umsortieren.
+  Die Bereiche der Ausführungsanzeige (Konsole, Turtleizer, Variablen/Aufrufe) lassen sich an den Trennlinien
+  breiter und schmaler ziehen.
 - **Code → Struktogramm**: Python, Java, C, C++, C#, JavaScript, TypeScript, Kotlin, Rust
   (Rechtsklick im Editor → *Struktogramm aus Code erzeugen*; mit Markierung nur der markierte Teil).
   Jede Funktion wird ein eigenes Diagramm, `main` bzw. Code auf oberster Ebene wird das Hauptprogramm.

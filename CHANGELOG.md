@@ -5,6 +5,9 @@
   Pfeiltasten in den Nachbarzweig auf gleicher Höhe, auch aus verschachtelten Elementen heraus. Ohne Nachbarn wie
   bisher hinein bzw. hinaus. Strg/⌘ + → / ← geht immer hinein bzw. hinaus (vorher: Zweig wechseln).
   ↓ / ↑ gehen bei Try von try über catch nach finally.
+- **Ausführungsanzeige verstellbar:** Die Bereiche Konsole, Turtleizer und Variablen/Aufrufe lassen sich an den
+  Trennlinien breiter und schmaler ziehen (Doppelklick setzt zurück, ←/→ per Tastatur). Die Aufteilung gilt für Editor
+  und Panel und bleibt gespeichert.
 
 ## 0.9.3
 - **Fallauswahl mit `true` (bzw. `false`) als Ausdruck** und Bedingungen als Marken – `case true of  kdnr < 2000: …` –

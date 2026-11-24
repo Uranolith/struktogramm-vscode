@@ -8,6 +8,7 @@
 const vscode = require('vscode');
 const { t, allStrings, getLanguage } = require('./i18n');
 const { executionLocation } = require('./webview');
+const { getSplit, setSplit } = require('./execSplit');
 
 const VIEW_ID = 'struktograf.execution';
 const MAX_LINES = 3000;
@@ -38,7 +39,7 @@ class ExecViewProvider {
 <link rel="stylesheet" href="${uri('execview.css')}">
 <title>${attr(t('web.exec.title'))}</title>
 </head>
-<body class="execview" data-l10n="${attr(JSON.stringify(allStrings()))}">
+<body class="execview" data-split="${attr(JSON.stringify(getSplit() || {}))}" data-l10n="${attr(JSON.stringify(allStrings()))}">
 <div id="empty" hidden></div>
 <div id="exec"></div>
 <script nonce="${n}" src="${uri('execui.js')}"></script>
@@ -54,6 +55,7 @@ class ExecViewProvider {
 
   onMessage(msg) {
     if (msg.type === 'ready') { this.showFor(this.editors.active, true); return; }
+    if (msg.type === 'execSplit') { setSplit(msg.split); return; }
     const ed = this.shown || this.editors.active;
     if (!ed) return;
     if (msg.type === 'execInput') ed.exec.handle(msg);

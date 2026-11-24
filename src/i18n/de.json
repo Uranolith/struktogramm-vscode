@@ -273,6 +273,7 @@
  "web.exec.clear": "Leeren",
  "web.exec.clear.title": "Ausgabe leeren",
  "web.exec.close.title": "Schließen (beendet die Ausführung)",
+ "web.exec.resize": "Breite ziehen · Doppelklick: zurücksetzen · ←/→ per Tastatur",
  "web.exec.title": "Ausführung",
  "web.exec.toPanel.title": "Ausführung im Panel unten in VS Code anzeigen (neben Probleme, Ausgabe, ...)",
  "web.help.d1": "",
