@@ -1055,6 +1055,7 @@
         else list.scrollTop += e.key === 'ArrowDown' || e.key === 'PageDown' ? step : -step;
         e.preventDefault();
       }
+      if (isClipboardKey(e)) return; // markierten Text kopieren (auf dem Mac über VS Code)
       e.stopPropagation();
     };
   }
@@ -1181,8 +1182,16 @@
       if (e.key === 'Escape') { close(); e.preventDefault(); }
       else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { ok(); e.preventDefault(); }
       else if (e.key === 'Enter' && type !== 'instruction' && type !== 'case' && type !== 'root' && e.target === ta && !e.shiftKey) { ok(); e.preventDefault(); }
+      // Kopieren, Ausschneiden, Einfügen, Alles markieren an VS Code weiterreichen: auf dem Mac führt VS Code sie
+      // in Webviews selbst aus (⌘C/⌘V gehen sonst ins Leere); die Diagramm-Tasten reagieren bei offenem Dialog nicht
+      if (isClipboardKey(e)) return;
       e.stopPropagation();
     };
+  }
+
+  /** Strg/⌘ + C, X, V, A (ohne Alt): Zwischenablage und Alles markieren */
+  function isClipboardKey(e) {
+    return (e.ctrlKey || e.metaKey) && !e.altKey && ['c', 'x', 'v', 'a'].includes(String(e.key).toLowerCase());
   }
 
   /* ------------------------------ Autovervollständigung ------------------------------ */

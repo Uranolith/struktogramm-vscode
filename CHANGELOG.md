@@ -19,6 +19,9 @@
   Aufrufe hinweg untereinander. Die drei Spalten sind anfangs gleich breit und lassen sich an den Spaltengrenzen
   breiter und schmaler ziehen (Doppelklick: gleich breit, ←/→ per Tastatur); die Aufteilung bleibt gespeichert.
   Typen wurden vorher im Editor zu groß dargestellt (Namensgleichheit mit einer CSS-Klasse der Diagrammgrafik).
+- **macOS: Kopieren und Einfügen im Bearbeiten-Dialog** (⌘C, ⌘X, ⌘V, ⌘A) funktioniert. Der Dialog hatte alle
+  Tasten abgefangen; auf dem Mac führt VS Code die Zwischenablage-Befehle in Webviews aber selbst aus und muss den
+  Tastendruck dafür sehen.
 - **F5 nach VS-Code-Standard:** Struktograf greift nicht mehr in die Wahl des Debuggers ein. F5 startet das
   Struktogramm nur im Struktogramm-Editor; sonst entscheidet VS Code (`launch.json`, Debugger der aktiven Datei).
   Weggefallen: F5/F10 starten das offene Struktogramm, wenn die aktive Datei keinen Debugger hat; Tasten einer
