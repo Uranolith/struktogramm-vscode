@@ -2,6 +2,7 @@
 // Generator in alle Zielsprachen übersetzen, kompilieren, ausführen und die Ausgaben vergleichen.
 //
 //   node test/sprachtest.js [datei.nsd] [--input 7] [python java ...]
+//   mehrere Eingaben (je INPUT eine Zeile): --input 1500,1000
 //
 // Standard: test/samples/gesamttest.nsd (alle Elementtypen, Rekursion, Parallelverarbeitung) mit Eingabe 7.
 // Sprachen ohne installierten Compiler werden übersprungen. Gearbeitet wird in einem temporären Ordner.
@@ -30,11 +31,12 @@ const className = 'Programm';
 function interpret() {
   const g = new Interpreter(doc).run(mainIdx);
   const out = [];
+  const queue = input.split(',');
   let r = g.next();
   while (!r.done) {
     const y = r.value;
     if (y.type === 'output') out.push(y.text);
-    r = g.next(y.type === 'input' ? input : undefined);
+    r = g.next(y.type === 'input' ? (queue.length > 1 ? queue.shift() : queue[0]) : undefined);
   }
   return out.join('\n');
 }
@@ -106,7 +108,7 @@ for (const lang of Object.keys(TARGETS)) {
     }
   }
   if (status === 'ok') {
-    const r = sh(R.run[0], R.run[1], { input: input + '\n' });
+    const r = sh(R.run[0], R.run[1], { input: input.split(',').join('\n') + '\n' });
     const got = norm(r.stdout);
     if (r.error) { status = 'FEHLER beim Starten'; detail = r.error.message; } else if (got !== expected) {
       status = 'FEHLER: Ausgabe weicht ab';
