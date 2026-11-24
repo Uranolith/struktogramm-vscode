@@ -1,6 +1,6 @@
 # Änderungen
 
-## Unveröffentlicht
+## 0.9.5
 - **Echte Debug-Sitzung in VS Code:** Jede Ausführung eines gespeicherten Struktogramms läuft als Debug-Sitzung
   (eigener Debug-Adapter): Debug-Leiste mit Fortsetzen, Schritt über (F10), Schritt hinein (F11), Rücksprung
   (Umschalt+F11), Anhalten, Neustart und Beenden; Variablen und Aufrufliste in *Ausführen und Debuggen*; Ausdrücke
