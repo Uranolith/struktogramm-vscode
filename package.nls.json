@@ -67,5 +67,8 @@
   "debugger.snippet.desc": "Runs a structogram (.nsd) in Struktograf.",
   "cmd.zoomIn": "Zoom In Structogram",
   "cmd.zoomOut": "Zoom Out Structogram",
-  "cmd.zoomReset": "Reset Structogram Zoom"
+  "cmd.zoomReset": "Reset Structogram Zoom",
+  "cmd.debug": "Debug Structogram",
+  "cmd.runNoDebug": "Run Structogram Without Debugging",
+  "welcome.debug": "The active structogram can be run directly:\n[Debug Structogram](command:struktogramm.debug)\n[Run Without Debugging](command:struktogramm.runNoDebug)\nBreakpoints: F9 in the structogram. The debugger list does not recognize the structogram editor – inside the editor, F5 starts it directly."
 }

@@ -13,6 +13,8 @@
     *Bei Laufzeitfehlern anhalten* mit Variablen und Aufrufliste an der Fehlerstelle.
   - Aufrufliste mit Element, Datei und Zeile; ein Klick markiert die Stelle im Struktogramm.
   - Variablen: Felder und Records aufklappbar, Werte änderbar; Vorschläge in der Debugkonsole.
+- **Ausführen-Menü (▷) im Editor** mit *Struktogramm debuggen* und *Struktogramm ohne Debuggen ausführen*, dieselben
+  Links in der leeren Ansicht *Ausführen und Debuggen*. Ersetzt den eigenen Ausführen-Knopf in der Titelleiste.
 - **F5 nach VS-Code-Standard:** Struktograf greift nicht mehr in die Wahl des Debuggers ein. F5 startet das
   Struktogramm nur im Struktogramm-Editor; sonst entscheidet VS Code (`launch.json`, Debugger der aktiven Datei).
   Weggefallen: F5/F10 starten das offene Struktogramm, wenn die aktive Datei keinen Debugger hat; Tasten einer

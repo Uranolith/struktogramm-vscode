@@ -255,6 +255,18 @@
         "command": "struktogramm.zoomReset",
         "title": "%cmd.zoomReset%",
         "category": "%category%"
+      },
+      {
+        "command": "struktogramm.debug",
+        "title": "%cmd.debug%",
+        "category": "%category%",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "struktogramm.runNoDebug",
+        "title": "%cmd.runNoDebug%",
+        "category": "%category%",
+        "icon": "$(play)"
       }
     ],
     "icons": {
@@ -272,11 +284,6 @@
           "command": "struktogramm.preview",
           "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact|kotlin|rust)$/ || resourceExtname =~ /^\\.(kt|kts|rs)$/",
           "group": "navigation"
-        },
-        {
-          "command": "struktogramm.run",
-          "when": "activeCustomEditorId == struktogramm.editor",
-          "group": "navigation@0"
         },
         {
           "command": "struktogramm.toCode",
@@ -470,6 +477,26 @@
         {
           "command": "struktogramm.zoomReset",
           "when": "false"
+        },
+        {
+          "command": "struktogramm.debug",
+          "when": "activeCustomEditorId == struktogramm.editor"
+        },
+        {
+          "command": "struktogramm.runNoDebug",
+          "when": "activeCustomEditorId == struktogramm.editor"
+        }
+      ],
+      "editor/title/run": [
+        {
+          "command": "struktogramm.debug",
+          "when": "activeCustomEditorId == struktogramm.editor",
+          "group": "navigation@0"
+        },
+        {
+          "command": "struktogramm.runNoDebug",
+          "when": "activeCustomEditorId == struktogramm.editor",
+          "group": "navigation@1"
         }
       ]
     },
@@ -715,6 +742,13 @@
     "breakpoints": [
       {
         "language": "nsd"
+      }
+    ],
+    "viewsWelcome": [
+      {
+        "view": "debug",
+        "contents": "%welcome.debug%",
+        "when": "activeCustomEditorId == struktogramm.editor"
       }
     ]
   }

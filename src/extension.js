@@ -728,7 +728,17 @@ function activate(context) {
     if (provider.active) { provider.active.panel.webview.postMessage(msg); return; }
     if (cmd === 'run') vscode.window.showInformationMessage(t('ext.runHint'));
   }
-  // Struktograf als „Debugger“: F5 ohne Struktogramm im Fokus bietet es in der Debugger-Auswahl ganz oben an
+  /** Debug-Sitzung für ein Struktogramm starten (wie F5 bzw. Strg+F5); ohne uri: das aktive */
+  async function startStructogram(noDebug, uri) {
+    const target = uri instanceof vscode.Uri ? uri : provider.active ? provider.active.document.uri : null;
+    if (!target) { vscode.window.showInformationMessage(t('ext.runHint')); return; }
+    const folder = vscode.workspace.getWorkspaceFolder(target);
+    await vscode.debug.startDebugging(folder, {
+      type: 'struktogramm', request: 'launch', name: t('ext.debugConfigName', path.basename(target.fsPath || target.path)),
+      program: target.scheme === 'file' ? target.fsPath : target.toString(),
+    }, { noDebug });
+  }
+  // Struktograf als Debugger: Debugger-Auswahl, launch.json, Debug-Sitzung (debugLaunch.js, debugAdapter.js)
   registerDebugger(context, provider, (cmd, uri, extra) => execCommand(cmd, uri, extra));
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider('struktogramm.editor', provider, { webviewOptions: { retainContextWhenHidden: true } }),
@@ -742,6 +752,9 @@ function activate(context) {
     vscode.commands.registerCommand('struktogramm.zoomIn', () => zoomFocusedDiagram('in')),
     vscode.commands.registerCommand('struktogramm.zoomOut', () => zoomFocusedDiagram('out')),
     vscode.commands.registerCommand('struktogramm.zoomReset', () => zoomFocusedDiagram('reset')),
+    // ▷-Menü im Editor und Ansicht „Ausführen und Debuggen“: Debug-Sitzung für das aktive Struktogramm
+    vscode.commands.registerCommand('struktogramm.debug', (uri) => startStructogram(false, uri)),
+    vscode.commands.registerCommand('struktogramm.runNoDebug', (uri) => startStructogram(true, uri)),
     vscode.commands.registerCommand('struktogramm.tools.resetLayout', () => tools.resetLayout()),
     vscode.commands.registerCommand('struktogramm.toggleExecutionLocation', () => {
       const next = executionLocation() === 'panel' ? 'editor' : 'panel';

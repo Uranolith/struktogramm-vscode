@@ -67,5 +67,8 @@
   "debugger.snippet.desc": "Führt ein Struktogramm (.nsd) in Struktograf aus.",
   "cmd.zoomIn": "Struktogramm vergrößern",
   "cmd.zoomOut": "Struktogramm verkleinern",
-  "cmd.zoomReset": "Struktogramm-Zoom zurücksetzen"
+  "cmd.zoomReset": "Struktogramm-Zoom zurücksetzen",
+  "cmd.debug": "Struktogramm debuggen",
+  "cmd.runNoDebug": "Struktogramm ohne Debuggen ausführen",
+  "welcome.debug": "Das geöffnete Struktogramm lässt sich direkt starten:\n[Struktogramm debuggen](command:struktogramm.debug)\n[Ohne Debuggen ausführen](command:struktogramm.runNoDebug)\nHaltepunkte: F9 im Struktogramm. Die Debugger-Auswahl erkennt den Struktogramm-Editor nicht – im Editor startet F5 das Struktogramm direkt."
 }
