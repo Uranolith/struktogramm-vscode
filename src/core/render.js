@@ -19,11 +19,51 @@ const FOOT = 10;
 
 const PRETTY = [[/<-/g, '←'], [/<>/g, '≠'], [/!=/g, '≠'], [/<=/g, '≤'], [/>=/g, '≥']];
 
-// Syntaxhervorhebung: Schlüsselwörter, Datentypen, Zeichenketten
-const KEYWORDS = new Set(['input', 'output', 'var', 'dim', 'const', 'for', 'foreach', 'to', 'downto', 'by', 'in', 'while',
-  'until', 'do', 'and', 'or', 'not', 'xor', 'div', 'mod', 'shl', 'shr', 'leave', 'break', 'return', 'exit', 'continue',
-  'throw', 'true', 'false', 'if', 'then', 'else', 'repeat', 'as', 'new', 'step', 'each', 'try', 'catch', 'finally', 'type',
-  'record', 'struct', 'enum']);
+// Syntaxhervorhebung: Schlüsselwörter, Datentypen, Zeichenketten.
+// Schlüsselwörter hängen vom Zusammenhang ab, damit gleichnamige Variablen (by, to, step, in, new …) Variablen bleiben:
+//  - Operatorwörter überall
+//  - Anweisungswörter nur am Zeilenanfang
+//  - Kontextwörter nur an ihrer Stelle (to/by/step im Zählschleifenkopf – gelesen wie von Interpreter und Generator)
+//  - vor einer Zuweisung (by := 5) ist jedes Wort eine Variable
+const P = require('./pseudo');
+const OPWORDS = new Set(['and', 'or', 'not', 'xor', 'shl', 'shr', 'true', 'false']);
+const STARTERS = new Set(['input', 'output', 'var', 'dim', 'const', 'for', 'foreach', 'while', 'until', 'repeat', 'if', 'else',
+  'return', 'exit', 'leave', 'break', 'continue', 'throw', 'try', 'catch', 'finally', 'type']);
+const CONTEXT_WORDS = new Set(['to', 'downto', 'by', 'step', 'in', 'each', 'of', 'do', 'then', 'as', 'record', 'struct', 'enum', 'new']);
+const nows = (x) => String(x || '').replace(/\s+/g, '');
+function isKeyword(str, word, index) {
+  const lw = word.toLowerCase();
+  const after = str.slice(index + word.length);
+  if (/^\s*(:=|<-|←)/.test(after)) return false; // Zuweisungsziel: Variable
+  if (OPWORDS.has(lw)) return true;
+  const before = str.slice(0, index);
+  if (STARTERS.has(lw)) return !before.trim() || (lw === 'for' && /^\s*$/.test(before));
+  if (!CONTEXT_WORDS.has(lw)) return false;
+  const head = ((/^\s*([\p{L}_][\p{L}\p{N}_]*)/u.exec(str) || [])[1] || '').toLowerCase();
+  const code = before.replace(/"[^"]*"|'[^']*'/g, '');
+  switch (lw) {
+    case 'to': case 'downto': {
+      // das erste to/downto nach der Zuweisung im Zählschleifenkopf
+      const f = P.parseForText(str);
+      return !!f && f.kind === 'count' && /(:=|<-|←|=)/.test(code) && !/\b(to|downto|bis)\b/i.test(code.replace(/^\s*\S+/, ''));
+    }
+    case 'by': case 'step': {
+      const f = P.parseForText(str);
+      return !!f && f.kind === 'count' && nows(after) !== '' && nows(after) === nows(f.step);
+    }
+    case 'in': case 'of': {
+      const f = P.parseForText(str);
+      return !!f && f.kind === 'each' && nows(after) === nows(f.coll);
+    }
+    case 'each': return (head === 'for' || head === 'für') && /^\s*\S+\s*$/.test(before);
+    case 'do': return !after.trim() && ['while', 'for', 'foreach', 'solange'].includes(head);
+    case 'then': return !after.trim() && ['if', 'wenn'].includes(head);
+    case 'as': return ['var', 'dim', 'const'].includes(head);
+    case 'record': case 'struct': case 'enum': return head === 'type';
+    case 'new': return /^\s*[\p{L}_][\p{L}\p{N}_]*\s*\[/u.test(after);
+    default: return false;
+  }
+}
 const TYPES = new Set(['int', 'integer', 'long', 'short', 'byte', 'double', 'float', 'real', 'string', 'char', 'bool',
   'boolean', 'void', 'array', 'of']);
 // Gruppen: 1 String, 2 Wort, 3 Operator (längste zuerst; auch die „hübschen“ Zeichen ← ≠ ≤ ≥)
@@ -39,7 +79,7 @@ function highlight(str) {
     if (m[1]) cls = 'hs';
     else if (m[3]) cls = 'ho';
     else if (ARITH_WORDS.has(m[2].toLowerCase())) cls = 'ho';
-    else if (KEYWORDS.has(m[2].toLowerCase())) cls = 'hk';
+    else if (isKeyword(str, m[2], m.index)) cls = 'hk';
     else if (/^\s*\(/.test(str.slice(m.index + m[0].length))) cls = 'hf'; // Funktionsaufruf name(…)
     else if (TYPES.has(m[2].toLowerCase())) cls = 'ht';
     if (!cls) continue;

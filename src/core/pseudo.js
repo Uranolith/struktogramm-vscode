@@ -888,6 +888,27 @@ function addConst(expr, delta) {
   return `${e} ${delta > 0 ? '+' : '-'} ${Math.abs(delta)}`;
 }
 
+/**
+ * Position des Schrittweiten-Schlüsselworts (by / step / schritt) im Zählschleifenkopf nach „to“, sonst -1.
+ * Es ist nur dann ein Schlüsselwort, wenn davor ein vollständiger Endwert und danach ein Ausdruck steht – so bleibt
+ * eine Variable dieses Namens eine Variable: „for i := 1 to by“ (Endwert by), „for i := 1 to n by by“ (Schritt by).
+ */
+const ARITH_KW = ['and', 'or', 'not', 'xor', 'div', 'mod'];
+function stepKeyword(toks, toK) {
+  let depth = 0;
+  for (let k = toK + 1; k < toks.length; k++) {
+    const t = toks[k];
+    if (t.t === 'op' && OPEN[t.v]) { depth++; continue; }
+    if (t.t === 'op' && CLOSE[t.v]) { depth--; continue; }
+    if (depth !== 0 || t.t !== 'id' || !['by', 'step', 'schritt'].includes(lc(t)) || k <= toK + 1 || k >= toks.length - 1) continue;
+    const p = toks[k - 1], n = toks[k + 1];
+    const endsOperand = p.t === 'num' || p.t === 'str' || (p.t === 'id' && !ARITH_KW.includes(lc(p))) || (p.t === 'op' && CLOSE[p.v]);
+    const startsOperand = !(n.t === 'op' && !['-', '+', '('].includes(n.v)) && !(n.t === 'id' && ARITH_KW.filter((w) => w !== 'not').includes(lc(n)));
+    if (endsOperand && startsOperand) return k;
+  }
+  return -1;
+}
+
 /** for-Text zerlegen */
 function parseForText(text) {
   let toks = ptoks(text);
@@ -904,7 +925,7 @@ function parseForText(text) {
   const asg = findTop(toks, (t) => t.v === '<-' || t.v === ':=' || t.v === '=' || lc(t) === 'from' || lc(t) === 'von');
   const toK = findTop(toks, (t) => lc(t) === 'to' || lc(t) === 'bis' || lc(t) === 'downto');
   if (asg > 0 && toK > asg) {
-    const byK = findTop(toks, (t) => lc(t) === 'by' || lc(t) === 'step' || lc(t) === 'schritt', toK);
+    const byK = stepKeyword(toks, toK);
     const down = lc(toks[toK]) === 'downto';
     let step = byK > 0 ? joinTokens(toks.slice(byK + 1)) : (down ? '-1' : '1');
     if (/^\(\s*-\s*\d+\s*\)$/.test(step)) step = step.replace(/[()\s]/g, '');
