@@ -79,8 +79,9 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   Darüberfahren zeigt ein Hover-Fenster die Meldung gegliedert (Aussage, Vorschlag, Begründung), die Ansicht
   *Probleme* listet alle.
   - **Fehler** (rot, „!“) – funktioniert so nicht: Syntaxfehler, Variable ohne Wert, unbekannte Funktion, falsche Zahl
-    von Argumenten, `leave` außerhalb einer Schleife, Division durch 0, unlesbarer Schleifenkopf, leere Bedingung.
-  - **Hinweise** (gelb, „i“, jeweils mit Begründung) – Good Practice und DIN 66261: Variable, Parameter oder
+    von Argumenten, `leave` außerhalb einer Schleife, Division durch 0, unlesbarer Schleifenkopf, leere Bedingung,
+    Zuweisung mit `=` statt `:=` bzw. `<-` (`=` ist der Vergleich – die Formatierung ändert es bewusst nicht).
+  - **Hinweise** (gelb, „i“, jeweils mit Begründung) – Good Practice und Konventionen: Variable, Parameter oder
     Rückgabewert ohne Typ (mit Vorschlag, z. B. `var summe: int`), Eingabe ohne Aufforderungstext, Kommazahlen mit `=`
     verglichen, Fallauswahl über eine Bedingung, mehrere Anweisungen in einem Block, mögliche Endlosschleife, Wert wird
     nie verwendet, nicht erreichbare Elemente, Variable mal Text, mal Zahl.
@@ -91,7 +92,19 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
     darunter an.
   - Beispiele: `test/samples/checks/errors.nsd` und `hints.nsd` (absichtlich fehlerhaft; der Kommentar jedes
     Elements – sichtbar beim Bearbeiten – nennt die erwartete Meldung).
-  - Einstellung `struktogramm.checks`: Fehler und Hinweise (Standard), nur Fehler oder keine Prüfungen.
+  - Hinweise in vier Gruppen, je einzeln abschaltbar (`struktogramm.hints.*`, Standard: alle an); die Gruppe steht
+    im Hover-Fenster und als Quelle in *Probleme*:
+    - **Good Practice** – Variable, Konstante, Parameter oder Rückgabewert ohne Typ (auch `var s := "Hallo"` →
+      `var s: string := "Hallo"`), Unterprogramm ohne Rückgabe ohne `: void`, Eingabe ohne Aufforderungstext
+    - **Konventionen** – Fallauswahl über eine Bedingung, Bedingungen als Fallmarken, mehrere Anweisungen in einem
+      Block, leerer Schleifenrumpf, leerer Block, Struktogramm ohne Namen. Das sind übliche Konventionen aus Lehre
+      und Praxis: Die DIN 66261 legt nur die Sinnbilder fest, keine Regeln für ihren Gebrauch.
+    - **Missverständlich** – „sonst“-Zweig mit Bedingung beschriftet, Variable mal Text mal Zahl, Kommazahlen mit `=`
+      verglichen, Wert wird nie verwendet
+    - **Mögliche Logikfehler** – Endlosschleife ohne Ausstieg, Schleifenbedingung ändert sich nie, nicht erreichbares
+      Element
+  - Einstellung `struktogramm.checks`: Fehler und Hinweise (Standard), nur Fehler oder keine Prüfungen. Fehler
+    erscheinen immer, solange die Prüfungen an sind.
 - **Original-Structorizer** (optional, benötigt Java 11+): wird beim ersten Gebrauch von GitHub
   heruntergeladen (Befehl *Structorizer herunterladen oder einrichten...*).
   - *Code aus Struktogramm erzeugen...* bietet zusätzlich 16 Structorizer-Generatoren an (u.a. PHP, Perl, BASIC,
@@ -99,6 +112,12 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   - COBOL- und Processing-Dateien werden mit dem Structorizer-Parser eingelesen;
     für C/Java gibt es *Struktogramm aus Code erzeugen (Structorizer-Parser)*.
   - *Im Structorizer öffnen* startet die Structorizer-Oberfläche mit dem Diagramm.
+- **Sprache**: Deutsch oder Englisch (Einstellung `struktogramm.language`, Standard: wie die VS-Code-Oberfläche) –
+  gilt für Editor, Werkzeuge, Ausführung, Prüfungen und Kommentare im erzeugten Code und wirkt sofort. Die Texte der
+  VS-Code-Einstellungen und Befehlsnamen folgen immer der VS-Code-Oberfläche.
+- **Einstellungen** (*Einstellungen → Erweiterungen → Struktograf*) in fünf Abschnitten: **Allgemein** (Sprache, Ort
+  der Werkzeuge und der Ausführung), **Darstellung** (Farbschema, Hervorhebung, Operatoren, Zweig-Beschriftungen),
+  **Prüfungen** (Prüfungen und Hinweisgruppen), **Code erzeugen und einlesen**, **Structorizer**.
 - **Export** als SVG, PNG, JSON, XML, KI-kompakter Pseudocode und einzelne Structorizer-Dateien (siehe [Export](#export)).
 - **Structorizer-kompatibel**: liest und schreibt `.nsd` (XML) in Structorizer-Schreibweise. Eine Datei mit
   einem Diagramm öffnet der Structorizer direkt. Dateien mit mehreren Diagrammen (z.B. nach einem
@@ -109,9 +128,19 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
 Die Diagramme verwenden die Schreibweise des Original-Structorizers: Zuweisung `:=`, Vergleich `=` und `<>`.
 Eine `.nsd`-Datei mit einem Diagramm lässt sich daher unverändert im Structorizer öffnen.
 
-Andere Schreibweisen werden beim Speichern automatisch umgestellt: `x = 5` und `x <- 5` werden zu `x := 5`,
-`==` wird zu `=`, `!=` zu `<>`. Das gilt für Eingaben im Editor, für Code-Importe und für Dateien älterer
-Versionen dieser Extension.
+Zuweisungen schreibt man mit `:=` oder mit dem Pfeil `<-` – beide sind gültig und bleiben, wie sie geschrieben sind.
+`=` ist im Struktogramm immer der Vergleich – auch im Interpreter und im erzeugten Code: `x = 5` weist nichts zu
+(erzeugt wird `x == 5`), `var x: int = 5` und `for i = 1 to 10` sind ungültig. Die Prüfung meldet solche Zeilen als
+Fehler mit der richtigen Schreibweise; umgestellt wird nichts. Beim Speichern umgestellt werden nur `==` zu `=` und
+`!=` zu `<>`. Code-Importe erzeugen von sich aus `:=`.
+
+Beim Übernehmen eines Blocks im Bearbeiten-Dialog wird der Text außerdem einheitlich formatiert – wie die Vorlage
+im Dialog: `INPUT` und `OUTPUT` groß, alle anderen Schlüsselwörter klein (`var`, `return`, `for … to … by`, `and`,
+`true` …), Deklarationen immer als `var name: typ` – auch aus `int x = 5`, `x: int` oder `var x as int` –, mehrere
+Namen als `var a, b: int := 0` (eingebaute Typen klein), Rechnungen und Vergleiche mit Leerzeichen um die Operatoren
+(`a+b<=c` → `a + b <= c`, ein Vorzeichen wie in `x := -1` bleibt am Wert), nach Kommas ein Leerzeichen, Signaturen
+als `fib(n: int): int`. Ob ein Wort ein Schlüsselwort ist, ergibt sich aus dem Zusammenhang – eine Variable namens
+`Output` oder `by` bleibt, wie sie ist; Texte in Anführungszeichen bleiben unverändert.
 
 Geteilt wird immer mit `/`. Zwischen zwei ganzen Zahlen rechnet `/` ganzzahlig (`7 / 2` ergibt `3`).
 Ein `div` aus importiertem Code wird zu `/`.
@@ -259,7 +288,11 @@ Im Bearbeiten-Dialog schlägt die Autovervollständigung passend zur Stelle vor 
 ## Grenzen
 Es ist kein vollständiger Compiler: Klassen, Zeiger und Bibliotheksaufrufe werden vereinfacht oder unverändert
 übernommen; von mehreren `catch`-Zweigen wird nur der erste übernommen. Variablentypen werden – wo nötig – geschätzt.
-String-Verkettung mit `+` lässt sich nicht nach C übersetzen.
+Textverkettung mit `+` wird je Sprache umgewandelt (Python f-String, C++ `to_string`, Rust `format!`, C über kleine
+Hilfsfunktionen mit neuem Speicher je Verkettung). Wird eine Variable von der Ganzzahl zur Kommazahl, speichert der
+Code sie als Kommazahl und wandelt sie um, solange sie eine Ganzzahl ist. Ist eine Variable mal Text, mal Zahl, lässt
+sich das in typisierten Sprachen nicht nachbilden: Die Stelle wird im Code mit ACHTUNG markiert, und *Code erzeugen*
+warnt. Sehr kleine oder große Kommazahlen (`1e-7`) schreibt jede Sprache in ihrer eigenen Exponent-Schreibweise.
 Bei Kotlin und Rust werden Klassen, `impl`-Blöcke, Lambdas/Closures und Ownership vereinfacht; im erzeugten
 Rust-Code werden Zeichenketten und Arrays bei Funktionsaufrufen mit `.clone()` übergeben.
 

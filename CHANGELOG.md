@@ -1,5 +1,55 @@
 # Änderungen
 
+## Unveröffentlicht
+- **Neuer Fehler: Zuweisung mit `=`** (`x = 5`, `var x: int = 5`, `const MAX = 10`, `for i = 1 to 10`) – `=` ist im
+  Struktogramm der Vergleich; die Meldung nennt die richtige Zeile (`x := 5`). Bisher wurden `=` und `<-` beim
+  Speichern stillschweigend zu `:=` umgestellt und als Zuweisung ausgeführt; das entfällt: `=` ist überall der
+  Vergleich, auch im Interpreter und im erzeugten Code (`x = 5` wird zu `x == 5`). `:=` und `<-` sind beide gültig
+  und bleiben, wie sie geschrieben sind.
+- **Einstellungen gruppiert:** Allgemein, Darstellung, Prüfungen, Code erzeugen und einlesen, Structorizer – in fester,
+  zusammenhängender Reihenfolge.
+- **Hinweise mit konkreten Vorschlägen:** statt Platzhaltern die echten Namen und Ausdrücke – Kommazahl-Vergleich
+  `x = 0.5` → `abs(x - 0.5) < 0.000001` (bei `<>` mit `>=`), Fallauswahl mit ihrer Bedingung, Signatur eines
+  Unterprogramms getrennt nach Parametertypen (`verdopple(a: int, b: int)`) und Rückgabetyp (`verdopple(a, b): int`),
+  Anzahl der Anweisungen im Block.
+- **Neuer Hinweis „void“:** Ein Unterprogramm ohne `return` und ohne Rückgabetyp bekommt den Vorschlag `zeige(n): void`,
+  damit klar ist, dass es absichtlich nichts zurückgibt (Gruppe Good Practice).
+- **Hinweis auch bei `var s := "Hallo"` und Konstanten:** Eine Deklaration ohne Typ bekommt den Vorschlag
+  `var s: string := "Hallo"` bzw. `const PI: double := 3.14`.
+- **Sprachauswahl:** Einstellung `struktogramm.language` (Automatisch / Deutsch / Englisch), wirkt sofort auf Editor,
+  Werkzeuge, Ausführung, Prüfungen und Kommentare im erzeugten Code.
+- **Code-Erzeugung – allgemeine Korrekturen** (Grenzfälle im Aufgabentest von 79 auf 6 Fehlschläge – übrig nur
+  die Exponent-Schreibweise sehr kleiner Kommazahlen in Fall 13):
+  - Textverkettung mit Zahlen in allen Sprachen (`"x = " + x`): Python f-String, JavaScript Template, C# und C++
+    mit Umwandlung, C mit Hilfsfunktionen; eine Verkettung macht eine Zahl nicht mehr zu Text.
+  - Typen aus Funktionsargumenten: Parameter eigener Unterprogramme, `int`/`trunc`/`round`-Argumente als Kommazahl.
+  - Eingabe: C und C++ lesen die ganze Zeile (Text mit Leerzeichen). Eine Kommazahl mit Komma (`3,5`) wird wie in
+    normalem Code der jeweiligen Sprache nicht umgewandelt.
+  - Wahrheitswerte als `true`/`false` (Python, C, C++, C#); `round` überall wie im Interpreter; Rest mit Vorzeichen
+    in Python (`math.fmod`); `pow` in Python als Kommazahl; `abs` mit Kommazahl in C (`fabs`) und Rust; `trunc`
+    übersetzt; `length` von Texten (Java `.length()`) und Feldern (C/C++ `sizeof`).
+  - Ganzzahlen, die sich selbst multiplizieren (`f := f * i`), als 64-Bit-Zahl.
+  - C#: Ausgabe als UTF-8, wenn das Programm Umlaute enthält.
+  - **Typwechsel Ganzzahl → Kommazahl** (`x := 5` … `x := 2.5`) wie im Interpreter: Die Variable wird als Kommazahl
+    gespeichert und, solange sie eine Ganzzahl ist, beim Rechnen und Ausgeben umgewandelt (`(int) x`, `x.toInt()`,
+    Python/JavaScript rechnen mit dem aktuellen Typ). In Schleifen und Verzweigungen gilt sie als Kommazahl.
+  - **Text und Zahl in einer Variable:** In typisierten Sprachen nicht übersetzbar – die Stelle wird im Code mit
+    ACHTUNG markiert, und *Code erzeugen* zeigt eine Warnung.
+  - Umwandlungen: `double(x)` wie `float(x)`; Python: Ganzzahl in einer Kommazahl-Variable als `float`, `floor`/`ceil`
+    als Kommazahl; Rust: gemischte Rechnungen und Vergleiche (`a * 1.5`, `a < 2.5`) mit `as f64`.
+- **Hinweise in Gruppen, einzeln abschaltbar:** Good Practice, Konventionen, Missverständlich und Mögliche Logikfehler
+  (Einstellungen `struktogramm.hints.*`). Die Gruppe steht im Hover-Fenster und als Quelle in *Probleme*; Fehler
+  erscheinen immer.
+- **Farbige Typen und Unterprogramm-Namen:** Im Kopf eines Unterprogramms erscheinen der Name in der Farbe für
+  Funktionen und Parameter- sowie Rückgabetypen in der Typfarbe (`fib(n: int): int`, auch `int summe(int a, int b)`);
+  in Deklarationen wird der Typ an seiner Stelle gefärbt, auch eigene Typen (`var p: Punkt`, `int x = 5`).
+- **Autoformatierung beim Übernehmen eines Blocks:** Schlüsselwörter in der Schreibweise der Vorlage (`INPUT`,
+  `OUTPUT` groß, `var`, `return`, `for … to`, `and` … klein), Deklarationen immer als `var name: typ` (auch aus
+  `var name : Typ`, `int x = 5`, `x: int`, `var x as int`), mehrere Namen als `var a, b: int`, Leerzeichen um
+  Rechen-, Vergleichs- und Zuweisungsoperatoren (`a+b` → `a + b`, Vorzeichen bleiben am Wert), nach Kommas ein
+  Leerzeichen, Signaturen als `fib(n: int): int`.
+  Gleichnamige Variablen (`Output := 3`, `by`) und Texte in Anführungszeichen bleiben unverändert.
+
 ## 0.9.6
 - **Variablen mit Schlüsselwort-Namen** (`by`, `to`, `step`, `in`, `new`, `do` …): Die Hervorhebung erkennt
   Schlüsselwörter jetzt am Zusammenhang (`by := 5` bleibt eine Variable, `for i := 1 to n by 2` hat das Schlüsselwort
