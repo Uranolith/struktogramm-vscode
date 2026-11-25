@@ -188,12 +188,13 @@ class BaseGen {
     const REL = new Set(['<', '>', '<=', '>=', '=', '<>', '!=', '==']);
     const inputVars = new Set();
     const cands = new Set(); // Variablen, deren Typ abgeleitet werden darf
-    const exprs = [], assigns = [], cases = [];
+    const exprs = [], assigns = [], cases = [], eachs = [];
     walk(root.children, (el) => {
       if (el.disabled) return false;
       if (el.type === 'for') {
         const f = P.parseForText(linesOf(el).join(' '));
         if (f && f.kind === 'count') [f.start, f.end].forEach((e) => { const toks = P.ptoks(e); if (toks.length === 1 && toks[0].t === 'id' && !types.get(toks[0].v) && !explicit.has(toks[0].v)) types.set(toks[0].v, 'int'); else exprs.push(e); });
+        if (f && f.kind === 'each' && SIMPLE_IDENT.test(f.var)) { cands.add(f.var); eachs.push([f.var, f.coll]); }
         return;
       }
       if (['instruction', 'call', 'jump'].includes(el.type)) {
@@ -250,7 +251,9 @@ class BaseGen {
       }
       return [t];
     };
-    const set = (n, t) => { if (!open(n) || !t) return false; types.set(n, t); return true; };
+    // Schleifenvariablen von foreach bekommen ihren Typ nur aus der Sammlung (z = "n" macht aus dem Zeichen keinen Text)
+    const eachVars = new Set(eachs.map((e) => e[0]));
+    const set = (n, t, fromEach) => { if (!open(n) || !t || (eachVars.has(n) && !fromEach)) return false; types.set(n, t); return true; };
     const opOf = (x) => x && (x.t === 'op' ? x.v : x.t === 'id' && ['div', 'mod'].includes(x.v.toLowerCase()) ? x.v.toLowerCase() : null);
     let weak = false; // zweite Stufe: a + b mit zwei unbekannten Eingaben gilt als Rechnung
     // In einer Summe, die einer Kommazahl zugewiesen wird (umfang := a + b + c), sind die Eingaben Kommazahlen –
@@ -272,6 +275,13 @@ class BaseGen {
     };
     const step = () => {
       let changed = false;
+      // foreach w in werte: Elementtyp der Sammlung (Text: einzelne Zeichen) – zuerst, er ist eindeutig
+      for (const [v, coll] of eachs) {
+        if (!open(v)) continue;
+        const ct = P.normType(P.inferType(coll, types, fnTypes));
+        if (ct && ct.endsWith('[]')) changed = set(v, ct.slice(0, -2), true) || changed;
+        else if (ct === 'string') changed = set(v, 'char', true) || changed;
+      }
       for (const [target, expr] of assigns) if (P.normType(types.get(target)) === 'double') changed = toDouble(expr) || changed;
       for (const e of exprs) {
         const toks = P.ptoks(e);
@@ -355,7 +365,9 @@ class BaseGen {
           forDecl.set(el, !seen.has(f.var) && !explicit.has(f.var) && !params.has(f.var));
           identsOf(f.kind === 'count' ? `${f.start} ${f.end} ${f.step}` : f.coll).forEach((n) => seen.add(n));
         }
-      } else {
+      } else if (el.type !== 'repeat') {
+        // Bedingung der fußgesteuerten Schleife wird erst nach dem Rumpf ausgewertet: ihre Variablen (repeat INPUT x
+        // until x > 0) nicht vorab als „verwendet“ zählen, sonst entfiele die Deklaration im Rumpf
         identsOf(linesOf(el).join(' ')).forEach((n) => seen.add(n));
       }
     });
@@ -744,7 +756,11 @@ class BaseGen {
       if (isLast && label === '%') continue;
       let values = isLast ? [] : splitTop(P.ptoks(label), ',').map(joinTokens).filter(Boolean);
       // Fallauswahl über Text: 'G' als Text-Marke "G" (sonst in Java, C#, Kotlin, Rust … ein einzelnes Zeichen)
-      if (this.cur && TYPED_LANGS.has(this.lang) && P.normType(this.exprType(String(el.text[0] || ''))) === 'string') {
+      const discText = String(el.text[0] || '').trim();
+      // Fallauswahl über ein Zeichen (foreach z in wort: case z of "a", "e"): Marken als Zeichen-Literale 'a'
+      if (this.cur && TYPED_LANGS.has(this.lang) && SIMPLE_IDENT.test(discText) && P.normType(this.typeOf(discText)) === 'char') {
+        values = values.map((v) => (/^"(?:[^"\\]|\\.)"$/.test(v) ? `'${v.slice(1, -1) === "'" ? "\\'" : v.slice(1, -1)}'` : v));
+      } else if (this.cur && TYPED_LANGS.has(this.lang) && P.normType(this.exprType(discText)) === 'string') {
         values = values.map((v) => (/^'(?:[^'\\]|\\.)'$/.test(v) ? `"${v.slice(1, -1) === '"' ? '\\"' : v.slice(1, -1)}"` : v));
       }
       res.push({ isDefault: isLast, values, body: el.branches[k] });
@@ -1145,17 +1161,37 @@ class CGen extends BaseGen {
       out.push(ind + `for (${tn}${v} = ${this.x(f.start)}; ${v} ${cmp} ${this.x(end)}; ${inc}) {`);
     } else {
       const v = f.var;
-      const coll = this.x(f.coll);
+      let coll = this.x(f.coll);
       const t = this.typeOf(v);
+      // Feld-Literal im Schleifenkopf (foreach k in {1, 2, 3}) je Sprache als gültiges Feld
+      const lit = isArrayLit(f.coll);
+      const items = lit ? arrayItems(f.coll) : [];
+      const et = lit ? (P.normType(this.exprType(items[0] || '0')) || 'int') : null;
+      const vals = items.map((i) => this.x(i)).join(', ');
+      if (lit) coll = { java: `new ${this.typeName(et)}[] {${vals}}`, csharp: `new ${this.typeName(et)}[] { ${vals} }`, javascript: `[${vals}]`, cpp: `{${vals}}` }[L] || coll;
+      // foreach über einen Text: Zeichen für Zeichen
+      const isText = !lit && P.normType(this.exprType(f.coll)) === 'string';
+      const tn = t ? this.typeName(t) : (L === 'java' || L === 'csharp' ? 'var' : 'int');
       switch (L) {
-        case 'java': out.push(ind + `for (${t ? this.typeName(t) : 'var'} ${v} : ${coll}) {`); break;
-        case 'csharp': out.push(ind + `foreach (${t ? this.typeName(t) : 'var'} ${v} in ${coll}) {`); break;
+        case 'java': out.push(ind + `for (${tn} ${v} : ${isText ? `${/^[\w.]+$/.test(coll) ? coll : `(${coll})`}.toCharArray()` : coll}) {`); break;
+        case 'csharp': out.push(ind + `foreach (${tn} ${v} in ${coll}) {`); break;
         case 'cpp': out.push(ind + `for (auto ${v} : ${coll}) {`); break;
         case 'javascript': out.push(ind + `for (const ${v} of ${coll}) {`); break;
         default:
+          if (isText) {
+            // C: bis zum Textende ('\0'), nicht sizeof (das wäre die Puffergröße)
+            out.push(ind + `for (int _i = 0; ${coll}[_i] != '\\0'; _i++) {`, ind + this.I + `char ${v} = ${coll}[_i];`);
+            break;
+          }
+          if (lit) {
+            // C kennt kein Feld-Literal im Schleifenkopf: Hilfsfeld davor
+            const tmp = `_feld${(this.tmpCount = (this.tmpCount || 0) + 1)}`;
+            out.push(ind + `${this.typeName(et)} ${tmp}[] = {${vals}};`);
+            coll = tmp;
+          }
           out.push(ind + this.comment(tr('gen.foreachC', v, f.coll)));
           out.push(ind + `for (int _i = 0; _i < (int)(sizeof(${coll}) / sizeof(${coll}[0])); _i++) {`);
-          out.push(ind + this.I + `${t ? this.typeName(t) : 'int'} ${v} = ${coll}[_i];`);
+          out.push(ind + this.I + `${tn} ${v} = ${coll}[_i];`);
       }
     }
     out.push(...body, ind + '}');
@@ -1950,7 +1986,7 @@ class KtGen extends CGen {
     const f = P.parseForText(text);
     const body = this.seq(el.body, ind + this.I);
     if (!f) return [ind + this.comment(tr('gen.todoLoop', text)), ind + 'while (true) {', ...body, ind + this.I + 'break', ind + '}'];
-    if (f.kind === 'each') return [ind + `for (${f.var} in ${this.x(f.coll)}) {`, ...body, ind + '}'];
+    if (f.kind === 'each') return [ind + `for (${f.var} in ${isArrayLit(f.coll) ? this.val(null, f.coll) : this.x(f.coll)}) {`, ...body, ind + '}'];
     const step = f.step.replace(/\s+/g, '');
     const neg = step.startsWith('-');
     const abs = neg ? step.slice(1).replace(/^\((.*)\)$/, '$1') : step;

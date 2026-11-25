@@ -518,9 +518,12 @@ function stringCompare(toks, lang, ctx) {
   const k = rels[0];
   const L = toks.slice(0, k), R = toks.slice(k + 1);
   if (!L.length || !R.length) return null;
-  const typeOf = (part) => { try { return normType(ctx.exprType ? ctx.exprType(joinTokens(part)) : inferType(joinTokens(part))); } catch (e) { return null; } };
+  const typeOf = (part) => operandType(part, ctx);
   const lit = (part) => part.length === 1 && part[0].t === 'str' && part[0].v[0] === '"';
   const isStr = (part) => lit(part) || typeOf(part) === 'string';
+  // Zeichen (char) vergleichen alle Sprachen direkt
+  const isChar = (part) => typeOf(part) === 'char' || (part.length === 1 && part[0].t === 'str' && CHAR_LIT.test(part[0].v));
+  if (isChar(L) || isChar(R)) return null;
   if (!isStr(L) && !isStr(R)) return null;
   const v = toks[k].v;
   const op = v === '=' || v === '==' || v === '===' ? '==' : v === '<>' || v === '!=' || v === '!==' ? '!=' : v;
@@ -576,25 +579,40 @@ function operandRight(toks, k) {
   return e;
 }
 
+/** Typ eines Operanden; eine einzelne Variable mit ihrem eigenen Typ (ein char bleibt char, inferType macht Text daraus) */
+function operandType(part, ctx) {
+  try {
+    if (part.length === 1 && part[0].t === 'id' && ctx.typeOf) { const t = normType(ctx.typeOf(part[0].v)); if (t) return t; }
+    return normType(ctx.exprType ? ctx.exprType(joinTokens(part)) : inferType(joinTokens(part)));
+  } catch (e) { return null; }
+}
+
 /**
  * Ein einzelnes Zeichen in einfachen Anführungszeichen ('G') ist im Structorizer auch Text. Wird es mit einem Text
  * verglichen (kundentyp = 'G'), als Text-Literal "G" schreiben – sonst wäre es in Java, C, C#, Kotlin, Rust ein char.
+ * Umgekehrt wird "a" im Vergleich mit einem Zeichen (foreach z in wort: z = "a") zum Zeichen-Literal 'a'.
  */
 const CHAR_LIT = /^'(?:[^'\\]|\\.)'$/;
+const STR1_LIT = /^"(?:[^"\\]|\\.)"$/;
 function charsToStrings(toks, ctx) {
   let res = null;
-  const typeOf = (a, b) => { try { return normType(ctx.exprType ? ctx.exprType(joinTokens(toks.slice(a, b))) : inferType(joinTokens(toks.slice(a, b)))); } catch (e) { return null; } };
+  const typeOf = (a, b) => operandType(toks.slice(a, b), ctx);
   for (let k = 0; k < toks.length; k++) {
     if (!REL_OPS.has(toks[k].v)) continue;
     const s = operandLeft(toks, k), e = operandRight(toks, k);
     for (const [lit, a, b] of [[k - 1, k + 1, e], [k + 1, s, k]]) {
       const t = toks[lit];
       const single = lit === k - 1 ? s === k - 1 : e === k + 2;
-      if (!t || t.t !== 'str' || !CHAR_LIT.test(t.v) || !single) continue;
-      if (typeOf(a, b) !== 'string') continue;
-      res = res || toks.slice();
+      if (!t || t.t !== 'str' || !single) continue;
+      const other = typeOf(a, b);
       const inner = t.v.slice(1, -1);
-      res[lit] = { ...t, v: '"' + (inner === '"' ? '\\"' : inner) + '"' };
+      if (CHAR_LIT.test(t.v) && other === 'string') {
+        res = res || toks.slice();
+        res[lit] = { ...t, v: '"' + (inner === '"' ? '\\"' : inner) + '"' };
+      } else if (STR1_LIT.test(t.v) && other === 'char') {
+        res = res || toks.slice();
+        res[lit] = { ...t, v: "'" + (inner === "'" ? "\\'" : inner) + "'" };
+      }
     }
   }
   return res || toks;
@@ -959,6 +977,13 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
   const toks = ptoks(expr);
   if (!toks.length) return null;
   if (toks.length === 1 && toks[0].t === 'str') return (toks[0].v.length === 3 && toks[0].v[0] === "'") ? 'char' : 'string';
+  // eine Feldvariable allein hat ihren Feldtyp (foreach name in namen -> string[])
+  if (toks.length === 1 && toks[0].t === 'id' && varTypes.has(toks[0].v)) {
+    const vt = normType(varTypes.get(toks[0].v));
+    if (vt && vt.endsWith('[]')) return vt;
+    // ein einzelnes Zeichen bleibt ein Zeichen (in Ausdrücken wie z + "x" wird daraus Text, siehe unten)
+    if (vt === 'char') return 'char';
+  }
   // chr(…) allein ist ein Zeichen
   if (toks.length >= 3 && toks[0].t === 'id' && toks[0].v.toLowerCase() === 'chr' && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1) return 'char';
   // Record-Literal Punkt{…} hat den Typ Punkt
