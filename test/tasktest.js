@@ -24,6 +24,9 @@ const { spawnSync } = require('child_process');
 const { fromNsd } = require('../src/core/nsdxml');
 const { generateCode, TARGETS } = require('../src/core/generators');
 const S = require('./languages');
+// Kommentare im erzeugten Code in der Sprache der Erweiterung (Einstellung struktogramm.language)
+const CODE_LANG = require('./vscodelang').codeLanguage([path.join(__dirname, 'samples'), path.join(__dirname, '..')]);
+require('../src/i18n').setLanguage(CODE_LANG.lang);
 
 const SAMPLES = path.join(__dirname, 'samples');
 const CODEFILES = path.join(SAMPLES, 'codefiles');
@@ -33,6 +36,7 @@ let out = path.join(__dirname, 'out', 'tasktest.xlsx');
 const langFilter = [], fileFilter = [];
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--out') out = path.resolve(args[++i]);
+  else if (args[i] === '--sprache' || args[i] === '--lang') i++; // Sprache der Kommentare (test/vscodelang.js)
   else if (TARGETS[args[i]]) langFilter.push(args[i]);
   else fileFilter.push(args[i]);
 }
@@ -90,6 +94,7 @@ console.log(bold('Aufgabentest') + gray(` – ${started.toLocaleString('de-DE')}
 const groups = [...new Set(selected.map((s) => s.group))];
 console.log(`${selected.length} Aufgaben × ${LANGS.length} Sprachen` + (groups.length ? gray(` – ${groups.map((g) => g || '(samples)').join(', ')}`) : '') +
   (fileFilter.length || langFilter.length ? gray(' (Auswahl)') : ''));
+console.log(`Kommentare im Code: ${CODE_LANG.lang === 'de' ? 'Deutsch' : 'Englisch'}` + gray(` – ${CODE_LANG.source}`));
 
 /* ------------------------------------------------------------------ */
 /* 1. Code erzeugen                                                   */
