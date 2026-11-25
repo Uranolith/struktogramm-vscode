@@ -39,7 +39,7 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
 - **Live-Vorschau**: Symbol oben rechts im Code-Editor – das Struktogramm aktualisiert sich beim Tippen.
 - **Grafischer Editor** für `.nsd`-Dateien: Elemente einfügen, bearbeiten (Doppelklick), ziehen,
   kopieren/einfügen, Kontextmenü, Farben, Kommentare, Rückgängig.
-- **Struktogramm → Code**: Python, Java, C, C++, C#, JavaScript (Node.js), Pascal, Kotlin, Rust.
+- **Struktogramm → Code**: Python, Java, C, C++, C#, JavaScript (Node.js), Kotlin, Rust.
   - **Live-Code**: Der erzeugte Code öffnet sich als ungespeichertes Dokument und folgt jeder Änderung am
     Struktogramm. In der Statusleiste steht dann *Live: datei.nsd*. Die Verbindung endet, sobald du den Code
     speicherst, selbst bearbeitest oder schließt; ein Klick auf die Statusanzeige beendet sie sofort.
@@ -75,11 +75,28 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   - Wie bei anderen Debuggern
     speichert VS Code die Datei vor dem Start (`debug.saveBeforeStart`); unbenannte Struktogramme laufen ohne
     Debug-Sitzung.
+- **Prüfungen beim Bearbeiten**: Jedes Element zeigt oben rechts eine Marke, wenn etwas nicht stimmt; beim
+  Darüberfahren zeigt ein Hover-Fenster die Meldung gegliedert (Aussage, Vorschlag, Begründung), die Ansicht
+  *Probleme* listet alle.
+  - **Fehler** (rot, „!“) – funktioniert so nicht: Syntaxfehler, Variable ohne Wert, unbekannte Funktion, falsche Zahl
+    von Argumenten, `leave` außerhalb einer Schleife, Division durch 0, unlesbarer Schleifenkopf, leere Bedingung.
+  - **Hinweise** (gelb, „i“, jeweils mit Begründung) – Good Practice und DIN 66261: Variable, Parameter oder
+    Rückgabewert ohne Typ (mit Vorschlag, z. B. `var summe: int`), Eingabe ohne Aufforderungstext, Kommazahlen mit `=`
+    verglichen, Fallauswahl über eine Bedingung, mehrere Anweisungen in einem Block, mögliche Endlosschleife, Wert wird
+    nie verwendet, nicht erreichbare Elemente, Variable mal Text, mal Zahl.
+  - In *Probleme* trägt jede Meldung den Link **Element zeigen**: Er holt das Struktogramm nach vorn (bzw. öffnet es)
+    und markiert das Element. Ein Klick auf die Zeile selbst öffnet nur das Struktogramm – die Fundstelle gibt
+    VS Code an eigene Editoren nicht weiter.
+  - **F8 / Umschalt+F8** springt wie in VS Code zum nächsten bzw. vorherigen Element mit einer Meldung und zeigt sie
+    darunter an.
+  - Beispiele: `test/samples/checks/errors.nsd` und `hints.nsd` (absichtlich fehlerhaft; der Kommentar jedes
+    Elements – sichtbar beim Bearbeiten – nennt die erwartete Meldung).
+  - Einstellung `struktogramm.checks`: Fehler und Hinweise (Standard), nur Fehler oder keine Prüfungen.
 - **Original-Structorizer** (optional, benötigt Java 11+): wird beim ersten Gebrauch von GitHub
   heruntergeladen (Befehl *Structorizer herunterladen oder einrichten...*).
-  - *Code aus Struktogramm erzeugen...* bietet zusätzlich alle 18 Structorizer-Generatoren an (u.a. PHP, Perl, BASIC,
-    Bash, Oberon, Delphi, LaTeX/StrucTeX).
-  - Pascal/Delphi-, COBOL- und Processing-Dateien werden mit dem Structorizer-Parser eingelesen;
+  - *Code aus Struktogramm erzeugen...* bietet zusätzlich 16 Structorizer-Generatoren an (u.a. PHP, Perl, BASIC,
+    Bash, Oberon, LaTeX/StrucTeX).
+  - COBOL- und Processing-Dateien werden mit dem Structorizer-Parser eingelesen;
     für C/Java gibt es *Struktogramm aus Code erzeugen (Structorizer-Parser)*.
   - *Im Structorizer öffnen* startet die Structorizer-Oberfläche mit dem Diagramm.
 - **Export** als SVG, PNG, JSON, XML, KI-kompakter Pseudocode und einzelne Structorizer-Dateien (siehe [Export](#export)).
@@ -132,13 +149,16 @@ Beim Erzeugen von Code werden diese Befehle in die Zielsprache übersetzt, z.B. 
 `s.upper()` (Python) / `s.toUpperCase()` (Java), `try` → `try/catch/finally` (in C mit `setjmp`, in Rust mit
 `catch_unwind`), Records → Klassen/Structs, `leave 2` → `break L1` bzw. `goto`. Eine Fallauswahl mit `true` als Ausdruck und
 Bedingungen als Marken (`case true of  kdnr < 2000: …`) wird zu `switch (true)` (JavaScript),
-`switch (true) { case true when … }` (C#), `when { … }` (Kotlin) bzw. `match true { _ if … }` (Rust); in Java, C, C++,
-Pascal und Python, wo `case`-Marken Konstanten sein müssen, zu einer `if / else if`-Kette. Turtle-Befehle werden für
+`switch (true) { case true when … }` (C#), `when { … }` (Kotlin) bzw. `match true { _ if … }` (Rust); in Java, C, C++
+und Python, wo `case`-Marken Konstanten sein müssen, zu einer `if / else if`-Kette. Turtle-Befehle werden für
 Python in das Modul `turtle` übersetzt; die Datei-API wird nur ausgeführt, nicht übersetzt.
+Textvergleiche (`name < "m"`, `a = b`, auch in Fallauswahl und Schleifenbedingungen) werden je Sprache passend
+übersetzt – Java `compareTo`/`equals`, C `strcmp`, C# `string.CompareOrdinal`, Rust `as_str()`, in C und C++ wird eine
+Fallauswahl über einen Text zur `if / else if`-Kette; verglichen wird wie im Interpreter zeichenweise.
 
 **Parallelverarbeitung** wird zu echten Threads: Python `threading`, Java je Zweig eine Thread-Klasse,
 C# `Parallel.Invoke`, C++ `std::thread`, C OpenMP (`#pragma omp parallel sections`, mit `-fopenmp` übersetzen),
-Kotlin `thread { }`, Rust `std::thread::scope`, Pascal `BeginThread`. Das Programm wartet, bis alle Zweige
+Kotlin `thread { }`, Rust `std::thread::scope`. Das Programm wartet, bis alle Zweige
 fertig sind. In Java arbeitet jeder Zweig mit Kopien der Variablen, geänderte Werte werden danach übernommen.
 Beim Ausführen im Editor laufen die Zweige dagegen nacheinander. Ein Beispiel mit allen Elementen, Rekursion und
 Parallelverarbeitung ist `test/samples/gesamttest.nsd`.
@@ -246,17 +266,27 @@ Rust-Code werden Zeichenketten und Arrays bei Funktionsaufrufen mit `.clone()` �
 Parallelverarbeitung im erzeugten Code:
 - **Rust** lässt nicht zu, dass ein Zweig eine Variable ändert, die ein anderer Zweig verwendet – der Compiler
   meldet dann einen Fehler (das wäre ein Datenwettlauf).
-- **Pascal** erzeugt Threads nur im Hauptprogramm; in Unterprogrammen laufen die Zweige nacheinander, weil
-  Thread-Funktionen nur globale Variablen sehen. Felder brauchen Free Pascal ab 3.2.
 - **JavaScript** kennt keine Threads mit gemeinsamen Variablen, die Zweige laufen nacheinander. Für `INPUT`
   braucht der erzeugte Code das Paket `prompt-sync` (`npm install prompt-sync`), das in einem Terminal laufen muss.
 - **C** braucht `-fopenmp`, sonst laufen die Zweige nacheinander.
 
 ## Entwicklung
-`node test/sprachtest.js` führt `test/samples/gesamttest.nsd` mit dem eingebauten Interpreter aus, erzeugt Code für
-alle Zielsprachen, übersetzt und startet ihn und vergleicht die Ausgaben. Sprachen ohne installierten Compiler
-werden übersprungen; ein anderes Struktogramm und die Eingabe lassen sich angeben
-(`node test/sprachtest.js datei.nsd --input 3 python rust`).
+- **Aufgabentest** – `npm test`, `test	asktest.cmd` oder in VS Code *Terminal → Task ausführen… → Aufgabentest*:
+  übersetzt alle Struktogramme in den Themenordnern unter `test/samples` in alle Zielsprachen, baut und startet sie
+  mit den echten Compilern, vergleicht die Ausgaben mit dem eingebauten Interpreter und schreibt das Ergebnis
+  (O = erfolgreich, X = nicht erfolgreich, – = Compiler fehlt) nach `test/out/tasktest.xlsx`. Der erzeugte Code liegt
+  danach in `test/samples/codefiles` (wird bei jedem Lauf neu erzeugt). Einzelne Sprachen oder Ordner:
+  `node test/tasktest.js java edge_cases`.
+  - `test/samples/edge_cases`: Grenzfälle der Code-Erzeugung (Textverkettung, große Zahlen, Runden, Schleifen …);
+    einige sind noch offen und stehen im Protokoll als X.
+  - `test/samples/checks`: Beispiele für die Prüfungen im Editor (absichtlich fehlerhaft, vom Aufgabentest
+    übersprungen).
+  - Testfälle je Ordner in `inputs.json`: je Struktogramm eine Liste von Eingabefolgen (eine Zeile je `INPUT`);
+    `"_tasktest": false` schließt einen Ordner aus.
+  - Das Excel-Protokoll braucht Python mit `openpyxl` (`pip install openpyxl`).
+- **Sprachtest** – `node test/langtest.js datei.nsd --input 3 python rust`: ein einzelnes Struktogramm mit einer
+  Eingabe in alle (oder die genannten) Sprachen übersetzen, ausführen und mit dem Interpreter vergleichen; ohne
+  Angabe `test/samples/gesamttest.nsd`. Sprachen ohne installierten Compiler werden übersprungen.
 
 ## Lizenz
 Diese Extension steht unter der MIT-Lizenz. Structorizer (© Bob Fisch, Kay Gürtzig u.a.) ist ein

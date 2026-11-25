@@ -1,5 +1,58 @@
 # Änderungen
 
+## 0.9.6
+- **Variablen mit Schlüsselwort-Namen** (`by`, `to`, `step`, `in`, `new`, `do` …): Die Hervorhebung erkennt
+  Schlüsselwörter jetzt am Zusammenhang (`by := 5` bleibt eine Variable, `for i := 1 to n by 2` hat das Schlüsselwort
+  `by`), und der Zählschleifenkopf liest `by`/`step` nur zwischen Endwert und Schrittweite als Schlüsselwort
+  (`for i := 1 to by` hat den Endwert `by`).
+- **Vorschlagsliste im Bearbeiten-Dialog** wird nicht mehr abgeschnitten: Sie erscheint unter oder über der Zeile, je
+  nachdem wo mehr Platz ist, und wird bei wenig Platz niedriger und scrollbar.
+- **Prüfungen im Struktogramm:** Marken an den Elementen (Tooltip beim Darüberfahren) und Einträge in *Probleme*.
+  **Fehler** (rot) für Dinge, die nicht funktionieren (Syntaxfehler, Variable ohne Wert, unbekannte Funktion,
+  Argumentzahl, `leave` außerhalb einer Schleife, Division durch 0, unlesbarer Schleifenkopf, leere Bedingung);
+  **Hinweise** (gelb, mit Begründung) für Good Practice und DIN 66261 (Typen für Variablen, Parameter und
+  Rückgabewerte mit Vorschlag, Eingabe ohne Aufforderungstext, Kommazahl-Vergleich mit `=`, Fallauswahl über eine
+  Bedingung, mehrere Anweisungen je Block, mögliche Endlosschleife, unbenutzte Werte, nicht erreichbare Elemente,
+  Typwechsel). Einstellung `struktogramm.checks` (alle / nur Fehler / aus). **F8 / Umschalt+F8** springt zum
+  nächsten / vorherigen Element mit Meldung und blendet sie ein. In *Probleme* markiert der Link **Element zeigen**
+  an jeder Meldung das Element im Struktogramm. Beispiele in `test/samples/checks`.
+  Tooltips zeigen im Editor nur noch die Marken – als gegliedertes Hover-Fenster (Aussage, Vorschlag als Code,
+  Begründung); der Kommentar eines Elements erscheint nicht mehr als Tooltip am Element (weiterhin beim Bearbeiten
+  und im SVG-Export).
+- Behoben: Ein geschlossener Struktogramm-Editor blieb intern eingetragen (seit 0.9.5) – das Aufräumen brach beim
+  Zugriff auf die schon geschlossene Webansicht ab.
+- **Schleifen im erzeugten Code:**
+  - `foreach` über ein Feld-Literal im Schleifenkopf (`foreach k in {1, 2, 3}`) wird je Sprache gültig: Java/C# `new int[] {…}`, JavaScript `[…]`, Kotlin `intArrayOf(…)`, C mit Hilfsfeld.
+  - `foreach` über einen Text läuft Zeichen für Zeichen: Java `toCharArray()`, Rust `chars()`, C bis zum Textende statt über die Puffergröße. Vergleiche und Fallauswahl mit einem Zeichen nutzen Zeichen-Literale (`'a'`).
+  - Die Schleifenvariable von `foreach` über ein Textfeld bekommt den richtigen Typ (vorher `int` in C, `var` in Java).
+  - In `repeat … until` eingelesene Variablen, die nur in der Abbruchbedingung vorkommen (`repeat INPUT x until x > 0`), werden vor der Schleife deklariert (vorher fehlte die Deklaration).
+- **Pascal entfernt:** Struktograf erzeugt keinen Pascal-Code mehr, bietet die Structorizer-Generatoren für Pascal und
+  Delphi nicht mehr an und liest keine Pascal/Delphi-Dateien (`.pas`, `.dpr`, `.pp`, `.lpr`) mehr ein. Die
+  Structorizer-Schreibweise im Struktogramm (`:=`, `div`, `mod`) bleibt unverändert.
+- **Typen eingelesener Variablen wie im Interpreter:** Eine Eingabe ist eine Zahl, wenn mit ihr gerechnet oder sie mit
+  einer Zahl verglichen wird (auch über Fallauswahl-Marken), sonst Text. Fließt sie in eine Kommazahl ein
+  (`umfang := a + b + c`), wird sie als Kommazahl gelesen. Vorher wurden Zahlen oft als Text gelesen (`7 + 3 = 73`)
+  und Namen als Zahl.
+- **Ausgabe von Kommazahlen wie im Interpreter** in allen Sprachen: `80.0` statt `80`, vollständig statt gerundet
+  (C/C++ schrieben nur 6 Stellen).
+- **Ganzzahldivision schneidet ab** wie im Interpreter (`-3 / 4` = `0`): Python `int(a / b)`, JavaScript
+  `Math.trunc(a / b)` – je Division nach den Operandentypen bestimmt.
+- **`'G'` im Vergleich mit Text** wird in Java, C, C++, C#, Kotlin und Rust zum Text-Literal `"G"`.
+- **Fallauswahl über eine Bedingung** (`case a = 0` mit den Marken `true`/`false`) wird zu if/else (vorher ungültiges
+  `switch` bzw. in Python `a == 0 == True`).
+- `pi` wird in jeder Sprache übersetzt; Java liest Eingaben zeilenweise (kein leeres `nextLine()` nach `nextInt()`,
+  Kommazahlen mit Punkt); C kopiert Texte mit `strcpy`; Kotlin wandelt Ganzzahl-Ausdrücke für Kommazahl-Variablen
+  um.
+- **Aufgabentest** (`npm test`, `testufgabentest.cmd` oder VS-Code-Aufgabe): übersetzt alle Struktogramme in den
+  Themenordnern unter `test/samples` (`branching`, `edge_cases`) in alle Sprachen, baut und startet sie
+  mit den echten Compilern, vergleicht mit dem Interpreter und protokolliert das Ergebnis in
+  `test/out/tasktest.xlsx`; Testfälle je Ordner in `inputs.json`, der erzeugte Code liegt in
+  `test/samples/codefiles`.
+- **Textvergleiche im erzeugten Code:** `a < b`, `a = b` usw. mit Zeichenketten werden in allen Sprachen gültig und
+  richtig übersetzt. Vorher: Java verglich mit `==` die Referenzen statt des Inhalts und lehnte `<` ab, C verglich
+  Zeiger, C# und Rust (`String < "x"`) übersetzten nicht. Jetzt Java `compareTo`/`equals`, C `strcmp`,
+  C# `string.CompareOrdinal`, Rust `as_str()`; eine Fallauswahl über einen Text wird in C und C++ zur if-Kette.
+
 ## 0.9.5
 - **Echte Debug-Sitzung in VS Code:** Jede Ausführung eines gespeicherten Struktogramms läuft als Debug-Sitzung
   (eigener Debug-Adapter): Debug-Leiste mit Fortsetzen, Schritt über (F10), Schritt hinein (F11), Rücksprung
@@ -52,7 +105,7 @@
   `double.Parse("0.5")` = 5 auf deutschem Windows).
 - Pascal: Heißt das Programm wie eine Variable (`Rabatt` / `rabatt`), wird der Programmname angepasst – Pascal
   unterscheidet keine Groß- und Kleinschreibung.
-- `test/sprachtest.js`: mehrere Eingaben mit `--input 1500,1000`.
+- `test/langtest.js`: mehrere Eingaben mit `--input 1500,1000`.
 - **Ungleich lange Zweige** in Verzweigung, Fallauswahl und Parallelverarbeitung: Das letzte Element des kürzeren
   Zweigs wird auf die volle Höhe gestreckt (wie im Structorizer) statt eine leere Fläche zu lassen. Schleifen,
   Verzweigungen, Try und Parallelverarbeitung geben die zusätzliche Höhe an ihren Inhalt weiter.
@@ -75,7 +128,7 @@
 - Pascal: Feld-Literale `{1, 2, 3}` werden als `[1, 2, 3]` erzeugt (vorher als Kommentar missverstanden).
 - Zählvariablen gelten im Schleifenrumpf als deklariert (keine doppelte Deklaration in C, C++, Java, C#).
 - Neues Beispiel `test/samples/gesamttest.nsd` (alle Elemente, Rekursion, Parallelverarbeitung) und
-  `test/sprachtest.js`, das es in allen Zielsprachen übersetzt, ausführt und mit dem Interpreter vergleicht.
+  `test/langtest.js`, das es in allen Zielsprachen übersetzt, ausführt und mit dem Interpreter vergleicht.
 
 ## 0.9.0
 - README an den neuen Arbeitsbereich angepasst: Werkzeug-Ansicht, Ausführungs-Panel mit den Reitern
