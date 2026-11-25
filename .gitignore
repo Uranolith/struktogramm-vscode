@@ -1,4 +1,5 @@
 *.vsix
 test/out/
+test/samples/codefiles
 __pycache__/
 node_modules/

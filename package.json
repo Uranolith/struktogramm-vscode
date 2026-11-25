@@ -38,6 +38,9 @@
     "cobol"
   ],
   "main": "./src/extension.js",
+  "scripts": {
+    "test": "node test/tasktest.js"
+  },
   "activationEvents": [
     "onDebugResolve:struktogramm",
     "onDebugDynamicConfigurations:struktogramm",

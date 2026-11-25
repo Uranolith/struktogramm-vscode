@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-25" changedby="" changed="2026-11-25" origin="Struktograf (VS Code)" text="&#34;Spezialfall 15: for rückwärts und mit Schrittweite&#34;" comment="&#34;Zählschleifen mit negativer und positiver Schrittweite.&#34;" color="ffffff" type="program" style="nice">
+	<children>
+		<for text="&#34;for i := 10 to 1 step -3&#34;" comment="&#34;&#34;" color="ffffff" counterVar="i" startValue="10" endValue="1" stepConst="-3" style="COUNTER" disabled="0">
+			<qFor>
+				<instruction text="&#34;OUTPUT i&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qFor>
+		</for>
+		<for text="&#34;for k := 0 to 10 step 5&#34;" comment="&#34;&#34;" color="ffffff" counterVar="k" startValue="0" endValue="10" stepConst="5" style="COUNTER" disabled="0">
+			<qFor>
+				<instruction text="&#34;OUTPUT k&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qFor>
+		</for>
+	</children>
+</root>

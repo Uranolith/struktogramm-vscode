@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-25" changedby="" changed="2026-11-25" origin="Struktograf (VS Code)" text="&#34;Spezialfall 11: Zeichen zählen&#34;" comment="&#34;Schleife über einen eingelesenen Text mit copy(s, i, 1).&#34;" color="ffffff" type="program" style="nice">
+	<children>
+		<instruction text="&#34;INPUT s&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;n := 0&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+		<for text="&#34;for i := 1 to length(s)&#34;" comment="&#34;&#34;" color="ffffff" counterVar="i" startValue="1" endValue="length(s)" stepConst="1" style="COUNTER" disabled="0">
+			<qFor>
+				<alternative text="&#34;copy(s, i, 1) = &#34;&#34;a&#34;&#34;&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+					<qTrue>
+						<instruction text="&#34;n := n + 1&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+					</qTrue>
+					<qFalse>
+					</qFalse>
+				</alternative>
+			</qFor>
+		</for>
+		<instruction text="&#34;OUTPUT n&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+	</children>
+</root>

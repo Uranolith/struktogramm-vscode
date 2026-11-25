@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Aufgabentest: alle Aufgaben, alle Sprachen",
+      "type": "shell",
+      "command": "node",
+      "args": ["test/tasktest.js"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Aufgabentest: Auswahl …",
+      "type": "shell",
+      "command": "node",
+      "args": ["test/tasktest.js", "${input:selection}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Aufgabentest: Excel-Protokoll öffnen",
+      "type": "shell",
+      "command": "start",
+      "args": ["\"\"", "test\\out\\tasktest.xlsx"],
+      "options": { "cwd": "${workspaceFolder}", "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] } },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "selection",
+      "type": "promptString",
+      "description": "Sprachen und/oder Aufgaben, mit Leerzeichen getrennt (z. B. „java python“ oder „06a 07“)",
+      "default": "python"
+    }
+  ]
+}

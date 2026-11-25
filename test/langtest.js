@@ -1,7 +1,7 @@
 // Sprachtest: ein Struktogramm mit dem eingebauten Interpreter ausführen (Referenz), mit dem eigenen
 // Generator in alle Zielsprachen übersetzen, kompilieren, ausführen und die Ausgaben vergleichen.
 //
-//   node test/sprachtest.js [datei.nsd] [--input 7] [python java ...]
+//   node test/langtest.js [datei.nsd] [--input 7] [python java ...]
 //   mehrere Eingaben (je INPUT eine Zeile): --input 1500,1000
 //
 // Standard: test/samples/gesamttest.nsd (alle Elementtypen, Rekursion, Parallelverarbeitung) mit Eingabe 7.
@@ -52,7 +52,7 @@ if (process.platform === 'win32') {
 const env = { ...process.env };
 const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
 env[pathKey] = [...extra, env[pathKey]].join(path.delimiter);
-const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'sprachtest-'));
+const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'langtest-'));
 const sh = (cmd, a, opts = {}) => spawnSync(opts.shell ? [cmd, ...a].join(' ') : cmd, opts.shell ? [] : a,
   { cwd: WORK, env, encoding: 'utf8', timeout: 300000, shell: !!opts.shell, input: opts.input });
 const has = (cmd) => { const r = sh(process.platform === 'win32' ? 'where' : 'which', [cmd]); return r.status === 0; };

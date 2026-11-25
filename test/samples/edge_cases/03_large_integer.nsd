@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-25" changedby="" changed="2026-11-25" origin="Struktograf (VS Code)" text="&#34;Spezialfall 03: Große Ganzzahl&#34;" comment="&#34;15! = 1307674368000 passt nicht in eine 32-Bit-Ganzzahl.&#34;" color="ffffff" type="program" style="nice">
+	<children>
+		<instruction text="&#34;f := 1&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+		<for text="&#34;for i := 1 to 15&#34;" comment="&#34;&#34;" color="ffffff" counterVar="i" startValue="1" endValue="15" stepConst="1" style="COUNTER" disabled="0">
+			<qFor>
+				<instruction text="&#34;f := f * i&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qFor>
+		</for>
+		<instruction text="&#34;OUTPUT f&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+	</children>
+</root>
