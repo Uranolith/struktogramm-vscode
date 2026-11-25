@@ -24,8 +24,8 @@ const { registerDebugger } = require('./debugLaunch');
 let extContext = null;
 
 /** Dateiendungen, die nur der Structorizer-Parser kann */
-const STRUCTORIZER_ONLY = /\.(pas|dpr|pp|lpr|cob|cbl|cobol|cpy|pde)$/i;
-const STRUCTORIZER_CAN = /\.(pas|dpr|pp|lpr|cob|cbl|cobol|cpy|pde|c|java)$/i;
+const STRUCTORIZER_ONLY = /\.(cob|cbl|cobol|cpy|pde)$/i;
+const STRUCTORIZER_CAN = /\.(cob|cbl|cobol|cpy|pde|c|java)$/i;
 
 /* ====================================================================== */
 /* Custom Editor für .nsd                                                  */

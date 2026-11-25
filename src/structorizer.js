@@ -23,15 +23,15 @@ const { t } = require('./i18n');
 /** Structorizer-Generatoren (Name für -x, Anzeige, VS-Code-Sprache) */
 const GENERATORS = [
   ['Python', 'Python', 'python'], ['Java', 'Java', 'java'], ['C', 'C', 'c'], ['C++', 'C++', 'cpp'],
-  ['C#', 'C#', 'csharp'], ['Javascript', 'JavaScript', 'javascript'], ['Pascal', 'Pascal', 'pascal'],
-  ['Delphi', 'Delphi (Object Pascal)', 'pascal'], ['Oberon', 'Oberon', 'plaintext'], ['PHP', 'PHP', 'php'],
+  ['C#', 'C#', 'csharp'], ['Javascript', 'JavaScript', 'javascript'],
+  ['Oberon', 'Oberon', 'plaintext'], ['PHP', 'PHP', 'php'],
   ['Perl', 'Perl', 'perl'], ['Basic', 'BASIC', 'vb'], ['BASH', 'Bash', 'shellscript'], ['KSH', 'Korn Shell', 'shellscript'],
   ['ARM', 'ARM Assembler', 'plaintext'], ['StrucTeX', 'StrucTeX (LaTeX)', 'latex'], ['LaTeX', 'LaTeX (algorithmic)', 'latex'],
   ['Algorithm', 'LaTeX (algorithm)', 'latex'],
 ].map(([id, label, languageId]) => ({ id, label, languageId }));
 
 /** Quelltext-Endungen, die Structorizer importieren kann */
-const IMPORT_EXT = ['pas', 'dpr', 'pp', 'lpr', 'c', 'java', 'pde', 'cob', 'cbl', 'cobol', 'cpy'];
+const IMPORT_EXT = ['c', 'java', 'pde', 'cob', 'cbl', 'cobol', 'cpy'];
 
 let output = null;
 function log(msg) {
@@ -227,7 +227,7 @@ async function exportCode(context, model, generatorId) {
   } finally { cleanup(dir); }
 }
 
-/** Code -> Struktogramm mit den Structorizer-Parsern (C, Java, Pascal, COBOL, Processing) */
+/** Code -> Struktogramm mit den Structorizer-Parsern (C, Java, COBOL, Processing) */
 async function importCode(context, srcText, fileName) {
   const jar = await ensure(context);
   if (!jar) return null;

@@ -153,7 +153,7 @@
  "ext.saveNsd": "Struktogramm speichern",
  "ext.saved": "Gespeichert: {0}",
  "ext.selectionSuffix": "_auswahl",
- "ext.structorizerParserLangs": "Der Structorizer-Parser unterstützt C (.c), Java (.java), Pascal/Delphi (.pas, .dpr), COBOL (.cob, .cbl) und Processing (.pde). Die Datei muss gespeichert sein und die passende Endung haben.",
+ "ext.structorizerParserLangs": "Der Structorizer-Parser unterstützt C (.c), Java (.java), COBOL (.cob, .cbl) und Processing (.pde). Die Datei muss gespeichert sein und die passende Endung haben.",
  "ext.structorizerReady": "Structorizer ist bereit: {0}",
  "ext.structorizerSetUp": "Structorizer ist eingerichtet:\n{0}",
  "ext.structorizerUpdated": "Structorizer aktualisiert: {0}",

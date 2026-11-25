@@ -35,7 +35,6 @@
     "flowchart",
     "ausführen",
     "debugger",
-    "pascal",
     "cobol"
   ],
   "main": "./src/extension.js",
@@ -367,12 +366,12 @@
       "editor/context": [
         {
           "command": "struktogramm.fromCode",
-          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact|kotlin|rust)$/ || resourceExtname =~ /^\\.(pas|dpr|pp|lpr|cob|cbl|cobol|pde|kt|kts|rs)$/",
+          "when": "editorLangId =~ /^(python|java|c|cpp|csharp|javascript|typescript|javascriptreact|typescriptreact|kotlin|rust)$/ || resourceExtname =~ /^\\.(cob|cbl|cobol|pde|kt|kts|rs)$/",
           "group": "z_struktogramm@1"
         },
         {
           "command": "struktogramm.fromCodeStructorizer",
-          "when": "resourceExtname =~ /^\\.(c|java|pas|dpr|pp|lpr|cob|cbl|cobol|pde)$/",
+          "when": "resourceExtname =~ /^\\.(c|java|cob|cbl|cobol|pde)$/",
           "group": "z_struktogramm@2"
         },
         {
@@ -394,7 +393,7 @@
         },
         {
           "command": "struktogramm.fromCode",
-          "when": "resourceExtname =~ /^\\.(py|java|c|h|cpp|cc|cxx|hpp|cs|js|mjs|cjs|jsx|ts|tsx|kt|kts|rs|pas|dpr|pp|lpr|cob|cbl|cobol|pde)$/",
+          "when": "resourceExtname =~ /^\\.(py|java|c|h|cpp|cc|cxx|hpp|cs|js|mjs|cjs|jsx|ts|tsx|kt|kts|rs|cob|cbl|cobol|pde)$/",
           "group": "z_struktogramm@1"
         },
         {

@@ -212,11 +212,11 @@ function parseDecl(toks) {
 /* ------------------------------------------------------------------ */
 
 const MATH_FUNCS = {
-  sqrt: { java: 'Math.sqrt', csharp: 'Math.Sqrt', javascript: 'Math.sqrt', python: 'math.sqrt', c: 'sqrt', cpp: 'sqrt', pascal: 'sqrt' },
-  abs: { java: 'Math.abs', csharp: 'Math.Abs', javascript: 'Math.abs', python: 'abs', c: 'abs', cpp: 'abs', pascal: 'abs' },
-  pow: { java: 'Math.pow', csharp: 'Math.Pow', javascript: 'Math.pow', python: 'pow', c: 'pow', cpp: 'pow', pascal: 'power' },
-  floor: { java: 'Math.floor', csharp: 'Math.Floor', javascript: 'Math.floor', python: 'math.floor', c: 'floor', cpp: 'floor', pascal: 'floor' },
-  ceil: { java: 'Math.ceil', csharp: 'Math.Ceiling', javascript: 'Math.ceil', python: 'math.ceil', c: 'ceil', cpp: 'ceil', pascal: 'ceil' },
+  sqrt: { java: 'Math.sqrt', csharp: 'Math.Sqrt', javascript: 'Math.sqrt', python: 'math.sqrt', c: 'sqrt', cpp: 'sqrt' },
+  abs: { java: 'Math.abs', csharp: 'Math.Abs', javascript: 'Math.abs', python: 'abs', c: 'abs', cpp: 'abs' },
+  pow: { java: 'Math.pow', csharp: 'Math.Pow', javascript: 'Math.pow', python: 'pow', c: 'pow', cpp: 'pow' },
+  floor: { java: 'Math.floor', csharp: 'Math.Floor', javascript: 'Math.floor', python: 'math.floor', c: 'floor', cpp: 'floor' },
+  ceil: { java: 'Math.ceil', csharp: 'Math.Ceiling', javascript: 'Math.ceil', python: 'math.ceil', c: 'ceil', cpp: 'ceil' },
 };
 const CFAM = new Set(['java', 'c', 'cpp', 'csharp', 'javascript', 'typescript', 'kotlin', 'rust']);
 const MODERN = new Set(['kotlin', 'rust']);
@@ -342,7 +342,7 @@ function promoteFloats(toks, ctx) {
 /* ------------------------------------------------------------------ */
 const WRAP_OK = /^[\p{L}_][\p{L}\p{N}_.]*(\([^()]*\)|\[[^\]]*\])?$|^"(?:[^"\\]|\\.)*"$|^'(?:[^'\\]|\\.|'')*'$/u;
 const W = (s) => (WRAP_OK.test(s) ? s : `(${s})`);
-const PI_OF = { python: 'math.pi', java: 'Math.PI', csharp: 'Math.PI', javascript: 'Math.PI', pascal: 'Pi', c: 'M_PI', cpp: 'M_PI' };
+const PI_OF = { python: 'math.pi', java: 'Math.PI', csharp: 'Math.PI', javascript: 'Math.PI', c: 'M_PI', cpp: 'M_PI' };
 /** Rust: &str-Argument */
 const rsStr = (x) => (/^"/.test(x.out) ? x.out : `${W(x.out)}.as_str()`);
 
@@ -351,24 +351,24 @@ const rsStr = (x) => (/^"/.test(x.out) ? x.out : `${W(x.out)}.as_str()`);
  * Kotlin/Rust werden für Mathematik in modernFn behandelt.
  */
 const SFN = {
-  uppercase: { c: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.upper()`, java: (a) => `${W(a[0].out)}.toUpperCase()`, csharp: (a) => `${W(a[0].out)}.ToUpper()`, javascript: (a) => `${W(a[0].out)}.toUpperCase()`, kotlin: (a) => `${W(a[0].out)}.uppercase()`, rust: (a) => `${W(a[0].out)}.to_uppercase()`, pascal: (a, ctx) => { need(ctx, 'sysutils'); return `UpperCase(${a[0].out})`; }, cpp: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; } },
-  lowercase: { c: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.lower()`, java: (a) => `${W(a[0].out)}.toLowerCase()`, csharp: (a) => `${W(a[0].out)}.ToLower()`, javascript: (a) => `${W(a[0].out)}.toLowerCase()`, kotlin: (a) => `${W(a[0].out)}.lowercase()`, rust: (a) => `${W(a[0].out)}.to_lowercase()`, pascal: (a, ctx) => { need(ctx, 'sysutils'); return `LowerCase(${a[0].out})`; }, cpp: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; } },
-  trim: { c: (a, ctx) => { need(ctx, 'strtrim'); return `str_trim(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.strip()`, java: (a) => `${W(a[0].out)}.trim()`, csharp: (a) => `${W(a[0].out)}.Trim()`, javascript: (a) => `${W(a[0].out)}.trim()`, kotlin: (a) => `${W(a[0].out)}.trim()`, rust: (a) => `${W(a[0].out)}.trim().to_string()`, pascal: (a, ctx) => { need(ctx, 'sysutils'); return `Trim(${a[0].out})`; }, cpp: (a, ctx) => { need(ctx, 'strtrim'); return `str_trim(${a[0].out})`; } },
-  pos: { c: (a, ctx) => { need(ctx, 'strpos'); return `str_pos(${a[0].out}, ${a[1].out})`; }, python: (a) => `(${W(a[1].out)}.find(${a[0].out}) + 1)`, java: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, csharp: (a) => `(${W(a[1].out)}.IndexOf(${a[0].out}) + 1)`, javascript: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, kotlin: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, rust: (a) => `${W(a[1].out)}.find(${rsStr(a[0])}).map_or(0, |i| ${W(a[1].out)}[..i].chars().count() as i32 + 1)`, pascal: (a) => `Pos(${a[0].out}, ${a[1].out})`, cpp: (a) => `((int) ${W(a[1].out)}.find(${a[0].out}) + 1)` },
-  copy: { c: (a, ctx) => { need(ctx, 'strcopy'); return `str_copy(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[${a[1].out} - 1:${a[1].out} - 1 + ${W(a[2].out)}]`, java: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, Math.min(${W(a[0].out)}.length(), ${a[1].out} - 1 + ${W(a[2].out)}))`, csharp: (a) => `${W(a[0].out)}.Substring(${a[1].out} - 1, Math.Min(${W(a[2].out)}, ${W(a[0].out)}.Length - (${a[1].out} - 1)))`, javascript: (a) => `${W(a[0].out)}.substr(${a[1].out} - 1, ${a[2].out})`, kotlin: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, minOf(${W(a[0].out)}.length, ${a[1].out} - 1 + ${W(a[2].out)}))`, rust: (a) => `${W(a[0].out)}.chars().skip((${a[1].out} - 1) as usize).take((${a[2].out}) as usize).collect::<String>()`, pascal: (a) => `Copy(${a[0].out}, ${a[1].out}, ${a[2].out})`, cpp: (a) => `${W(a[0].out)}.substr(${a[1].out} - 1, ${a[2].out})` },
+  uppercase: { c: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.upper()`, java: (a) => `${W(a[0].out)}.toUpperCase()`, csharp: (a) => `${W(a[0].out)}.ToUpper()`, javascript: (a) => `${W(a[0].out)}.toUpperCase()`, kotlin: (a) => `${W(a[0].out)}.uppercase()`, rust: (a) => `${W(a[0].out)}.to_uppercase()`, cpp: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; } },
+  lowercase: { c: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.lower()`, java: (a) => `${W(a[0].out)}.toLowerCase()`, csharp: (a) => `${W(a[0].out)}.ToLower()`, javascript: (a) => `${W(a[0].out)}.toLowerCase()`, kotlin: (a) => `${W(a[0].out)}.lowercase()`, rust: (a) => `${W(a[0].out)}.to_lowercase()`, cpp: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; } },
+  trim: { c: (a, ctx) => { need(ctx, 'strtrim'); return `str_trim(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.strip()`, java: (a) => `${W(a[0].out)}.trim()`, csharp: (a) => `${W(a[0].out)}.Trim()`, javascript: (a) => `${W(a[0].out)}.trim()`, kotlin: (a) => `${W(a[0].out)}.trim()`, rust: (a) => `${W(a[0].out)}.trim().to_string()`, cpp: (a, ctx) => { need(ctx, 'strtrim'); return `str_trim(${a[0].out})`; } },
+  pos: { c: (a, ctx) => { need(ctx, 'strpos'); return `str_pos(${a[0].out}, ${a[1].out})`; }, python: (a) => `(${W(a[1].out)}.find(${a[0].out}) + 1)`, java: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, csharp: (a) => `(${W(a[1].out)}.IndexOf(${a[0].out}) + 1)`, javascript: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, kotlin: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, rust: (a) => `${W(a[1].out)}.find(${rsStr(a[0])}).map_or(0, |i| ${W(a[1].out)}[..i].chars().count() as i32 + 1)`, cpp: (a) => `((int) ${W(a[1].out)}.find(${a[0].out}) + 1)` },
+  copy: { c: (a, ctx) => { need(ctx, 'strcopy'); return `str_copy(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[${a[1].out} - 1:${a[1].out} - 1 + ${W(a[2].out)}]`, java: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, Math.min(${W(a[0].out)}.length(), ${a[1].out} - 1 + ${W(a[2].out)}))`, csharp: (a) => `${W(a[0].out)}.Substring(${a[1].out} - 1, Math.Min(${W(a[2].out)}, ${W(a[0].out)}.Length - (${a[1].out} - 1)))`, javascript: (a) => `${W(a[0].out)}.substr(${a[1].out} - 1, ${a[2].out})`, kotlin: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, minOf(${W(a[0].out)}.length, ${a[1].out} - 1 + ${W(a[2].out)}))`, rust: (a) => `${W(a[0].out)}.chars().skip((${a[1].out} - 1) as usize).take((${a[2].out}) as usize).collect::<String>()`, cpp: (a) => `${W(a[0].out)}.substr(${a[1].out} - 1, ${a[2].out})` },
   insert: { c: (a, ctx) => { need(ctx, 'strinsert'); return `str_insert(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[1].out)}[:${a[2].out} - 1] + ${a[0].out} + ${W(a[1].out)}[${a[2].out} - 1:]`, java: (a) => `${W(a[1].out)}.substring(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.substring(${a[2].out} - 1)`, csharp: (a) => `${W(a[1].out)}.Insert(${a[2].out} - 1, ${a[0].out})`, javascript: (a) => `${W(a[1].out)}.slice(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.slice(${a[2].out} - 1)`, kotlin: (a) => `${W(a[1].out)}.substring(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.substring(${a[2].out} - 1)`, rust: (a) => `{ let mut t = ${W(a[1].out)}.clone(); t.insert_str((${a[2].out} - 1) as usize, ${rsStr(a[0])}); t }`, cpp: (a) => `string(${a[1].out}).insert(${a[2].out} - 1, ${a[0].out})` },
   delete: { c: (a, ctx) => { need(ctx, 'strdelete'); return `str_delete(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[:${a[1].out} - 1] + ${W(a[0].out)}[${a[1].out} - 1 + ${W(a[2].out)}:]`, java: (a) => `${W(a[0].out)}.substring(0, ${a[1].out} - 1) + ${W(a[0].out)}.substring(Math.min(${W(a[0].out)}.length(), ${a[1].out} - 1 + ${W(a[2].out)}))`, csharp: (a) => `${W(a[0].out)}.Remove(${a[1].out} - 1, ${a[2].out})`, javascript: (a) => `${W(a[0].out)}.slice(0, ${a[1].out} - 1) + ${W(a[0].out)}.slice(${a[1].out} - 1 + ${W(a[2].out)})`, kotlin: (a) => `${W(a[0].out)}.removeRange(${a[1].out} - 1, minOf(${W(a[0].out)}.length, ${a[1].out} - 1 + ${W(a[2].out)}))`, rust: (a) => `{ let mut t = ${W(a[0].out)}.clone(); let e = ((${a[1].out} - 1 + ${W(a[2].out)}) as usize).min(t.len()); t.replace_range((${a[1].out} - 1) as usize..e, ""); t }`, cpp: (a) => `string(${a[0].out}).erase(${a[1].out} - 1, ${a[2].out})` },
-  ord: { python: (a) => `ord(${a[0].out})`, java: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}.charAt(0)`), csharp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`), javascript: (a) => `${W(a[0].out)}.charCodeAt(0)`, kotlin: (a, ctx) => (isCharArg(a[0], ctx) ? `${W(a[0].out)}.code` : `${W(a[0].out)}[0].code`), rust: (a, ctx) => (isCharArg(a[0], ctx) ? `(${a[0].out} as i32)` : `(${W(a[0].out)}.chars().next().unwrap() as i32)`), pascal: (a, ctx) => (isCharArg(a[0], ctx) || /^'(.|'')'$/.test(a[0].out) ? `Ord(${a[0].out})` : `Ord(${W(a[0].out)}[1])`), cpp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`), c: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`) },
-  chr: { python: (a) => `chr(${a[0].out})`, java: (a) => `(char) ${W(a[0].out)}`, csharp: (a) => `(char) ${W(a[0].out)}`, javascript: (a) => `String.fromCharCode(${a[0].out})`, kotlin: (a) => `${W(a[0].out)}.toChar()`, rust: (a) => `char::from_u32((${a[0].out}) as u32).unwrap()`, pascal: (a) => `Chr(${a[0].out})`, cpp: (a) => `(char) ${W(a[0].out)}`, c: (a) => `(char) ${W(a[0].out)}` },
-  sgn: { python: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))`, java: (a) => `(int) Math.signum(${a[0].out})`, csharp: (a) => `Math.Sign(${a[0].out})`, javascript: (a) => `Math.sign(${a[0].out})`, kotlin: (a) => `(if (${a[0].out} > 0) 1 else if (${a[0].out} < 0) -1 else 0)`, rust: (a) => `(if ${a[0].out} > 0 { 1 } else if ${a[0].out} < 0 { -1 } else { 0 })`, pascal: (a, ctx) => { need(ctx, 'math'); return `Sign(${a[0].out})`; }, cpp: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))`, c: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))` },
-  sqr: { pascal: (a) => `Sqr(${a[0].out})`, '*': (a) => `${W(a[0].out)} * ${W(a[0].out)}` },
+  ord: { python: (a) => `ord(${a[0].out})`, java: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}.charAt(0)`), csharp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`), javascript: (a) => `${W(a[0].out)}.charCodeAt(0)`, kotlin: (a, ctx) => (isCharArg(a[0], ctx) ? `${W(a[0].out)}.code` : `${W(a[0].out)}[0].code`), rust: (a, ctx) => (isCharArg(a[0], ctx) ? `(${a[0].out} as i32)` : `(${W(a[0].out)}.chars().next().unwrap() as i32)`), cpp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`), c: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`) },
+  chr: { python: (a) => `chr(${a[0].out})`, java: (a) => `(char) ${W(a[0].out)}`, csharp: (a) => `(char) ${W(a[0].out)}`, javascript: (a) => `String.fromCharCode(${a[0].out})`, kotlin: (a) => `${W(a[0].out)}.toChar()`, rust: (a) => `char::from_u32((${a[0].out}) as u32).unwrap()`, cpp: (a) => `(char) ${W(a[0].out)}`, c: (a) => `(char) ${W(a[0].out)}` },
+  sgn: { python: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))`, java: (a) => `(int) Math.signum(${a[0].out})`, csharp: (a) => `Math.Sign(${a[0].out})`, javascript: (a) => `Math.sign(${a[0].out})`, kotlin: (a) => `(if (${a[0].out} > 0) 1 else if (${a[0].out} < 0) -1 else 0)`, rust: (a) => `(if ${a[0].out} > 0 { 1 } else if ${a[0].out} < 0 { -1 } else { 0 })`, cpp: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))`, c: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))` },
+  sqr: { '*': (a) => `${W(a[0].out)} * ${W(a[0].out)}` },
   toradians: { '*': (a, ctx, lang) => { mathNeed(ctx, lang); return `${W(a[0].out)} * ${PI_OF[lang]} / 180`; } },
   todegrees: { '*': (a, ctx, lang) => { mathNeed(ctx, lang); return `${W(a[0].out)} * 180 / ${PI_OF[lang]}`; } },
-  min: { python: (a) => `min(${a.map((x) => x.out).join(', ')})`, java: (a) => `Math.min(${a[0].out}, ${a[1].out})`, csharp: (a) => `Math.Min(${a[0].out}, ${a[1].out})`, javascript: (a) => `Math.min(${a.map((x) => x.out).join(', ')})`, kotlin: (a) => `minOf(${a[0].out}, ${a[1].out})`, rust: (a) => `${W(a[0].out)}.min(${a[1].out})`, pascal: (a, ctx) => { need(ctx, 'math'); return `Min(${a[0].out}, ${a[1].out})`; }, cpp: (a) => `min(${a[0].out}, ${a[1].out})`, c: (a) => `(${W(a[0].out)} < ${W(a[1].out)} ? ${W(a[0].out)} : ${W(a[1].out)})` },
-  max: { python: (a) => `max(${a.map((x) => x.out).join(', ')})`, java: (a) => `Math.max(${a[0].out}, ${a[1].out})`, csharp: (a) => `Math.Max(${a[0].out}, ${a[1].out})`, javascript: (a) => `Math.max(${a.map((x) => x.out).join(', ')})`, kotlin: (a) => `maxOf(${a[0].out}, ${a[1].out})`, rust: (a) => `${W(a[0].out)}.max(${a[1].out})`, pascal: (a, ctx) => { need(ctx, 'math'); return `Max(${a[0].out}, ${a[1].out})`; }, cpp: (a) => `max(${a[0].out}, ${a[1].out})`, c: (a) => `(${W(a[0].out)} > ${W(a[1].out)} ? ${W(a[0].out)} : ${W(a[1].out)})` },
+  min: { python: (a) => `min(${a.map((x) => x.out).join(', ')})`, java: (a) => `Math.min(${a[0].out}, ${a[1].out})`, csharp: (a) => `Math.Min(${a[0].out}, ${a[1].out})`, javascript: (a) => `Math.min(${a.map((x) => x.out).join(', ')})`, kotlin: (a) => `minOf(${a[0].out}, ${a[1].out})`, rust: (a) => `${W(a[0].out)}.min(${a[1].out})`, cpp: (a) => `min(${a[0].out}, ${a[1].out})`, c: (a) => `(${W(a[0].out)} < ${W(a[1].out)} ? ${W(a[0].out)} : ${W(a[1].out)})` },
+  max: { python: (a) => `max(${a.map((x) => x.out).join(', ')})`, java: (a) => `Math.max(${a[0].out}, ${a[1].out})`, csharp: (a) => `Math.Max(${a[0].out}, ${a[1].out})`, javascript: (a) => `Math.max(${a.map((x) => x.out).join(', ')})`, kotlin: (a) => `maxOf(${a[0].out}, ${a[1].out})`, rust: (a) => `${W(a[0].out)}.max(${a[1].out})`, cpp: (a) => `max(${a[0].out}, ${a[1].out})`, c: (a) => `(${W(a[0].out)} > ${W(a[1].out)} ? ${W(a[0].out)} : ${W(a[1].out)})` },
   split: { python: (a) => `${W(a[0].out)}.split(${a[1].out})`, java: (a) => `${W(a[0].out)}.split(java.util.regex.Pattern.quote(${a[1].out}))`, csharp: (a) => `${W(a[0].out)}.Split(${a[1].out})`, javascript: (a) => `${W(a[0].out)}.split(${a[1].out})`, kotlin: (a) => `${W(a[0].out)}.split(${a[1].out}).toTypedArray()`, rust: (a) => `${W(a[0].out)}.split(${rsStr(a[1])}).map(String::from).collect::<Vec<String>>()` },
-  strcmp: { python: (a) => `((${a[0].out} > ${a[1].out}) - (${a[0].out} < ${a[1].out}))`, java: (a) => `${W(a[0].out)}.compareTo(${a[1].out})`, csharp: (a) => `string.Compare(${a[0].out}, ${a[1].out})`, javascript: (a) => `${W(a[0].out)}.localeCompare(${a[1].out})`, kotlin: (a) => `${W(a[0].out)}.compareTo(${a[1].out})`, rust: (a) => `(${W(a[0].out)}.cmp(&${W(a[1].out)}) as i32)`, pascal: (a, ctx) => { need(ctx, 'sysutils'); return `CompareStr(${a[0].out}, ${a[1].out})`; }, cpp: (a) => `${W(a[0].out)}.compare(${a[1].out})`, c: (a, ctx) => { need(ctx, 'string'); return `strcmp(${a[0].out}, ${a[1].out})`; } },
-  copyarray: { python: (a) => `list(${a[0].out})`, java: (a) => `${W(a[0].out)}.clone()`, csharp: (a) => `${W(a[0].out)}.ToArray()`, javascript: (a) => `[...${W(a[0].out)}]`, kotlin: (a) => `${W(a[0].out)}.copyOf()`, rust: (a) => `${W(a[0].out)}.clone()`, cpp: (a) => a[0].out, pascal: (a) => `Copy(${a[0].out})` },
+  strcmp: { python: (a) => `((${a[0].out} > ${a[1].out}) - (${a[0].out} < ${a[1].out}))`, java: (a) => `${W(a[0].out)}.compareTo(${a[1].out})`, csharp: (a) => `string.Compare(${a[0].out}, ${a[1].out})`, javascript: (a) => `${W(a[0].out)}.localeCompare(${a[1].out})`, kotlin: (a) => `${W(a[0].out)}.compareTo(${a[1].out})`, rust: (a) => `(${W(a[0].out)}.cmp(&${W(a[1].out)}) as i32)`, cpp: (a) => `${W(a[0].out)}.compare(${a[1].out})`, c: (a, ctx) => { need(ctx, 'string'); return `strcmp(${a[0].out}, ${a[1].out})`; } },
+  copyarray: { python: (a) => `list(${a[0].out})`, java: (a) => `${W(a[0].out)}.clone()`, csharp: (a) => `${W(a[0].out)}.ToArray()`, javascript: (a) => `[...${W(a[0].out)}]`, kotlin: (a) => `${W(a[0].out)}.copyOf()`, rust: (a) => `${W(a[0].out)}.clone()`, cpp: (a) => a[0].out },
 };
 /** Turtleizer -> Python-Modul turtle (Structorizer: 0° = oben, y nach unten) */
 const TURTLE_PY = {
@@ -386,14 +386,12 @@ for (const [n, f] of Object.entries(TURTLE_PY)) {
   SFN[n] = { python: (a, ctx) => { need(ctx, 'turtle'); return f(a); } };
 }
 
-/** trigonometrische Funktionen / exp / log (für Python, Java, C#, JS, Pascal, C/C++) */
+/** trigonometrische Funktionen / exp / log (für Python, Java, C#, JS, C/C++) */
 for (const fn of ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log']) {
   const cs = fn[0].toUpperCase() + fn.slice(1);
-  const pas = { asin: 'ArcSin', acos: 'ArcCos', atan: 'ArcTan', log: 'Ln' }[fn] || fn;
   SFN[fn] = {
     python: (a, ctx) => { need(ctx, 'math'); return `math.${fn}(${a[0].out})`; },
     java: (a) => `Math.${fn}(${a[0].out})`, javascript: (a) => `Math.${fn}(${a[0].out})`, csharp: (a) => `Math.${cs}(${a[0].out})`,
-    pascal: (a, ctx) => { if (/^Arc(Sin|Cos)$/.test(pas)) need(ctx, 'math'); return `${pas}(${a[0].out})`; },
     c: (a, ctx) => { need(ctx, 'math'); return `${fn}(${a[0].out})`; }, cpp: (a, ctx) => { need(ctx, 'math'); return `${fn}(${a[0].out})`; },
   };
 }
@@ -401,7 +399,7 @@ for (const fn of ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log']) {
 const RANDOM_N = {
   python: (a, ctx) => { need(ctx, 'random'); return `random.randrange(${a[0].out})`; },
   java: (a) => `(int) (Math.random() * ${W(a[0].out)})`, csharp: (a) => `new Random().Next(${a[0].out})`,
-  javascript: (a) => `Math.floor(Math.random() * ${W(a[0].out)})`, pascal: (a) => `Random(${a[0].out})`,
+  javascript: (a) => `Math.floor(Math.random() * ${W(a[0].out)})`, 
   cpp: (a, ctx) => { need(ctx, 'stdlib'); return `rand() % ${W(a[0].out)}`; }, c: (a, ctx) => { need(ctx, 'stdlib'); return `rand() % ${W(a[0].out)}`; },
 };
 function need(ctx, what) { if (ctx && ctx.needs) ctx.needs.add(what); }
@@ -467,7 +465,7 @@ function requote(strTok, quote) {
 /**
  * Ausdruck aus Pseudocode in Zielsprache übersetzen.
  * @param {string} text
- * @param {string} lang java|c|cpp|csharp|javascript|python|pascal
+ * @param {string} lang java|c|cpp|csharp|javascript|python|kotlin|rust
  * @param {{needs?:Set<string>}} ctx
  */
 function translateExpr(text, lang, ctx = {}) {
@@ -493,8 +491,8 @@ function mapToks(toks, lang, ctx) {
       continue;
     }
     if (t.t === 'op') {
-      if (t.v === '=' || t.v === '==' || t.v === '===') nt.v = lang === 'pascal' ? '=' : lang === 'javascript' ? '===' : '==';
-      else if (t.v === '<>' || t.v === '!=' || t.v === '!==') nt.v = lang === 'pascal' ? '<>' : lang === 'javascript' ? '!==' : '!=';
+      if (t.v === '=' || t.v === '==' || t.v === '===') nt.v = lang === 'javascript' ? '===' : '==';
+      else if (t.v === '<>' || t.v === '!=' || t.v === '!==') nt.v = lang === 'javascript' ? '!==' : '!=';
       else if (t.v === '&&') nt.v = c ? '&&' : 'and';
       else if (t.v === '||') nt.v = c ? '||' : 'or';
       else if (t.v === '!' ) {
@@ -509,8 +507,7 @@ function mapToks(toks, lang, ctx) {
       continue;
     }
     if (t.t === 'str') {
-      if (lang === 'pascal') nt.v = requote(t, "'");
-      else if (c && t.v[0] === "'" && !(t.v.length === 3 || (t.v.length === 4 && t.v[1] === '\\'))) nt.v = requote(t, '"');
+      if (c && t.v[0] === "'" && !(t.v.length === 3 || (t.v.length === 4 && t.v[1] === '\\'))) nt.v = requote(t, '"');
       if (lang === 'kotlin' && nt.v[0] === '"') nt.v = nt.v.replace(/(^|[^\\])\$/g, '$1\\$');
       out.push(nt);
       continue;
@@ -529,7 +526,7 @@ function mapToks(toks, lang, ctx) {
     if (t.t === 'id') {
       if (l === 'and') { nt.v = c ? '&&' : 'and'; nt.t = c ? 'op' : 'id'; nt.ws = true; }
       else if (l === 'or') { nt.v = c ? '||' : 'or'; nt.t = c ? 'op' : 'id'; nt.ws = true; }
-      else if (l === 'xor') { nt.v = lang === 'pascal' || lang === 'kotlin' ? 'xor' : '^'; nt.ws = true; }
+      else if (l === 'xor') { nt.v = lang === 'kotlin' ? 'xor' : '^'; nt.ws = true; }
       else if (toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.') && !(ctx.funcs && ctx.funcs.has(t.v)) &&
           (SFN[l] || (l === 'random' && toks[i + 2] && toks[i + 2].v !== ')')) && !(MODERN.has(lang) && MODERN_FN.has(l))) {
         // Structorizer-Funktion (uppercase, pos, copy, ord, sgn …) in der Zielsprache
@@ -573,14 +570,14 @@ function mapToks(toks, lang, ctx) {
         i = close < 0 ? toks.length : close;
         continue;
       }
-      else if (l === 'div') { nt.v = lang === 'pascal' ? 'div' : lang === 'python' ? '//' : '/'; nt.t = lang === 'pascal' ? 'id' : 'op'; nt.ws = true; }
-      else if (l === 'mod') { nt.v = lang === 'pascal' ? 'mod' : '%'; nt.t = lang === 'pascal' ? 'id' : 'op'; nt.ws = true; }
+      else if (l === 'div') { nt.v = lang === 'python' ? '//' : '/'; nt.t = 'op'; nt.ws = true; }
+      else if (l === 'mod') { nt.v = '%'; nt.t = 'op'; nt.ws = true; }
       else if (l === 'true' || l === 'false' || l === 'wahr' || l === 'falsch') {
         const val = l === 'true' || l === 'wahr';
         nt.v = lang === 'python' ? (val ? 'True' : 'False') : (val ? 'true' : 'false');
         if (lang === 'c' && ctx.needs) ctx.needs.add('stdbool');
       } else if (l === 'null' || l === 'nil' || l === 'none') {
-        nt.v = lang === 'python' || lang === 'rust' ? 'None' : lang === 'pascal' ? 'nil' : lang === 'c' ? 'NULL' : lang === 'cpp' ? 'nullptr' : 'null';
+        nt.v = lang === 'python' || lang === 'rust' ? 'None' : lang === 'c' ? 'NULL' : lang === 'cpp' ? 'nullptr' : 'null';
       } else if (l === 'not') {
         if (c) {
           const end = operandEnd(toks, i + 1);
@@ -597,9 +594,8 @@ function mapToks(toks, lang, ctx) {
         nt.v = MATH_FUNCS[l][lang] || t.v;
         if (ctx.needs && (lang === 'python' && nt.v.startsWith('math.'))) ctx.needs.add('math');
         if (ctx.needs && (lang === 'c' || lang === 'cpp') && l !== 'abs') ctx.needs.add('math');
-        if (ctx.needs && lang === 'pascal' && l === 'power') ctx.needs.add('math');
       } else if (l === 'random' && toks[i + 1] && toks[i + 1].v === '(') {
-        nt.v = { java: 'Math.random', javascript: 'Math.random', python: 'random.random', c: 'rand', cpp: 'rand', pascal: 'random', csharp: 'new Random().NextDouble' }[lang] || t.v;
+        nt.v = { java: 'Math.random', javascript: 'Math.random', python: 'random.random', c: 'rand', cpp: 'rand', csharp: 'new Random().NextDouble' }[lang] || t.v;
         if (ctx.needs && lang === 'python') ctx.needs.add('random');
       } else if ((l === 'int' || l === 'float' || l === 'str' || l === 'round') && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
         const close = matchClose(toks, i + 1);
@@ -607,12 +603,11 @@ function mapToks(toks, lang, ctx) {
         const simple = /^[\p{L}\p{N}_.]+$/u.test(arg);
         const a = simple ? arg : '(' + arg + ')';
         const CAST = {
-          int: { java: `(int) ${a}`, c: `(int) ${a}`, cpp: `(int) ${a}`, csharp: `(int) ${a}`, javascript: `Math.trunc(${arg})`, pascal: `trunc(${arg})`, python: `int(${arg})` },
-          float: { java: `(double) ${a}`, c: `(double) ${a}`, cpp: `(double) ${a}`, csharp: `(double) ${a}`, javascript: `Number(${arg})`, pascal: `(${arg})`, python: `float(${arg})` },
-          str: { java: `String.valueOf(${arg})`, c: arg, cpp: `to_string(${arg})`, csharp: `Convert.ToString(${arg})`, javascript: `String(${arg})`, pascal: `IntToStr(${arg})`, python: `str(${arg})` },
-          round: { java: `Math.round(${arg})`, c: `round(${arg})`, cpp: `round(${arg})`, csharp: `Math.Round(${arg})`, javascript: `Math.round(${arg})`, pascal: `round(${arg})`, python: `round(${arg})` },
+          int: { java: `(int) ${a}`, c: `(int) ${a}`, cpp: `(int) ${a}`, csharp: `(int) ${a}`, javascript: `Math.trunc(${arg})`, python: `int(${arg})` },
+          float: { java: `(double) ${a}`, c: `(double) ${a}`, cpp: `(double) ${a}`, csharp: `(double) ${a}`, javascript: `Number(${arg})`, python: `float(${arg})` },
+          str: { java: `String.valueOf(${arg})`, c: arg, cpp: `to_string(${arg})`, csharp: `Convert.ToString(${arg})`, javascript: `String(${arg})`, python: `str(${arg})` },
+          round: { java: `Math.round(${arg})`, c: `round(${arg})`, cpp: `round(${arg})`, csharp: `Math.Round(${arg})`, javascript: `Math.round(${arg})`, python: `round(${arg})` },
         }[l];
-        if (ctx.needs && l === 'str' && lang === 'pascal') ctx.needs.add('sysutils');
         if (ctx.needs && l === 'round' && (lang === 'c' || lang === 'cpp')) ctx.needs.add('math');
         out.push({ t: 'id', v: CAST[lang] || t.v, ws: t.ws });
         i = close < 0 ? toks.length : close;
@@ -621,7 +616,7 @@ function mapToks(toks, lang, ctx) {
         if (toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
           const close = matchClose(toks, i + 1);
           const arg = joinTokens(mapToks(toks.slice(i + 2, close), lang, ctx));
-          const repl = { java: `${arg}.length`, javascript: `${arg}.length`, csharp: `${arg}.Length`, python: `len(${arg})`, pascal: `length(${arg})`, cpp: `${arg}.size()`, c: `strlen(${arg})` }[lang];
+          const repl = { java: `${arg}.length`, javascript: `${arg}.length`, csharp: `${arg}.Length`, python: `len(${arg})`, cpp: `${arg}.size()`, c: `strlen(${arg})` }[lang];
           if (repl) { out.push({ t: 'id', v: repl, ws: t.ws }); i = close; continue; }
         }
       }
@@ -630,45 +625,6 @@ function mapToks(toks, lang, ctx) {
     }
     out.push(nt);
   }
-  if (lang === 'pascal') return pascalParens(out);
-  return out;
-}
-
-/** In Pascal müssen Vergleiche bei and/or geklammert werden. */
-function pascalParens(toks) {
-  // rekursiv in Klammergruppen
-  const res = [];
-  for (let i = 0; i < toks.length; i++) {
-    if (toks[i].v === '(') {
-      const c = matchClose(toks, i);
-      if (c > i) { res.push(toks[i], ...pascalParens(toks.slice(i + 1, c)), toks[c]); i = c; continue; }
-    }
-    res.push(toks[i]);
-  }
-  const isLogic = (t) => t.t === 'id' && ['and', 'or', 'xor'].includes(t.v.toLowerCase());
-  const parts = splitTop(res, isLogic);
-  // "not a > b" -> "not (a > b)"
-  const fixNot = (part) => {
-    if (part[0] && lc(part[0]) === 'not' && findTop(part, (t) => REL_OPS.has(t.v)) > 0 && !isWrapped(part.slice(1))) {
-      const rest = part.slice(1); if (rest[0]) rest[0] = { ...rest[0], ws: false };
-      return [part[0], tok('(', 'op', true), ...rest, tok(')', 'op', false)];
-    }
-    return part;
-  };
-  if (parts.length < 2) return fixNot(res);
-  const topSeps = [];
-  { let depth = 0; for (const t of res) { if (OPEN[t.v]) depth++; else if (CLOSE[t.v]) depth--; else if (depth === 0 && isLogic(t)) topSeps.push(t); } }
-  const out = [];
-  parts.forEach((p, k) => {
-    let part = fixNot(p);
-    const hasRel = findTop(part, (t) => REL_OPS.has(t.v)) >= 0;
-    if (hasRel && !isWrapped(part)) {
-      const inner = part.slice(); if (inner[0]) inner[0] = { ...inner[0], ws: false };
-      part = [tok('(', 'op', true), ...inner, tok(')', 'op', false)];
-    }
-    out.push(...part);
-    if (k < topSeps.length) out.push({ ...topSeps[k], ws: true });
-  });
   return out;
 }
 

@@ -14,7 +14,6 @@ const TARGETS = {
   cpp: { label: 'C++', ext: 'cpp', languageId: 'cpp' },
   csharp: { label: 'C#', ext: 'cs', languageId: 'csharp' },
   javascript: { label: 'JavaScript (Node.js)', ext: 'js', languageId: 'javascript' },
-  pascal: { label: 'Pascal (Free Pascal)', ext: 'pas', languageId: 'pascal' },
   kotlin: { label: 'Kotlin', ext: 'kt', languageId: 'kotlin' },
   rust: { label: 'Rust', ext: 'rs', languageId: 'rust' },
 };
@@ -24,7 +23,6 @@ const TYPE_MAP = {
   c: { int: 'int', double: 'double', string: 'char*', boolean: 'bool', char: 'char' },
   cpp: { int: 'int', double: 'double', string: 'string', boolean: 'bool', char: 'char' },
   csharp: { int: 'int', double: 'double', string: 'string', boolean: 'bool', char: 'char' },
-  pascal: { int: 'integer', double: 'real', string: 'string', boolean: 'boolean', char: 'char' },
   python: { int: 'int', double: 'float', string: 'str', boolean: 'bool', char: 'str' },
   kotlin: { int: 'Int', double: 'Double', string: 'String', boolean: 'Boolean', char: 'Char' },
   rust: { int: 'i32', double: 'f64', string: 'String', boolean: 'bool', char: 'char' },
@@ -40,7 +38,6 @@ const EXACT_TYPES = {
   cpp: { int: 'int', long: 'long long', short: 'short', byte: 'unsigned char', float: 'float', double: 'double', char: 'char', string: 'string', boolean: 'bool' },
   kotlin: { int: 'Int', long: 'Long', short: 'Short', byte: 'Byte', float: 'Float', double: 'Double', char: 'Char', string: 'String', boolean: 'Boolean' },
   rust: { int: 'i32', long: 'i64', short: 'i16', byte: 'u8', float: 'f32', double: 'f64', char: 'char', string: 'String', boolean: 'bool' },
-  pascal: { int: 'integer', long: 'int64', short: 'smallint', byte: 'byte', float: 'single', double: 'double', char: 'char', string: 'string', boolean: 'boolean' },
   python: { int: 'int', long: 'int', short: 'int', byte: 'int', float: 'float', double: 'float', char: 'str', string: 'str', boolean: 'bool' },
 };
 const identsOf = (text) => P.ptoks(text).filter((t, i, a) => t.t === 'id' && !(a[i - 1] && a[i - 1].v === '.')).map((t) => t.v);
@@ -63,7 +60,7 @@ class BaseGen {
     this.lang = lang;
     this.opts = opts || {};
     this.needs = new Set();
-    this.I = this.lang === 'pascal' ? '  ' : '    ';
+    this.I = '    ';
     this.sigs = new Map();
     this.funcs = new Map();
     this.collectTypes();
@@ -466,7 +463,7 @@ class BaseGen {
       case 'java': case 'javascript': return [ind + `break ${label};`];
       case 'kotlin': return [ind + `break@${label}`];
       case 'rust': return [ind + `break '${label.toLowerCase()};`];
-      case 'c': case 'cpp': case 'csharp': case 'pascal': return [ind + `goto ${label};`];
+      case 'c': case 'cpp': case 'csharp': return [ind + `goto ${label};`];
       case 'python': return [ind + `raise _Leave${label}()`];
       default: return [ind + this.comment(tr('gen.leaveN', count)), ...this.stmt({ kind: 'leave' }, ind)];
     }
@@ -484,8 +481,7 @@ class BaseGen {
         const k = out.findIndex((l) => l.startsWith(ind) && !l.slice(ind.length).startsWith(this.comment('').trim()));
         const pre = { java: `${label}: `, javascript: `${label}: `, kotlin: `${label}@ `, rust: `'${label.toLowerCase()}: ` }[this.lang];
         if (pre && k >= 0) out[k] = ind + pre + out[k].slice(ind.length);
-        if (['c', 'cpp', 'csharp', 'pascal'].includes(this.lang)) out.push(ind + `${label}: ;`);
-        if (this.lang === 'pascal') { this.pasLabels = this.pasLabels || []; this.pasLabels.push(label); }
+        if (['c', 'cpp', 'csharp'].includes(this.lang)) out.push(ind + `${label}: ;`);
         if (this.lang === 'python') {
           // Python hat keine Sprungmarken: eigene Ausnahme verlässt alle inneren Schleifen
           this.needs.add('leave:' + label);
@@ -531,7 +527,7 @@ class BaseGen {
   /**
    * Structorizer-Prozeduren als Zuweisung schreiben:
    * inc(x[, d]) -> x := x + d,  insert(w, s, i) -> s := insert(w, s, i),  delete(s, i, n) -> s := delete(s, i, n),
-   * randomize() entfällt (null). Pascal kennt Insert/Delete selbst.
+   * randomize() entfällt (null).
    */
   procLine(line) {
     const { matchClose, splitTop } = require('./tokenizer');
@@ -544,8 +540,8 @@ class BaseGen {
     switch (n) {
       case 'randomize': return null;
       case 'inc': case 'dec': return args.length ? `${args[0]} := ${args[0]} ${n === 'inc' ? '+' : '-'} ${args[1] ? par(args[1]) : '1'}` : line;
-      case 'insert': return this.lang === 'pascal' || args.length !== 3 ? line : `${args[1]} := insert(${args.join(', ')})`;
-      case 'delete': return this.lang === 'pascal' || args.length !== 3 ? line : `${args[0]} := delete(${args.join(', ')})`;
+      case 'insert': return args.length !== 3 ? line : `${args[1]} := insert(${args.join(', ')})`;
+      case 'delete': return args.length !== 3 ? line : `${args[0]} := delete(${args.join(', ')})`;
       default: return line;
     }
   }
@@ -591,8 +587,8 @@ class BaseGen {
   litDefault(t) {
     const n = P.normType(t);
     if (this.recordTypes && this.recordTypes.has(n)) return this.recordNew(n, []);
-    const py = this.lang === 'python', pas = this.lang === 'pascal';
-    return { int: '0', double: '0.0', string: pas ? "''" : '""', boolean: py ? 'False' : 'false', char: pas ? "' '" : "' '" }[n] || (py ? 'None' : '0');
+    const py = this.lang === 'python';
+    return { int: '0', double: '0.0', string: '""', boolean: py ? 'False' : 'false', char: "' '" }[n] || (py ? 'None' : '0');
   }
 
   /** Record-Literal Punkt{x: 3, y: 4} -> Zielsprache; vals: übersetzte Werte in Feldreihenfolge (fehlende = null) */
@@ -607,7 +603,6 @@ class BaseGen {
       case 'cpp': return `${type}{ ${v.join(', ')} }`;
       case 'kotlin': return `${type}(${v.join(', ')})`;
       case 'rust': return `${type} { ${fields.map((f, k) => `${f.name}: ${v[k]}`).join(', ')} }`;
-      case 'pascal': return `Make${type}(${v.join(', ')})`;
       default: return `${type}(${v.join(', ')})`;
     }
   }
@@ -1542,236 +1537,6 @@ ${this.I}pass`), '', '');
 }
 
 /* ==================================================================== */
-class PasGen extends BaseGen {
-  comment(text) { return '{ ' + text.replace(/[{}]/g, '') + ' }'; }
-
-  typeName(t) {
-    const ex = this.exactType(t);
-    if (ex) return ex;
-    const n = P.normType(t);
-    if (!n) return 'integer';
-    if (n.endsWith('[]')) return 'array of ' + this.typeName(n.slice(0, -2));
-    return TYPE_MAP.pascal[n] || n;
-  }
-
-  stmt(c, ind) {
-    switch (c.kind) {
-      case 'empty': return [];
-      case 'decl': return c.decls.filter((d) => d.init != null).map((d) => ind + `${d.name} := ${this.pasVal(d.init)};`);
-      case 'assign': return [ind + `${this.x(c.target)} := ${this.pasVal(c.expr)};`];
-      case 'input': {
-        const out = [];
-        if (c.prompt) out.push(ind + `write(${this.x(c.prompt)});`);
-        out.push(ind + (c.vars.length ? `readln(${c.vars.map((v) => this.x(v)).join(', ')});` : 'readln;'));
-        return out;
-      }
-      case 'output': return [ind + (c.items.length ? `writeln(${c.items.map((i) => this.x(i)).join(', ')});` : 'writeln;')];
-      case 'return': return [ind + (c.expr && !this.curIsMain ? `Exit(${this.x(c.expr)});` : 'Exit;')];
-      case 'exit': return [ind + `Halt(${c.expr ? this.x(c.expr) : '0'});`];
-      case 'leave': return [ind + 'Break;'];
-      case 'continue': return [ind + 'Continue;'];
-      case 'throw': this.needs.add('sysutils'); return [ind + `raise Exception.Create(${this.x(c.expr)});`];
-      default: return [ind + this.x(c.expr) + ';'];
-    }
-  }
-
-  tryEl(el, ind) {
-    const I = this.I, v = this.catchVar(el);
-    this.needs.add('sysutils');
-    const fin = el.qFinally.length;
-    const i2 = fin ? ind + I : ind;
-    const inner = [i2 + 'try', ...this.seq(el.qTry, i2 + I), i2 + 'except', i2 + I + 'on _E: Exception do', i2 + I + 'begin',
-      i2 + I + I + `${v} := _E.Message;`, ...this.seq(el.qCatch, i2 + I + I), i2 + I + 'end;', i2 + 'end;'];
-    if (!fin) return inner;
-    return [ind + 'try', ...inner, ind + 'finally', ...this.seq(el.qFinally, ind + I), ind + 'end;'];
-  }
-
-  typeDefs() {
-    const I = this.I, out = [];
-    if (this.enumConsts.length) out.push('const', ...this.enumConsts.map((e) => `${I}${e.name} = ${this.x(e.value)};`), '');
-    if (this.recordTypes.size) {
-      out.push('type');
-      for (const [name, fields] of this.recordTypes) out.push(`${I}${name} = record`, ...fields.map((f) => `${I}${I}${f.name}: ${this.typeName(f.type)};`), `${I}end;`);
-      out.push('');
-      for (const [name, fields] of this.recordTypes) {
-        out.push(`function Make${name}(${fields.map((f) => `${f.name}: ${this.typeName(f.type)}`).join('; ')}): ${name};`, 'begin');
-        fields.forEach((f) => out.push(`${I}Result.${f.name} := ${f.name};`));
-        out.push('end;', '');
-      }
-    }
-    return out;
-  }
-
-  beginEnd(list, ind, term = ';') {
-    return [ind + 'begin', ...this.seq(list, ind + this.I), ind + 'end' + term];
-  }
-
-  ifEl(el, ind) {
-    const out = [];
-    let cond = this.cond(el.text, ['if', 'wenn', 'falls']);
-    let t = el.qTrue, f = el.qFalse;
-    if (!t.length && f.length) { cond = P.negateCond(cond); [t, f] = [f, t]; }
-    out.push(ind + `if ${this.x(cond)} then`);
-    out.push(...this.beginEnd(t, ind, f.length ? '' : ';'));
-    while (f.length === 1 && f[0].type === 'alternative' && !f[0].disabled && f[0].qTrue.length && !(f[0].comment || []).some((s) => s.trim())) {
-      out.push(ind + `else if ${this.x(this.cond(f[0].text, ['if', 'wenn', 'falls']))} then`);
-      const nf = f[0].qFalse;
-      out.push(...this.beginEnd(f[0].qTrue, ind, nf.length ? '' : ';'));
-      f = nf;
-    }
-    if (f.length) { out.push(ind + 'else'); out.push(...this.beginEnd(f, ind)); }
-    return out;
-  }
-
-  caseEl(el, ind) {
-    const out = [ind + `case ${this.x(el.text[0] || '')} of`];
-    for (const b of this.caseInfo(el)) {
-      if (b.isDefault) out.push(ind + this.I + 'else');
-      else out.push(ind + this.I + b.values.map((v) => this.x(v)).join(', ') + ':');
-      out.push(...this.beginEnd(b.body, ind + this.I + this.I));
-    }
-    out.push(ind + 'end;');
-    return out;
-  }
-
-  forEl(el, ind) {
-    const text = linesOf(el).join(' ');
-    const f = P.parseForText(text);
-    if (!f) return [ind + this.comment(tr('gen.todoLoop', text)), ...this.beginEnd(el.body, ind)];
-    if (f.kind === 'each') return [ind + `for ${f.var} in ${this.x(f.coll)} do`, ...this.beginEnd(el.body, ind)];
-    const step = f.step.replace(/\s+/g, '');
-    const v = this.x(f.var);
-    if (step === '1' || step === '-1') {
-      return [ind + `for ${v} := ${this.x(f.start)} ${step === '1' ? 'to' : 'downto'} ${this.x(f.end)} do`, ...this.beginEnd(el.body, ind)];
-    }
-    const neg = step.startsWith('-');
-    return [
-      ind + `${v} := ${this.x(f.start)};`,
-      ind + `while ${v} ${neg ? '>=' : '<='} ${this.x(f.end)} do`,
-      ind + 'begin',
-      ...this.seq(el.body, ind + this.I),
-      ind + this.I + `${v} := ${v} + ${this.x(step)};`,
-      ind + 'end;',
-    ];
-  }
-
-  whileEl(cond, body, ind) { return [ind + `while ${cond === 'true' ? 'true' : this.x(cond)} do`, ...this.beginEnd(body, ind)]; }
-
-  repeatEl(cond, body, ind) { return [ind + 'repeat', ...this.seq(body, ind + this.I), ind + `until ${this.x(cond)};`]; }
-
-  /** Wert einer Zuweisung; Feld-Literale {1, 2, 3} werden zu [1, 2, 3] (dynamische Felder, Free Pascal ab 3.2) */
-  pasVal(expr) {
-    return isArrayLit(expr) ? `[${arrayItems(expr).map((v) => this.x(v)).join(', ')}]` : this.x(expr);
-  }
-
-  /**
-   * Parallelverarbeitung: je Zweig eine Thread-Funktion (BeginThread / WaitForThreadTerminate).
-   * Thread-Funktionen sehen nur globale Variablen – das sind die des Hauptprogramms. In Unterprogrammen
-   * laufen die Zweige daher nacheinander.
-   */
-  parallelEl(el, ind) {
-    if (!this.curIsMain || !this.pasThreads) return this.parallelSeq(el, ind, 'gen.parallelPas');
-    const I = this.I;
-    const branches = this.parBranches(el);
-    const out = [ind + this.comment(tr('gen.parallel'))];
-    if (!branches.length) return out;
-    this.needs.add('threads');
-    const ids = [];
-    for (const b of branches) {
-      const n = this.nextThread();
-      const fn = 'Thread' + n;
-      // Zählvariablen von for-Schleifen müssen in Funktionen lokal sein
-      const loops = [...this.parVars(b).loops];
-      const byType = new Map();
-      loops.forEach((v) => { const t = this.typeName(this.declType(v)); if (!byType.has(t)) byType.set(t, []); byType.get(t).push(v); });
-      // Rumpf zuerst erzeugen: Thread-Funktionen verschachtelter Parallelverarbeitung stehen so vor dieser
-      const body = this.seq(b, I);
-      this.pasThreads.funcs.push(`function ${fn}(_arg: Pointer): PtrInt;`,
-        ...(byType.size ? ['var', ...[...byType].map(([t, ns]) => I + `${ns.join(', ')}: ${t};`)] : []),
-        'begin', ...body, I + 'Result := 0;', 'end;', '');
-      ids.push({ fn, h: '_th' + n });
-    }
-    this.pasThreads.handles.push(...ids.map((x) => x.h));
-    ids.forEach((x) => out.push(ind + `${x.h} := BeginThread(@${x.fn});`));
-    ids.forEach((x) => out.push(ind + `WaitForThreadTerminate(${x.h}, 0);`));
-    return out;
-  }
-
-  /** Sprungmarken für leave n (goto) */
-  labelSection() {
-    if (!this.pasLabels || !this.pasLabels.length) return [];
-    this.needs.add('goto');
-    return [`label ${this.pasLabels.join(', ')};`];
-  }
-
-  varSection(info, ind, skip) {
-    const byType = new Map();
-    for (const n of info.all) {
-      if (skip.has(n)) continue;
-      const t = this.typeName((info.rawTypes && info.rawTypes.get(n)) || info.types.get(n));
-      if (!byType.has(t)) byType.set(t, []);
-      byType.get(t).push(n);
-    }
-    if (!byType.size) return [];
-    return [ind + 'var', ...[...byType].map(([t, ns]) => ind + this.I + `${ns.join(', ')}: ${t};`)];
-  }
-
-  run() {
-    const roots = this.doc.roots;
-    const main = roots.find((r) => r.rootType === 'program');
-    const subs = roots.filter((r) => r !== main);
-    const out = [];
-    const body = [];
-    for (const r of subs) {
-      const sig = this.sigs.get(r);
-      const info = this.analyze(r, sig);
-      this.cur = info; this.curIsMain = false;
-      const ret = this.retType(sig);
-      const ps = sig.params.map((p) => `${p.name}: ${this.typeName(p.type || p.inferredType)}`).join('; ');
-      (r.comment || []).filter((s) => s.trim()).forEach((s) => body.push(this.comment(s)));
-      body.push(ret ? `function ${sig.name}(${ps}): ${this.typeName(ret)};` : `procedure ${sig.name}(${ps});`);
-      this.pasLabels = [];
-      const be = this.beginEnd(r.children, '');
-      body.push(...this.varSection(info, '', new Set([...info.params, sig.name])), ...this.labelSection(), ...be, '');
-    }
-    let mainLines = [];
-    let progName = 'Programm';
-    if (main) {
-      const info = this.analyze(main, { params: [] });
-      this.cur = info; this.curIsMain = true;
-      progName = toClassName(this.sigs.get(main).name);
-      // Pascal unterscheidet nicht zwischen Groß- und Kleinschreibung: Programm „Rabatt“ und Variable „rabatt“
-      // wären derselbe Bezeichner
-      const taken = new Set([...info.all, ...this.funcs.keys(), ...this.recordTypes.keys(), ...this.enumConsts.map((e) => e.name)].map((n) => n.toLowerCase()));
-      if (taken.has(progName.toLowerCase())) { let n = progName + 'Prog', i = 2; while (taken.has(n.toLowerCase())) n = progName + 'Prog' + i++; progName = n; }
-      this.pasLabels = [];
-      this.pasThreads = { funcs: [], handles: [] };
-      const be = this.beginEnd(main.children, '', '.');
-      const vars = this.varSection(info, '', new Set());
-      const th = this.pasThreads;
-      if (th.handles.length) {
-        if (!vars.length) vars.push('var');
-        vars.push(this.I + `${th.handles.join(', ')}: TThreadID;`);
-      }
-      mainLines = [...vars, ...(th.funcs.length ? ['', ...th.funcs] : []), ...this.labelSection(), '', ...be];
-      this.pasThreads = null;
-    }
-    const td = this.typeDefs();
-    out.push(`program ${progName};`, '', '{$mode objfpc}{$H+}' + (this.needs.has('goto') ? '{$goto on}' : ''), '');
-    const uses = [];
-    // Threads unter Linux/macOS brauchen die Unit cthreads (als erste)
-    if (this.needs.has('threads')) { uses.push('{$ifdef unix}cthreads,{$endif} SysUtils'); this.needs.delete('sysutils'); }
-    if (this.needs.has('math')) uses.push('Math');
-    if (this.needs.has('sysutils')) uses.push('SysUtils');
-    if (uses.length) out.push(`uses ${uses.join(', ')};`, '');
-    out.push(...td, ...body);
-    if (main) out.push(...mainLines);
-    else out.push('begin', 'end.');
-    return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
-  }
-}
-
-/* ==================================================================== */
 /* Gemeinsames für Kotlin und Rust                                       */
 /* ==================================================================== */
 const IDENT_ONLY = /^[\p{L}_][\p{L}\p{N}_]*$/u;
@@ -2432,7 +2197,7 @@ function generateCode(doc, lang, opts = {}) {
   if (!doc.roots.length) return '';
   doc = expandIncludes(doc);
   if (!doc.roots.length) return '';
-  const G = { python: PyGen, pascal: PasGen, kotlin: KtGen, rust: RsGen }[lang] || CGen;
+  const G = { python: PyGen, kotlin: KtGen, rust: RsGen }[lang] || CGen;
   return new G(doc, lang, opts).run();
 }
 

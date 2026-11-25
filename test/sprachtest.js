@@ -47,7 +47,7 @@ const exists = (p) => { try { return fs.statSync(p).isDirectory(); } catch (e) {
 if (process.platform === 'win32') {
   const adopt = 'C:/Program Files/Eclipse Adoptium';
   if (exists(adopt)) for (const d of fs.readdirSync(adopt)) if (d.startsWith('jdk-')) extra.push(`${adopt}/${d}/bin`);
-  for (const p of ['C:/msys64/ucrt64/bin', `${process.env.LOCALAPPDATA}/Programs/kotlinc/bin`, 'C:/FPC/3.2.2/bin/i386-win32']) if (exists(p)) extra.push(p);
+  for (const p of ['C:/msys64/ucrt64/bin', `${process.env.LOCALAPPDATA}/Programs/kotlinc/bin`]) if (exists(p)) extra.push(p);
 }
 const env = { ...process.env };
 const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
@@ -68,7 +68,6 @@ const RUN = {
   java: { tool: 'javac', file: `${className}.java`, build: ['javac', ['-encoding', 'UTF-8', '-d', 'jcls', `${className}.java`]], run: ['java', ['-cp', 'jcls', className]] },
   kotlin: { tool: 'kotlinc', file: 'prog.kt', build: ['kotlinc', ['prog.kt', '-include-runtime', '-nowarn', '-d', 'prog_kt.jar'], true], run: ['java', ['-jar', 'prog_kt.jar']] },
   rust: { tool: 'rustc', file: 'prog.rs', build: ['rustc', ['-o', 'prog_rs' + X, 'prog.rs']], run: [exe('prog_rs'), []] },
-  pascal: { tool: 'fpc', file: 'prog.pas', build: ['fpc', [...(process.platform === 'win32' ? ['-Px86_64'] : []), '-oprog_pas' + X, 'prog.pas']], run: [exe('prog_pas'), []] },
 };
 
 // C#: Projektdatei; JavaScript: prompt-sync braucht ein Terminal – hier ein pipe-fester Ersatz mit gleicher Schnittstelle

@@ -153,7 +153,7 @@
  "ext.saveNsd": "Save Structogram",
  "ext.saved": "Saved: {0}",
  "ext.selectionSuffix": "_selection",
- "ext.structorizerParserLangs": "The Structorizer parser supports C (.c), Java (.java), Pascal/Delphi (.pas, .dpr), COBOL (.cob, .cbl) and Processing (.pde). The file must be saved and have the matching file extension.",
+ "ext.structorizerParserLangs": "The Structorizer parser supports C (.c), Java (.java), COBOL (.cob, .cbl) and Processing (.pde). The file must be saved and have the matching file extension.",
  "ext.structorizerReady": "Structorizer is ready: {0}",
  "ext.structorizerSetUp": "Structorizer is set up:\n{0}",
  "ext.structorizerUpdated": "Structorizer updated: {0}",
