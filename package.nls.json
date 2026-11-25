@@ -74,5 +74,9 @@
   "config.checks": "Checks in the structogram: **errors** (red, “!”) for things that do not work – e.g. syntax errors, a variable without a value, an unknown function, `leave` outside a loop – and **hints** (yellow, “i”, each with a reason) for deviations from DIN 66261 or good practice – e.g. a variable without a type, an input without a prompt, a case selection on a condition, a possible endless loop, a value that is never used. Messages appear as a badge on the element (tooltip on hover) and in the *Problems* view.",
   "config.checks.enum0": "Show errors and hints",
   "config.checks.enum1": "Show errors only",
-  "config.checks.enum2": "No checks"
+  "config.checks.enum2": "No checks",
+  "config.hints.bestPractice": "Show **good practice** hints (yellow): variable, constant, parameter or return value without a type, subroutine without a return value lacking `: void`, input without a prompt. Errors are always shown.",
+  "config.hints.conventions": "Show **conventions** hints (yellow): case selection on a condition, conditions as case labels, several statements in one block, empty loop body, empty block, structogram without a name. Common conventions from teaching and practice – DIN 66261 only defines the symbols, not such rules.",
+  "config.hints.confusion": "Show **misleading** hints (yellow) – works, but invites mistakes: “else” branch labeled with a condition, variable sometimes text and sometimes a number, decimal numbers compared with `=`, value never used.",
+  "config.hints.logic": "Show **possible logic error** hints (yellow): endless loop without exit, loop condition never changes, unreachable element."
 }

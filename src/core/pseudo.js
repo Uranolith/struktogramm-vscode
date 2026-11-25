@@ -1071,7 +1071,9 @@ function parseSignature(text) {
   let returnType = open > 1 ? joinTokens(toks.slice(0, open - 1)) : null;
   const after = close >= 0 ? toks.slice(close + 1) : [];
   if (after.length && (after[0].v === ':' || after[0].v === '->')) returnType = joinTokens(after.slice(1));
-  if (returnType && /^(void|procedure|function|sub|def)$/i.test(returnType)) returnType = null;
+  // void & Co.: ausdrücklich kein Rückgabewert (returnVoid merkt sich, dass es so geschrieben wurde)
+  let returnVoid = false;
+  if (returnType && /^(void|procedure|function|sub|def)$/i.test(returnType)) { returnType = null; returnVoid = true; }
   const inner = toks.slice(open + 1, close < 0 ? toks.length : close);
   const params = [];
   for (const part of splitTop(inner, (t) => t.v === ',' || t.v === ';')) {
@@ -1094,7 +1096,7 @@ function parseSignature(text) {
       params.push({ name: p[k].v, type: joinTokens(p.slice(0, k)) + suffix });
     }
   }
-  return { name: sanitizeIdent(name), params, returnType, hasParens: true };
+  return { name: sanitizeIdent(name), params, returnType, returnVoid, hasParens: true };
 }
 
 function sanitizeIdent(n) {

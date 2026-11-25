@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Prüfungen für Struktogramme: Fehler (funktioniert nicht) und Hinweise (weicht von DIN 66261 oder bewährter Praxis ab).
+ * Prüfungen für Struktogramme: Fehler (funktioniert nicht) und Hinweise (weicht von bewährter Praxis oder üblichen Konventionen ab).
  *
  *   lintDoc(doc) -> [{ path, severity: 'error' | 'hint', code, message }]
  *
@@ -24,6 +24,22 @@ const CONSTANTS = new Set(['true', 'false', 'wahr', 'falsch', 'pi', 'null', 'nil
 /* Prozeduren, deren erstes Argument (bzw. bei insert das zweite) verändert wird */
 const PROC_TARGET = { inc: 0, dec: 0, insert: 1, delete: 0 };
 const LOOPS = new Set(['for', 'while', 'repeat', 'forever']);
+
+/**
+ * Gruppen der Hinweise (einzeln abschaltbar, Einstellungen struktogramm.hints.*):
+ *  bestPractice  sauberer, verständlicher Stil
+ *  conventions   übliche Konventionen für Struktogramme (die DIN 66261 legt nur die Sinnbilder fest, keine Regeln)
+ *  confusion     funktioniert, verleitet aber zu Irrtümern
+ *  logic         deutet auf einen Fehler im Ablauf hin
+ * Fehler gehören zu keiner Gruppe und werden immer gemeldet.
+ */
+const CATEGORIES = ['bestPractice', 'conventions', 'confusion', 'logic'];
+const CATEGORY = {
+  untyped: 'bestPractice', untypedParam: 'bestPractice', untypedReturn: 'bestPractice', untypedVoid: 'bestPractice', noPrompt: 'bestPractice',
+  caseBool: 'conventions', caseCond: 'conventions', multiLine: 'conventions', emptyLoop: 'conventions', emptyBlock: 'conventions', noName: 'conventions',
+  caseElseCond: 'confusion', typeMix: 'confusion', floatEq: 'confusion', unused: 'confusion',
+  endless: 'logic', condUnchanged: 'logic', unreachable: 'logic',
+};
 const lc = (s) => String(s || '').toLowerCase();
 const linesOf = (el) => (el.text || []).map((l) => String(l)).filter((l) => l.trim());
 
@@ -94,7 +110,7 @@ function lintDoc(doc) {
     const key = `${path}|${code}|${message}`;
     if (seen.has(key)) return;
     seen.add(key);
-    items.push({ path, severity, code, message });
+    items.push({ path, severity, code, category: severity === 'error' ? 'error' : CATEGORY[code] || 'bestPractice', message });
   };
 
   // Unterprogramme, Typen und gemeinsame Definitionen (includable) des ganzen Dokuments
@@ -128,6 +144,7 @@ function lintDoc(doc) {
   function lintRoot(root, rpath, inf) {
     const sig = P.parseSignature(root.text || []);
     const typed = new Set();   // mit Typ deklariert (var x: int, int x)
+    const untypedDecls = [];   // var x := 5 – deklariert, aber ohne Typ
     const consts = new Set();  // Konstanten: Typ ergibt sich aus dem Wert
     let returnsValue = false;
     if (root.rootType === 'program' && !(root.text || []).join('').trim()) add(rpath, 'hint', 'noName', tr('lint.noName'));
@@ -156,7 +173,10 @@ function lintDoc(doc) {
       }
       if (r.divZero) add(path, 'error', 'divZero', tr('lint.divZero'));
       const isDouble = (n) => n && ((n.k === 'num' && n.isFloat) || (n.k === 'id' && P.normType(inf.types.get(n.name)) === 'double'));
-      if (r.cmps.some(([a, b]) => isDouble(a) || isDouble(b))) add(path, 'hint', 'floatEq', tr('lint.floatEq'));
+      if (r.cmps.some(([a, b]) => isDouble(a) || isDouble(b))) {
+        const fc = floatComparison(text, inf);
+        if (fc) add(path, 'hint', 'floatEq', tr('lint.floatEq', fc.cmp, fc.better));
+      }
       return r;
     };
 
@@ -172,7 +192,7 @@ function lintDoc(doc) {
       if (['instruction', 'call', 'jump'].includes(el.type)) {
         if (!lines.length) add(path, 'hint', 'emptyBlock', tr('lint.emptyBlock'));
         // mehrere Anweisungen in einem Block (ein reiner Deklarationsblock ist üblich und bleibt ohne Hinweis)
-        if (lines.length > 1 && el.type === 'instruction' && !lines.every((l) => P.classifyLine(l).kind === 'decl')) add(path, 'hint', 'multiLine', tr('lint.multiLine'));
+        if (lines.length > 1 && el.type === 'instruction' && !lines.every((l) => P.classifyLine(l).kind === 'decl')) add(path, 'hint', 'multiLine', tr('lint.multiLine', lines.length));
         for (const line of lines) {
           const c = P.classifyLine(line);
           switch (c.kind) {
@@ -191,6 +211,7 @@ function lintDoc(doc) {
               c.decls.forEach((d) => {
                 known.add(d.name);
                 if (c.type) typed.add(d.name);
+                else if (!d.suffix) untypedDecls.push({ name: d.name, path, line, init: d.init, isConst: c.isConst });
                 if (c.isConst) consts.add(d.name);
                 if (d.init != null && d.init !== '') { setVar(d.name, path); useExpr(d.init, path); }
               });
@@ -244,8 +265,11 @@ function lintDoc(doc) {
           vals.push(...l.split(',').map((v) => v.trim().toLowerCase()).filter(Boolean));
         });
         const BOOL = ['true', 'false', 'wahr', 'falsch'];
-        if (BOOL.includes(lc(disc))) add(path, 'hint', 'caseCond', tr('lint.caseCond'));
-        else if (vals.length && vals.every((v) => BOOL.includes(v))) add(path, 'hint', 'caseBool', tr('lint.caseBool'));
+        if (BOOL.includes(lc(disc))) {
+          const conds = labels.slice(0, Math.max(0, n - 1)).filter(Boolean);
+          const shown = conds.slice(0, 3).map((c) => `„${c}“`).join(', ') + (conds.length > 3 ? ', …' : '');
+          add(path, 'hint', 'caseCond', tr('lint.caseCond', shown));
+        } else if (vals.length && vals.every((v) => BOOL.includes(v))) add(path, 'hint', 'caseBool', tr('lint.caseBool', disc));
         const elseLabel = labels[n - 1];
         if (n > 0 && elseLabel && elseLabel !== '%' && /[<>=]|\b(and|or|not)\b/i.test(elseLabel)) add(path, 'hint', 'caseElseCond', tr('lint.caseElseCond', elseLabel));
       }
@@ -294,13 +318,35 @@ function lintDoc(doc) {
       const guess = typeName(inf.types.get(name));
       add(path, 'hint', 'untyped', guess ? tr('lint.untyped', name, guess) : tr('lint.untypedNoGuess', name));
     }
+    // var s := "Hallo" bzw. const PI := 3.14 ist deklariert, der Typ aber nur aus dem Wert erschlossen: Typ angeben
+    for (const u of untypedDecls) {
+      let guess = typeName(inf.types.get(u.name));
+      if (!guess && u.init) { try { guess = typeName(P.inferType(u.init, inf.types)); } catch (e) { guess = null; } }
+      const esc = u.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`^(\\s*(?:var|dim|const)\\s+${esc})(?![\\p{L}\\p{N}_])`, 'iu');
+      // Zuweisung im Vorschlag als := bzw. <- wie geschrieben (const MAX = 10 -> const MAX: int := 10)
+      const better = guess && re.test(u.line)
+        ? u.line.trim().replace(re, `$1: ${guess}`).replace(new RegExp(`^(\\s*(?:var|dim|const)\\s+${esc}: ${guess})\\s*(:=|<-|=)\\s*`, 'iu'), (m, head, op) => `${head} ${op === '<-' ? '<-' : ':='} `)
+        : `${u.isConst ? 'const' : 'var'} ${u.name}: ${guess || '…'}`;
+      add(u.path, 'hint', 'untyped', tr('lint.untypedDecl', u.name, better));
+    }
     if (root.rootType !== 'program' && sig) {
+      // Vorschläge getrennt: Parameter-Hinweis ergänzt nur die Parametertypen (Rückgabe wie geschrieben),
+      // Rückgabe-Hinweis nur den Rückgabetyp (Parameter wie geschrieben)
+      const ptype = (prm) => prm.type || typeName(inf.types.get(prm.name)) || 'int';
+      const asWritten = (prm) => (prm.type ? `${prm.name}: ${prm.type}` : prm.name);
+      const retWritten = sig.returnType ? `: ${sig.returnType}` : sig.returnVoid ? ': void' : '';
+      const withParams = `${sig.name}(${sig.params.map((prm) => `${prm.name}: ${ptype(prm)}`).join(', ')})${retWritten}`;
+      const withReturn = `${sig.name}(${sig.params.map(asWritten).join(', ')}): ${typeName(inf.returnType) || 'int'}`;
       for (const prm of sig.params) {
         if (prm.type) continue;
-        const guess = typeName(inf.types.get(prm.name)) || 'int';
-        add(rpath, 'hint', 'untypedParam', tr('lint.untypedParam', prm.name, guess));
+        add(rpath, 'hint', 'untypedParam', tr('lint.untypedParam', prm.name, withParams));
       }
-      if (returnsValue && !sig.returnType) add(rpath, 'hint', 'untypedReturn', tr('lint.untypedReturn', sig.name, typeName(inf.returnType) || 'int'));
+      if (returnsValue && !sig.returnType) add(rpath, 'hint', 'untypedReturn', tr('lint.untypedReturn', sig.name, withReturn));
+      // kein return: ausdrücklich „: void“ angeben, damit klar ist, dass absichtlich nichts zurückkommt
+      if (!returnsValue && !sig.returnType && !sig.returnVoid) {
+        add(rpath, 'hint', 'untypedVoid', tr('lint.untypedVoid', sig.name, `${sig.name}(${sig.params.map(asWritten).join(', ')}): void`));
+      }
     }
     for (const [name, m] of valueTypes) {
       if (m.size > 1) add(m.get('string') === assigned.get(name) ? m.get('number') : m.get('string'), 'hint', 'typeMix', tr('lint.typeMix', name));
@@ -308,6 +354,33 @@ function lintDoc(doc) {
   }
 
   return items;
+}
+
+/**
+ * Erster Vergleich mit = bzw. <> zwischen Kommazahlen im Text – mit konkretem Vorschlag:
+ *   x = 0.5   ->  abs(x - 0.5) < 0.000001        x <> 0.5  ->  abs(x - 0.5) >= 0.000001
+ */
+function floatComparison(text, inf) {
+  const { splitTop, findTop, joinTokens } = require('./tokenizer');
+  const toks = P.ptoks(text);
+  const parts = splitTop(toks, (t) => t.t === 'id' && ['and', 'or', 'xor'].includes(t.v.toLowerCase()));
+  const isDbl = (part) => {
+    const src = joinTokens(part);
+    if (part.length === 1 && part[0].t === 'num') return /[.eE]/.test(part[0].v);
+    try { return P.normType(P.inferType(src, inf.types)) === 'double'; } catch (e) { return false; }
+  };
+  for (let part of parts) {
+    while (part.length && part[0].t === 'id' && part[0].v.toLowerCase() === 'not') part = part.slice(1);
+    if (part.length > 2 && part[0].v === '(' && part[part.length - 1].v === ')') part = part.slice(1, -1);
+    const k = findTop(part, (t) => ['=', '==', '<>', '!='].includes(t.v));
+    if (k <= 0) continue;
+    const L = part.slice(0, k), R = part.slice(k + 1);
+    if (!R.length || !(isDbl(L) || isDbl(R))) continue;
+    const side = (p) => { const s = joinTokens(p); return p.length > 1 && !(p[0].v === '(' && p[p.length - 1].v === ')') && /[+\-]/.test(s) ? `(${s})` : s; };
+    const ne = ['<>', '!='].includes(part[k].v);
+    return { cmp: joinTokens(part), better: `abs(${side(L)} - ${side(R)}) ${ne ? '>=' : '<'} 0.000001` };
+  }
+  return null;
 }
 
 /** Wie verlässt ein Schleifenrumpf die Schleife, und welche Variablen ändert er? */
@@ -344,4 +417,4 @@ function loopExits(body) {
   return res;
 }
 
-module.exports = { lintDoc, BUILTINS };
+module.exports = { lintDoc, BUILTINS, CATEGORY, CATEGORIES };

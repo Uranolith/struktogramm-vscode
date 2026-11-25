@@ -633,6 +633,26 @@
             "%config.checks.enum2%"
           ],
           "markdownDescription": "%config.checks%"
+        },
+        "struktogramm.hints.bestPractice": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.hints.bestPractice%"
+        },
+        "struktogramm.hints.conventions": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.hints.conventions%"
+        },
+        "struktogramm.hints.confusion": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.hints.confusion%"
+        },
+        "struktogramm.hints.logic": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.hints.logic%"
         }
       }
     },

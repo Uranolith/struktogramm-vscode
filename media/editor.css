@@ -296,6 +296,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .lint-pop .lp-item.hint .lp-ico { background: #e2a300; color: #1e1e1e; }
 .lint-pop .lp-body { flex: 1; min-width: 0; }
 .lint-pop .lp-main { font-weight: 600; }
+.lint-pop .lp-cat { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; opacity: .6; margin-bottom: 1px; }
 .lint-pop .lp-better, .lint-pop .lp-reason { margin-top: 3px; }
 .lint-pop .lp-reason { opacity: .8; }
 .lint-pop .lp-label { font-weight: 600; opacity: .75; }

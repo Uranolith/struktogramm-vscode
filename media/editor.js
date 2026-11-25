@@ -560,6 +560,7 @@
       if (b) { betterLabel = b[1]; better = main.slice(b.index + b[0].length).replace(/\.\s*$/, ''); main = main.slice(0, b.index); }
       main = main.trim().replace(/\.$/, '');
       return `<div class="lp-item ${i.severity}"><span class="lp-ico">${i.severity === 'error' ? '!' : 'i'}</span><div class="lp-body">` +
+        (i.catLabel ? `<div class="lp-cat">${escapeHtml(i.catLabel)}</div>` : '') +
         `<div class="lp-main">${code(main)}</div>` +
         (better ? `<div class="lp-better"><span class="lp-label">${escapeHtml(betterLabel)}:</span> ${suggestion(better)}</div>` : '') +
         (reason ? `<div class="lp-reason"><span class="lp-label">${escapeHtml(reasonLabel)}:</span> ${code(reason)}</div>` : '') +
