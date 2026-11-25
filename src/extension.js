@@ -108,11 +108,14 @@ class NsdEditorProvider {
       vscode.window.onDidChangeActiveColorTheme(() => send()),
       panel.onDidChangeViewState(() => { if (panel.active) this.setActive(state); }),
     ];
+    // Webansicht vorab merken: nach dem Schließen wirft schon der Zugriff auf panel.webview („Webview is disposed“) –
+    // dann lief der Rest des Handlers nie, und geschlossene Editoren blieben eingetragen
+    const webview = panel.webview;
     panel.onDidDispose(() => {
-      handleDiagramFocus(panel.webview, { type: 'diagramFocus', focused: false });
-      state.exec.abort();
-      subs.forEach((s) => s.dispose());
       this.editors.delete(state);
+      try { handleDiagramFocus(webview, { type: 'diagramFocus', focused: false }); } catch (e) { /* schon weg */ }
+      try { state.exec.abort(); } catch (e) { /* schon weg */ }
+      subs.forEach((s) => s.dispose());
       // letzter Editor dieser Datei geschlossen: Einträge in „Probleme“ entfernen
       if (this.checks && ![...this.editors].some((s) => s.document.uri.toString() === document.uri.toString())) this.checks.clear(document.uri);
       if (this.execEditor === state) this.execEditor = null;
