@@ -1518,11 +1518,21 @@
     function draw() {
       box.innerHTML = list.map((it, i) => `<div class="ci${i === idx ? ' on' : ''}" data-i="${i}" role="option"><span class="ck ck-${it.kind}">${KIND_ICON[it.kind]}</span><b>${escapeHtml(it.name)}${it.call ? '()' : ''}</b><span class="cd">${escapeHtml(it.detail || KIND_LABEL[it.kind])}</span></div>`).join('') +
         `<div class="cfoot">${escapeHtml(T('web.ck.foot'))}</div>`;
+      // Größe an den verfügbaren Platz anpassen: unter der Zeile oder darüber, je nachdem wo mehr Platz ist;
+      // ist beides zu knapp, wird die Liste niedriger (scrollbar) statt abgeschnitten
+      box.style.maxHeight = '';
+      box.style.maxWidth = Math.max(160, Math.min(420, window.innerWidth - 8)) + 'px';
+      box.style.minWidth = Math.min(220, window.innerWidth - 8) + 'px';
       box.hidden = false;
       const c = caretPos(ta);
+      const lineH = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+      const natural = Math.min(260, box.scrollHeight + 2);
+      const below = window.innerHeight - c.y - 6, above = c.y - lineH - 6;
+      const useBelow = below >= natural || below >= above;
+      box.style.maxHeight = Math.max(48, Math.min(260, useBelow ? below : above)) + 'px';
       const w = box.offsetWidth, h = box.offsetHeight;
       box.style.left = Math.max(4, Math.min(c.x, window.innerWidth - w - 4)) + 'px';
-      box.style.top = (c.y + h + 4 > window.innerHeight ? c.y - h - 22 : c.y + 2) + 'px';
+      box.style.top = (useBelow ? c.y + 2 : Math.max(4, c.y - lineH - h - 2)) + 'px';
       const on = box.querySelector('.on');
       if (on) on.scrollIntoView({ block: 'nearest' });
     }
