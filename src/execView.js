@@ -23,13 +23,12 @@ class ExecViewProvider {
     this.shown = null;         // Editor, dessen Verlauf gerade angezeigt wird
   }
 
-  resolveWebviewView(view) {
-    this.view = view;
-    this.shown = null;
+  /** HTML der Ansicht (Texte in der eingestellten Sprache) */
+  html(view) {
     const media = vscode.Uri.joinPath(this.context.extensionUri, 'media');
     const n = nonce();
     const uri = (f) => view.webview.asWebviewUri(vscode.Uri.joinPath(media, f));
-    view.webview.html = `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="${getLanguage()}">
 <head>
 <meta charset="UTF-8">
@@ -46,6 +45,21 @@ class ExecViewProvider {
 <script nonce="${n}" src="${uri('execview.js')}"></script>
 </body>
 </html>`;
+  }
+
+  /** nach einem Sprachwechsel neu aufbauen */
+  relocalize() {
+    if (!this.view) return;
+    this.view.webview.html = this.html(this.view);
+    this.shown = null;
+    if (this.editors && this.editors.active) this.showFor(this.editors.active);
+  }
+
+  resolveWebviewView(view) {
+    this.view = view;
+    this.shown = null;
+    const media = vscode.Uri.joinPath(this.context.extensionUri, 'media');
+    view.webview.html = this.html(view);
     // Optionen nach dem HTML setzen (sonst lädt VS Code zuerst eine leere Seite ohne Content-Security-Policy)
     view.webview.options = { enableScripts: true, localResourceRoots: [media] };
     view.webview.onDidReceiveMessage((msg) => this.onMessage(msg));

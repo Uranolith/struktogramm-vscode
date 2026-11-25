@@ -685,7 +685,12 @@ async function setupStructorizer(context) {
 function activate(context) {
   execSplit.init(context);
   extContext = context;
-  setLanguage(vscode.env.language); // Englisch, bei deutscher VS-Code-Oberfläche Deutsch
+  // Sprache: Einstellung struktogramm.language (auto = wie die VS-Code-Oberfläche: Deutsch, sonst Englisch)
+  const languageSetting = () => {
+    const v = vscode.workspace.getConfiguration('struktogramm').get('language', 'auto');
+    return v === 'de' || v === 'en' ? v : vscode.env.language;
+  };
+  setLanguage(languageSetting());
   const provider = new NsdEditorProvider(context);
   // Haltepunkte der Struktogramme = VS-Code-Haltepunkte (Ansicht „Haltepunkte“, Bedingungen, Logpoints …)
   provider.bpSync = new BreakpointSync(context, provider);
@@ -757,6 +762,14 @@ function activate(context) {
     vscode.window.registerWebviewViewProvider(VIEW_ID, tools),
     vscode.window.registerWebviewViewProvider(EXEC_VIEW_ID, execView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('struktogramm.language')) {
+        // Texte stecken im HTML der Ansichten: alle offenen Struktograf-Ansichten neu aufbauen
+        setLanguage(languageSetting());
+        provider.editors.forEach((st) => { try { st.panel.webview.html = webviewHtml(st.panel.webview, context.extensionUri, false); } catch (err) { /* geschlossen */ } });
+        if (preview.panel) { try { preview.panel.webview.html = webviewHtml(preview.panel.webview, context.extensionUri, true); } catch (err) { /* geschlossen */ } }
+        tools.relocalize();
+        execView.relocalize();
+      }
       if (e.affectsConfiguration('struktogramm.toolbarLocation') || e.affectsConfiguration('struktogramm.devPreview.toolbarLocation')) applyToolbarLocation(true);
       if (e.affectsConfiguration('struktogramm.executionPanelLocation')) applyExecutionLocation(true);
     }),

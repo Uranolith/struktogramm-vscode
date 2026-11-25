@@ -619,6 +619,21 @@
           ],
           "markdownDescription": "%config.toolbarLocation%"
         },
+        "struktogramm.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "de",
+            "en"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "%config.language.enum0%",
+            "%config.language.enum1%",
+            "%config.language.enum2%"
+          ],
+          "markdownDescription": "%config.language%"
+        },
         "struktogramm.checks": {
           "type": "string",
           "enum": [
