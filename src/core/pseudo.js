@@ -551,7 +551,116 @@ function stringCompare(toks, lang, ctx) {
   return [{ t: 'id', v: code, ws: toks[0].ws }];
 }
 
+/** Grenzen eines Operanden links bzw. rechts von Position k (bis and/or/Komma/Zuweisung oder Klammerrand) */
+const OPERAND_STOP = (t) => (t.t === 'op' && [',', ':=', '<-', '&&', '||', ';'].includes(t.v)) || (t.t === 'id' && ['and', 'or', 'xor', 'not'].includes(t.v.toLowerCase())) || REL_OPS.has(t.v);
+function operandLeft(toks, k) {
+  let depth = 0, s = k;
+  for (let j = k - 1; j >= 0; j--) {
+    const t = toks[j];
+    if (t.t === 'op' && CLOSE[t.v]) depth++;
+    else if (t.t === 'op' && OPEN[t.v]) { if (depth === 0) break; depth--; }
+    else if (depth === 0 && OPERAND_STOP(t)) break;
+    s = j;
+  }
+  return s;
+}
+function operandRight(toks, k) {
+  let depth = 0, e = k + 1;
+  for (let j = k + 1; j < toks.length; j++) {
+    const t = toks[j];
+    if (t.t === 'op' && OPEN[t.v]) depth++;
+    else if (t.t === 'op' && CLOSE[t.v]) { if (depth === 0) break; depth--; }
+    else if (depth === 0 && OPERAND_STOP(t)) break;
+    e = j + 1;
+  }
+  return e;
+}
+
+/**
+ * Ein einzelnes Zeichen in einfachen Anführungszeichen ('G') ist im Structorizer auch Text. Wird es mit einem Text
+ * verglichen (kundentyp = 'G'), als Text-Literal "G" schreiben – sonst wäre es in Java, C, C#, Kotlin, Rust ein char.
+ */
+const CHAR_LIT = /^'(?:[^'\\]|\\.)'$/;
+function charsToStrings(toks, ctx) {
+  let res = null;
+  const typeOf = (a, b) => { try { return normType(ctx.exprType ? ctx.exprType(joinTokens(toks.slice(a, b))) : inferType(joinTokens(toks.slice(a, b)))); } catch (e) { return null; } };
+  for (let k = 0; k < toks.length; k++) {
+    if (!REL_OPS.has(toks[k].v)) continue;
+    const s = operandLeft(toks, k), e = operandRight(toks, k);
+    for (const [lit, a, b] of [[k - 1, k + 1, e], [k + 1, s, k]]) {
+      const t = toks[lit];
+      const single = lit === k - 1 ? s === k - 1 : e === k + 2;
+      if (!t || t.t !== 'str' || !CHAR_LIT.test(t.v) || !single) continue;
+      if (typeOf(a, b) !== 'string') continue;
+      res = res || toks.slice();
+      const inner = t.v.slice(1, -1);
+      res[lit] = { ...t, v: '"' + (inner === '"' ? '\\"' : inner) + '"' };
+    }
+  }
+  return res || toks;
+}
+
+/**
+ * Ganzzahldivision wie im Interpreter (Structorizer): int / int schneidet ab (-3 / 4 = 0).
+ * Python: int(a / b) (// rundet ab), JavaScript: Math.trunc(a / b). In den übrigen Sprachen teilt
+ * „/“ mit Ganzzahlen ohnehin so. Bestimmt wird je Division aus den Operandentypen.
+ */
+const INTDIV_LANGS = new Set(['python', 'javascript']);
+function intDivision(toks, lang, ctx) {
+  // zuerst in Klammergruppen
+  const res = [];
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t.t === 'op' && OPEN[t.v]) {
+      const c = matchClose(toks, i);
+      if (c > i) { res.push(t, ...intDivision(toks.slice(i + 1, c), lang, ctx), toks[c]); i = c; continue; }
+    }
+    res.push(t);
+  }
+  if (!res.some((t) => t.t === 'op' && t.v === '/' && !t.intDivDone)) return res;
+  const isMul = (t) => (t.t === 'op' && ['*', '/', '%'].includes(t.v)) || (t.t === 'id' && ['div', 'mod'].includes(t.v.toLowerCase()));
+  const KW = new Set(['and', 'or', 'xor', 'not', 'div', 'mod']);
+  const endsFactor = (t) => t && (t.t === 'num' || t.t === 'str' || (t.t === 'id' && !KW.has(t.v.toLowerCase())) || (t.t === 'op' && CLOSE[t.v]));
+  // Ketten aus Faktoren und * / % div mod (höchste Bindung) – begrenzt durch alle anderen zweistelligen Operatoren
+  const out = [];
+  let i = 0;
+  while (i < res.length) {
+    let j = i;
+    const parts = [[]], ops = [];
+    for (; j < res.length; j++) {
+      const t = res[j];
+      if (t.t === 'op' && OPEN[t.v]) { const c = matchClose(res, j); const end = c < 0 ? res.length - 1 : c; parts[parts.length - 1].push(...res.slice(j, end + 1)); j = end; continue; }
+      const cur = parts[parts.length - 1];
+      if (cur.length && endsFactor(cur[cur.length - 1]) && isMul(t)) { ops.push(t); parts.push([]); continue; }
+      const binary = cur.length && endsFactor(cur[cur.length - 1]);
+      if (binary && !(t.t === 'op' && (t.v === '.' || OPEN[t.v]))) break; // anderer zweistelliger Operator: Kette endet
+      cur.push(t);
+    }
+    if (!ops.length) { out.push(...parts[0]); if (j < res.length) out.push(res[j]); i = j + 1; continue; }
+    let acc = parts[0];
+    ops.forEach((op, k) => {
+      const f = parts[k + 1];
+      const intOf = (p) => { try { return normType(ctx.exprType ? ctx.exprType(joinTokens(p)) : inferType(joinTokens(p))) === 'int'; } catch (e) { return false; } };
+      if (op.t === 'op' && op.v === '/' && !op.intDivDone && f.length && intOf(acc) && intOf(f)) {
+        const first = { ...acc[0], ws: false };
+        acc = [{ t: 'id', v: 'int', ws: acc[0].ws }, tok('(', 'op', false), first, ...acc.slice(1), { ...op, intDivDone: true }, ...f, tok(')', 'op', false)];
+        return;
+      }
+      acc = [...acc, op, ...f];
+    });
+    out.push(...acc);
+    if (j < res.length) out.push(res[j]);
+    i = j + 1;
+  }
+  return out;
+}
+
+/** pi als Konstante der Zielsprache (wenn es keine Variable dieses Namens gibt) */
+const PI_CONST = { python: 'math.pi', java: 'Math.PI', csharp: 'Math.PI', javascript: 'Math.PI', c: 'M_PI', cpp: 'M_PI', kotlin: 'Math.PI', rust: 'std::f64::consts::PI' };
+
 function mapToks(toks, lang, ctx) {
+  if (STRCMP_LANGS.has(lang) || lang === 'kotlin') toks = charsToStrings(toks, ctx);
+  if (INTDIV_LANGS.has(lang)) toks = intDivision(toks, lang, ctx);
   // Textvergleiche zuerst (Operanden werden dabei selbst übersetzt)
   if (STRCMP_LANGS.has(lang)) { const sc = stringCompare(toks, lang, ctx); if (sc) toks = sc; }
   if (MODERN.has(lang)) toks = promoteFloats(toks, ctx);
@@ -576,10 +685,9 @@ function mapToks(toks, lang, ctx) {
       else if (t.v === '||') nt.v = c ? '||' : 'or';
       else if (t.v === '!' ) {
         if (!c) { nt.v = 'not'; nt.t = 'id'; }
-      } else if (t.v === '%') nt.v = lang === 'pascal' ? 'mod' : '%';
-      else if (t.v === '//' && lang !== 'python') nt.v = lang === 'pascal' ? 'div' : '/';
-      else if (t.v === '/' && ctx.intDiv && (lang === 'python' || lang === 'pascal')) { nt.v = lang === 'pascal' ? 'div' : '//'; if (lang === 'pascal') { nt.t = 'id'; nt.ws = true; } }
-      else if (t.v === '<-' || t.v === ':=') nt.v = lang === 'pascal' ? ':=' : '=';
+      } else if (t.v === '%') nt.v = '%';
+      else if (t.v === '//' && lang !== 'python') nt.v = '/';
+      else if (t.v === '<-' || t.v === ':=') nt.v = '=';
       if (nt.t === 'id' && out.length && !t.ws) nt.ws = true;
       if (t.v === '!' && !c) { const nx = toks[i + 1]; if (nx) toks[i + 1] = { ...nx, ws: true }; }
       out.push(nt);
@@ -655,6 +763,10 @@ function mapToks(toks, lang, ctx) {
         const val = l === 'true' || l === 'wahr';
         nt.v = lang === 'python' ? (val ? 'True' : 'False') : (val ? 'true' : 'false');
         if (lang === 'c' && ctx.needs) ctx.needs.add('stdbool');
+      } else if (l === 'pi' && !(toks[i + 1] && toks[i + 1].v === '(') && !(out.length && out[out.length - 1].v === '.') && !(ctx.typeOf && ctx.typeOf(t.v))) {
+        nt.v = PI_CONST[lang] || t.v;
+        if (ctx.needs && lang === 'python') ctx.needs.add('math');
+        if (ctx.needs && (lang === 'c' || lang === 'cpp')) ctx.needs.add('math');
       } else if (l === 'null' || l === 'nil' || l === 'none') {
         nt.v = lang === 'python' || lang === 'rust' ? 'None' : lang === 'c' ? 'NULL' : lang === 'cpp' ? 'nullptr' : 'null';
       } else if (l === 'not') {
@@ -882,6 +994,7 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
       }
       if (toks[i - 1] && toks[i - 1].v === '.') continue;
       if (['div', 'mod'].includes(l)) continue;
+      if (l === 'pi' && !varTypes.has(t.v)) { bump('double'); continue; }
       if (varTypes.has(t.v)) {
         const vt = normType(varTypes.get(t.v));
         if (vt && vt.endsWith('[]') && toks[i + 1] && toks[i + 1].v === '[') { bump(vt.slice(0, -2)); i = matchClose(toks, i + 1); continue; }

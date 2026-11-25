@@ -5,7 +5,7 @@
 const P = require('./pseudo');
 const { t: tr } = require('../i18n');
 const { walk } = require('./model');
-const { joinTokens, findTop, OPEN, CLOSE } = require('./tokenizer');
+const { joinTokens, findTop, matchClose, OPEN, CLOSE } = require('./tokenizer');
 
 const TARGETS = {
   python: { label: 'Python', ext: 'py', languageId: 'python' },
@@ -29,6 +29,7 @@ const TYPE_MAP = {
 };
 
 const SIMPLE_IDENT = P.IDENT_RE;
+const TYPED_LANGS = new Set(['java', 'c', 'cpp', 'csharp', 'kotlin', 'rust']);
 
 /** genaue Typnamen je Zielsprache (Schlüssel: P.canonType) */
 const EXACT_TYPES = {
@@ -103,10 +104,8 @@ class BaseGen {
   }
 
   x(text) {
-    this.intDiv = (this.lang === 'python' || this.lang === 'pascal') && /\//.test(String(text)) && this.allInt(text);
-    const r = P.translateExpr(text, this.lang, this);
-    this.intDiv = false;
-    return r;
+    // Ganzzahldivision wird je Division in translateExpr bestimmt (pseudo.js, intDivision)
+    return P.translateExpr(text, this.lang, this);
   }
 
   /** Bestehen alle Operanden aus Ganzzahlen? (für / -> div bzw. //) */
@@ -183,35 +182,146 @@ class BaseGen {
         }
       });
     }
-    // Typ aus der Verwendung raten (z.B. INPUT x ... x > 3  -> int)
-    const NUMOPS = new Set(['+', '-', '*', '/', '%', '<', '>', '<=', '>=', '=', '<>', '!=', '==']);
-    const guess = (text) => {
-      const toks = P.ptoks(text);
-      toks.forEach((t, i) => {
-        if (t.t !== 'id' || types.get(t.v) || explicit.has(t.v)) return;
-        if (toks[i - 1] && toks[i - 1].v === '.') return;
-        const check = (op, other) => {
-          if (!op || !other || !NUMOPS.has(op.v)) return;
-          if (other.t === 'num') types.set(t.v, /[.eE]/.test(other.v) ? 'double' : 'int');
-          else if (other.t === 'str' && (op.v === '=' || op.v === '<>' || op.v === '+')) types.set(t.v, 'string');
-          else if (other.t === 'id' && ['int', 'double'].includes(P.normType(types.get(other.v)))) types.set(t.v, P.normType(types.get(other.v)));
-        };
-        check(toks[i + 1], toks[i + 2]);
-        if (!types.get(t.v)) check(toks[i - 1], toks[i - 2]);
-      });
-    };
+    // Typ aus der Verwendung ableiten – wie der Interpreter (Structorizer): eine Eingabe ist eine Zahl, wenn mit ihr
+    // gerechnet oder sie mit einer Zahl verglichen wird, sonst Text. Die Regeln laufen, bis sich nichts mehr ändert.
+    const ARITH = new Set(['-', '*', '/', '%', 'div', 'mod']);
+    const REL = new Set(['<', '>', '<=', '>=', '=', '<>', '!=', '==']);
+    const inputVars = new Set();
+    const cands = new Set(); // Variablen, deren Typ abgeleitet werden darf
+    const exprs = [], assigns = [], cases = [];
     walk(root.children, (el) => {
+      if (el.disabled) return false;
       if (el.type === 'for') {
         const f = P.parseForText(linesOf(el).join(' '));
-        if (f && f.kind === 'count') [f.start, f.end].forEach((e) => { const toks = P.ptoks(e); if (toks.length === 1 && toks[0].t === 'id' && !types.get(toks[0].v)) types.set(toks[0].v, 'int'); else guess(e); });
+        if (f && f.kind === 'count') [f.start, f.end].forEach((e) => { const toks = P.ptoks(e); if (toks.length === 1 && toks[0].t === 'id' && !types.get(toks[0].v) && !explicit.has(toks[0].v)) types.set(toks[0].v, 'int'); else exprs.push(e); });
         return;
       }
-      for (const line of linesOf(el)) {
-        const c = P.classifyLine(line);
-        if (c.kind === 'assign') guess(c.expr); else if (c.kind !== 'input' && c.kind !== 'decl') guess(c.expr || line);
-        if (c.kind === 'output') c.items.forEach(guess);
+      if (['instruction', 'call', 'jump'].includes(el.type)) {
+        for (const line of linesOf(el)) {
+          const c = P.classifyLine(line);
+          if (c.kind === 'input') c.vars.forEach((v) => { if (SIMPLE_IDENT.test(v)) { inputVars.add(v); cands.add(v); } });
+          else if (c.kind === 'assign') {
+            exprs.push(c.expr);
+            if (SIMPLE_IDENT.test(c.target)) { assigns.push([c.target, c.expr]); cands.add(c.target); }
+          } else if (c.kind === 'output') c.items.forEach((i) => exprs.push(i));
+          else if (c.kind !== 'decl') exprs.push(c.expr || line);
+        }
+        return;
       }
+      if (el.type === 'case') {
+        const disc = String(el.text[0] || '');
+        const vals = this.caseInfo(el).flatMap((b) => b.values);
+        exprs.push(disc);
+        // Marken wie Bedingungen betrachten: bei „case true of gewicht <= 20“ steht der Vergleich in der Marke
+        exprs.push(...vals);
+        cases.push([disc, vals]);
+        return;
+      }
+      // Bedingungen von Verzweigung und Schleifen
+      if (['alternative', 'while', 'repeat'].includes(el.type)) exprs.push(linesOf(el).join(' '));
     });
+    for (const n of explicit) cands.delete(n);
+    for (const n of params) cands.delete(n);
+    const open = (n) => cands.has(n) && !types.get(n);
+    const num = (t) => t === 'int' || t === 'double';
+    const typeOfToks = (toks) => { try { return toks.length ? P.normType(P.inferType(joinTokens(toks), types, fnTypes)) : null; } catch (e) { return null; } };
+    const isStrLit = (toks) => toks.length === 1 && toks[0].t === 'str';
+    // Operand neben Position k (Richtung dir): einzelnes Token, Klammergruppe, Aufruf oder Index
+    const operandAt = (toks, k, dir) => {
+      if (dir > 0) {
+        let j = k;
+        while (toks[j] && toks[j].t === 'op' && (toks[j].v === '-' || toks[j].v === '+')) j++;
+        if (!toks[j]) return [];
+        let e = j + 1;
+        if (toks[j].t === 'op' && toks[j].v === '(') e = matchClose(toks, j) + 1;
+        else if (toks[j].t === 'id' && toks[j + 1] && (toks[j + 1].v === '(' || toks[j + 1].v === '[')) e = matchClose(toks, j + 1) + 1;
+        return e > j ? toks.slice(j, e) : [];
+      }
+      const t = toks[k];
+      if (!t) return [];
+      if (t.t === 'op' && (t.v === ')' || t.v === ']')) {
+        let depth = 0, j = k;
+        for (; j >= 0; j--) {
+          if (toks[j].v === ')' || toks[j].v === ']') depth++;
+          else if (toks[j].v === '(' || toks[j].v === '[') { depth--; if (!depth) break; }
+        }
+        if (j > 0 && toks[j - 1].t === 'id') j--;
+        return j >= 0 ? toks.slice(j, k + 1) : [];
+      }
+      return [t];
+    };
+    const set = (n, t) => { if (!open(n) || !t) return false; types.set(n, t); return true; };
+    const opOf = (x) => x && (x.t === 'op' ? x.v : x.t === 'id' && ['div', 'mod'].includes(x.v.toLowerCase()) ? x.v.toLowerCase() : null);
+    let weak = false; // zweite Stufe: a + b mit zwei unbekannten Eingaben gilt als Rechnung
+    // In einer Summe, die einer Kommazahl zugewiesen wird (umfang := a + b + c), sind die Eingaben Kommazahlen –
+    // außer sie werden direkt mit einer Kommazahl malgenommen/geteilt (kinderanzahl * 0.02 bleibt ganzzahlig).
+    const toDouble = (expr) => {
+      const toks = P.ptoks(expr);
+      let changed = false;
+      const stack = []; // Klammern: true = Aufruf/Index (Argumente nicht betrachten)
+      toks.forEach((t, i) => {
+        if (t.t === 'op' && OPEN[t.v]) { stack.push(t.v === '[' || (t.v === '(' && toks[i - 1] && toks[i - 1].t === 'id')); return; }
+        if (t.t === 'op' && CLOSE[t.v]) { stack.pop(); return; }
+        if (stack.some(Boolean) || t.t !== 'id' || !open(t.v) || (toks[i + 1] && (toks[i + 1].v === '(' || toks[i + 1].v === '['))) return;
+        const dbl = (x) => x && ((x.t === 'num' && /[.eE]/.test(x.v)) || (x.t === 'id' && x.v.toLowerCase() === 'pi' && !types.has(x.v)));
+        const mul = (x) => x && x.t === 'op' && (x.v === '*' || x.v === '/');
+        if ((mul(toks[i - 1]) && dbl(toks[i - 2])) || (mul(toks[i + 1]) && dbl(toks[i + 2]))) return;
+        changed = set(t.v, 'double') || changed;
+      });
+      return changed;
+    };
+    const step = () => {
+      let changed = false;
+      for (const [target, expr] of assigns) if (P.normType(types.get(target)) === 'double') changed = toDouble(expr) || changed;
+      for (const e of exprs) {
+        const toks = P.ptoks(e);
+        toks.forEach((t, i) => {
+          if (t.t !== 'id' || !open(t.v) || (toks[i - 1] && toks[i - 1].v === '.')) return;
+          if (toks[i + 1] && (toks[i + 1].v === '(' || toks[i + 1].v === '[')) return;
+          const prev = toks[i - 1], before = toks[i - 2];
+          // einstelliges Minus: -x
+          if (prev && prev.v === '-' && (!before || (before.t === 'op' && before.v !== ')' && before.v !== ']') ||
+              (before.t === 'id' && ['and', 'or', 'not'].includes(before.v.toLowerCase())))) { changed = set(t.v, 'int') || changed; return; }
+          for (const [op, other] of [[opOf(toks[i + 1]), operandAt(toks, i + 2, 1)], [opOf(prev), operandAt(toks, i - 2, -1)]]) {
+            if (!op || !open(t.v)) continue;
+            const ot = typeOfToks(other);
+            if (ARITH.has(op)) changed = set(t.v, 'int') || changed;
+            else if (op === '+') {
+              if (ot === 'string' || ot === 'char' || isStrLit(other)) changed = set(t.v, 'string') || changed;
+              else if (num(ot)) changed = set(t.v, 'int') || changed;
+              else if (weak && other.length === 1 && other[0].t === 'id' && cands.has(other[0].v)) changed = set(t.v, 'int') || changed;
+            } else if (REL.has(op)) {
+              if (ot === 'string' || ot === 'char' || isStrLit(other)) changed = set(t.v, 'string') || changed;
+              else if (num(ot)) changed = set(t.v, ot) || changed;
+              else if (ot === 'boolean') changed = set(t.v, 'boolean') || changed;
+            }
+          }
+        });
+      }
+      // Zuweisungen in beide Richtungen: x := ausdruck  bzw.  temp := name (temp bekannt -> name)
+      for (const [target, expr] of assigns) {
+        if (open(target)) { const t = P.normType(P.inferType(expr, types, fnTypes)); if (t && t !== 'char') changed = set(target, t) || changed; }
+        const et = P.ptoks(expr);
+        if (et.length === 1 && et[0].t === 'id' && open(et[0].v) && types.get(target)) changed = set(et[0].v, P.normType(types.get(target))) || changed;
+      }
+      // Fallauswahl: die Marken bestimmen den Typ des Ausdrucks
+      for (const [disc, vals] of cases) {
+        const dt = P.ptoks(disc);
+        if (dt.length !== 1 || dt[0].t !== 'id' || !open(dt[0].v)) continue;
+        const lt = vals.map((v) => P.ptoks(v)).filter((x) => x.length === 1).map((x) => x[0]);
+        if (lt.some((x) => x.t === 'str')) changed = set(dt[0].v, 'string') || changed;
+        else if (lt.some((x) => x.t === 'num')) changed = set(dt[0].v, lt.some((x) => /[.eE]/.test(x.v)) ? 'double' : 'int') || changed;
+      }
+      return changed;
+    };
+    const settle = () => { for (let k = 0; k < 20 && step(); k++); };
+    settle();
+    weak = true;
+    settle();
+    // Eingaben ohne Hinweis auf eine Zahl bleiben Text (wie im Interpreter)
+    let more = false;
+    for (const v of inputVars) if (open(v)) { types.set(v, 'string'); more = true; }
+    if (more) settle();
 
     // Pass 2: Deklarationsorte bestimmen
     const seen = new Set(params);
@@ -366,6 +476,9 @@ class BaseGen {
   }
 
   /** Teile einer OUTPUT-Anweisung: {lit} (Inhalt mit Escapes) oder {expr} (Pseudocode) */
+  /** Ist der Ausdruck eine Kommazahl? (für die Ausgabe wie im Interpreter: 80.0, 0.1) */
+  isDouble(expr) { return P.normType(this.exprType(expr)) === 'double'; }
+
   outParts(items) {
     return items.map((it) => {
       const toks = P.ptoks(it);
@@ -629,7 +742,11 @@ class BaseGen {
       const label = (labels[k] == null ? '' : String(labels[k])).trim();
       const isLast = k === n - 1;
       if (isLast && label === '%') continue;
-      const values = isLast ? [] : splitTop(P.ptoks(label), ',').map(joinTokens).filter(Boolean);
+      let values = isLast ? [] : splitTop(P.ptoks(label), ',').map(joinTokens).filter(Boolean);
+      // Fallauswahl über Text: 'G' als Text-Marke "G" (sonst in Java, C#, Kotlin, Rust … ein einzelnes Zeichen)
+      if (this.cur && TYPED_LANGS.has(this.lang) && P.normType(this.exprType(String(el.text[0] || ''))) === 'string') {
+        values = values.map((v) => (/^'(?:[^'\\]|\\.)'$/.test(v) ? `"${v.slice(1, -1) === '"' ? '\\"' : v.slice(1, -1)}"` : v));
+      }
       res.push({ isDefault: isLast, values, body: el.branches[k] });
     }
     return res;
@@ -643,7 +760,19 @@ class BaseGen {
    */
   condCaseBranches(el) {
     const lit = String(el.text[0] || '').trim().toLowerCase();
-    if (!['true', 'false', 'wahr', 'falsch'].includes(lit)) return null;
+    const BOOL = ['true', 'false', 'wahr', 'falsch'];
+    if (!BOOL.includes(lit)) {
+      // „case a = 0 of true: … false: …“ – Bedingung als Ausdruck, Marken true/false: if/else
+      const info = this.caseInfo(el);
+      const vals = info.filter((b) => !b.isDefault).flatMap((b) => b.values.map((v) => v.toLowerCase()));
+      if (!vals.length || !vals.every((v) => BOOL.includes(v))) return null;
+      const disc = String(el.text[0] || '').trim();
+      return info.map((b) => {
+        if (b.isDefault) return { cond: null, body: b.body, isDefault: true };
+        const t = b.values.some((v) => /^(true|wahr)$/i.test(v)), f = b.values.some((v) => /^(false|falsch)$/i.test(v));
+        return { cond: t && f ? 'true' : t ? disc : P.negateCond(disc), body: b.body, isDefault: false };
+      });
+    }
     const neg = lit === 'false' || lit === 'falsch';
     const par = (v) => (this.needsParens(v) ? `(${v})` : v);
     const condOf = (vals) => {
@@ -716,7 +845,7 @@ class CGen extends BaseGen {
     if (tn.endsWith('[]') && (L === 'c' || L === 'cpp')) { tn = tn.slice(0, -2); nm = nm + (arr ? arr[2] : '[]'); }
     else if (arr && (L === 'c' || L === 'cpp')) nm = name;
     else if (arr && (L === 'java' || L === 'csharp')) { tn = tn + '[]'; if (init == null) init = `new ${this.typeName(type)}${arr[2]}`; }
-    if (L === 'c' && P.normType(type) === 'string' && this.cur && this.cur.charArrays.has(name)) { tn = 'char'; nm = name + '[256]'; this.needs.add('string'); if (init != null) return `${tn} ${nm} = ${init};`; }
+    if (L === 'c' && P.normType(type) === 'string' && this.cur && this.cur.charArrays.has(name)) { tn = 'char'; nm = name + '[256]'; this.needs.add('string'); if (init != null) return P.isStringLiteral(String(init)) ? `${tn} ${nm} = ${init};` : `${tn} ${nm}; strcpy(${name}, ${init});`; }
     let v = init;
     if (v != null && /^\[.*\]$/.test(v.trim()) && require('./tokenizer').isWrapped(P.ptoks(v.trim()), '[')) v = '{' + v.trim().slice(1, -1) + '}';
     if (L === 'csharp' && v != null && /^\{.*\}$/.test(v.trim()) && tn === 'var') v = 'new[] ' + v;
@@ -744,7 +873,8 @@ class CGen extends BaseGen {
           this.cur.declared.add(n);
           return [ind + this.declLine(n, this.typeOf(n), this.x(c.expr))];
         }
-        if (L === 'c' && this.cur.charArrays.has(n) && P.isStringLiteral(c.expr)) { this.needs.add('string'); return [ind + `strcpy(${n}, ${this.x(c.expr)});`]; }
+        // C: Text in ein char-Array kopieren (= würde nur Zeiger setzen bzw. ist bei Arrays nicht erlaubt)
+        if (L === 'c' && this.cur.charArrays.has(n) && (P.isStringLiteral(c.expr) || P.normType(this.exprType(c.expr)) === 'string')) { this.needs.add('string'); return [ind + `strcpy(${n}, ${this.x(c.expr)});`]; }
         let v = this.x(c.expr);
         if (L === 'javascript' && /^\{.*\}$/.test(v)) v = '[' + v.slice(1, -1) + ']';
         if (SIMPLE_IDENT.test(n)) v = this.narrow(this.declType(n), v);
@@ -833,7 +963,10 @@ class CGen extends BaseGen {
       const tv = this.x(v);
       if (L === 'java') {
         this.needs.add('scanner');
-        const rd = { int: 'scanner.nextInt()', long: 'scanner.nextLong()', short: 'scanner.nextShort()', byte: 'scanner.nextByte()', float: 'scanner.nextFloat()', double: 'scanner.nextDouble()', boolean: 'scanner.nextBoolean()', char: 'scanner.next().charAt(0)' }[ct] || 'scanner.nextLine()';
+        // zeilenweise lesen: nextInt() ließe den Zeilenumbruch stehen (das nächste nextLine() wäre leer),
+        // nextDouble() erwartet in deutscher Ländereinstellung ein Komma
+        const ln = 'scanner.nextLine().trim()';
+        const rd = { int: `Integer.parseInt(${ln})`, long: `Long.parseLong(${ln})`, short: `Short.parseShort(${ln})`, byte: `Byte.parseByte(${ln})`, float: `Float.parseFloat(${ln})`, double: `Double.parseDouble(${ln})`, boolean: `Boolean.parseBoolean(${ln})`, char: 'scanner.nextLine().charAt(0)' }[ct] || 'scanner.nextLine()';
         out.push(ind + (decl ? this.declLine(v, t, rd) : `${tv} = ${rd};`));
       } else if (L === 'csharp') {
         const rd = { int: 'int.Parse(Console.ReadLine())', long: 'long.Parse(Console.ReadLine())', short: 'short.Parse(Console.ReadLine())', byte: 'byte.Parse(Console.ReadLine())', float: 'float.Parse(Console.ReadLine())', double: 'double.Parse(Console.ReadLine())', boolean: 'bool.Parse(Console.ReadLine())', char: 'Console.ReadLine()[0]' }[ct] || 'Console.ReadLine()';
@@ -861,8 +994,10 @@ class CGen extends BaseGen {
     const parts = this.outParts(items);
     if (L === 'javascript') {
       if (!parts.length) return 'console.log();';
-      if (parts.length === 1) return `console.log(${parts[0].lit != null ? '"' + parts[0].lit + '"' : this.x(parts[0].expr)});`;
-      const s = parts.map((p) => (p.lit != null ? p.lit.replace(/`/g, '\\`').replace(/\$\{/g, '\\${') : '${' + this.x(p.expr) + '}')).join('');
+      // Kommazahlen wie im Interpreter mit Nachkommastelle (JavaScript schreibt 80.0 als 80)
+      const js = (e) => (this.isDouble(e) ? (this.needs.add('fmtnum'), `fmtNum(${this.x(e)})`) : this.x(e));
+      if (parts.length === 1) return `console.log(${parts[0].lit != null ? '"' + parts[0].lit + '"' : js(parts[0].expr)});`;
+      const s = parts.map((p) => (p.lit != null ? p.lit.replace(/`/g, '\\`').replace(/\$\{/g, '\\${') : '${' + js(p.expr) + '}')).join('');
       return 'console.log(`' + s + '`);';
     }
     if (L === 'cpp') {
@@ -870,6 +1005,8 @@ class CGen extends BaseGen {
         if (p.lit != null) return '"' + p.lit + '"';
         // byte (unsigned char) als Zahl ausgeben, nicht als Zeichen
         if (SIMPLE_IDENT.test(p.expr.trim()) && P.canonType(this.declType(p.expr.trim())) === 'byte') return `(int) ${this.x(p.expr)}`;
+        // Kommazahlen vollständig und mit Nachkommastelle (cout schreibt nur 6 Stellen und 80.0 als 80)
+        if (this.isDouble(p.expr)) { this.needs.add('fmtdouble'); return `fmt_double(${this.x(p.expr)})`; }
         return this.needsParens(p.expr) ? '(' + this.x(p.expr) + ')' : this.x(p.expr);
       });
       return 'cout << ' +(s.length ? s.join(' << ') + ' << ' : '') + 'endl;';
@@ -882,7 +1019,9 @@ class CGen extends BaseGen {
         else {
           const t = P.normType(this.exprType(p.expr));
           const ct = SIMPLE_IDENT.test(p.expr.trim()) ? P.canonType(this.declType(p.expr.trim())) : null;
-          const spec = ct === 'long' ? '%lld' : { double: '%g', string: '%s', char: '%c' }[t] || '%d';
+          // Kommazahlen vollständig und mit Nachkommastelle (%g schreibt nur 6 Stellen und 80.0 als 80)
+          if (t === 'double') { this.needs.add('fmtdouble'); fmt += '%s'; args.push(`fmt_double(${this.x(p.expr)})`); continue; }
+          const spec = ct === 'long' ? '%lld' : { string: '%s', char: '%c' }[t] || '%d';
           fmt += spec;
           args.push(this.x(p.expr));
         }
@@ -891,7 +1030,12 @@ class CGen extends BaseGen {
     }
     const fn = L === 'java' ? 'System.out.println' : 'Console.WriteLine';
     if (!parts.length) return `${fn}();`;
-    const s = parts.map((p) => (p.lit != null ? '"' + p.lit + '"' : (parts.length > 1 && this.needsParens(p.expr) ? '(' + this.x(p.expr) + ')' : this.x(p.expr))));
+    const s = parts.map((p) => {
+      if (p.lit != null) return '"' + p.lit + '"';
+      // C# schreibt 80.0 als 80: Kommazahlen wie im Interpreter mit Nachkommastelle
+      if (L === 'csharp' && this.isDouble(p.expr)) { this.needs.add('fmtnum'); return `Fmt(${this.x(p.expr)})`; }
+      return parts.length > 1 && this.needsParens(p.expr) ? '(' + this.x(p.expr) + ')' : this.x(p.expr);
+    });
     if (parts.length > 1 && parts[0].lit == null && parts[1].lit == null) s.unshift('""');
     return `${fn}(${s.join(' + ')});`;
   }
@@ -1052,6 +1196,12 @@ class CGen extends BaseGen {
     if (this.lang === 'c') return this.cHelpers();
     if (this.lang !== 'cpp') return [];
     const out = [];
+    if (this.needs.has('fmtdouble')) {
+      this.needs.add('stdlib');
+      out.push(this.comment(tr('gen.fmtDouble')), 'string fmt_double(double x) {', '    char s[352];',
+        '    for (int d = 1; d <= 20; d++) {', '        snprintf(s, sizeof s, "%.*f", d, x);', '        if (strtod(s, nullptr) == x) return s;', '    }',
+        '    snprintf(s, sizeof s, "%.17g", x);', '    return s;', '}', '');
+    }
     if (this.needs.has('strupper')) out.push('string str_upper(string s) { for (auto& c : s) c = toupper((unsigned char) c); return s; }');
     if (this.needs.has('strlower')) out.push('string str_lower(string s) { for (auto& c : s) c = tolower((unsigned char) c); return s; }');
     if (this.needs.has('strtrim')) out.push('string str_trim(const string& s) { size_t a = s.find_first_not_of(" \\t\\r\\n"); if (a == string::npos) return ""; size_t b = s.find_last_not_of(" \\t\\r\\n"); return s.substr(a, b - a + 1); }');
@@ -1062,6 +1212,12 @@ class CGen extends BaseGen {
   cHelpers() {
     const out = [];
     const N = this.needs;
+    if (N.has('fmtdouble')) {
+      N.add('stdlib');
+      out.push(this.comment(tr('gen.fmtDouble')), 'const char* fmt_double(double x) {', '    static char buf[8][352];', '    static int k = 0;',
+        '    char* s = buf[k++ % 8];', '    for (int d = 1; d <= 20; d++) {', '        snprintf(s, sizeof buf[0], "%.*f", d, x);',
+        '        if (strtod(s, NULL) == x) return s;', '    }', '    snprintf(s, sizeof buf[0], "%.17g", x);', '    return s;', '}', '');
+    }
     const range = '    size_t ls = strlen(s); size_t k = i < 1 ? 0 : (size_t) (i - 1) > ls ? ls : (size_t) (i - 1);';
     if (N.has('cthrow')) {
       out.push('static jmp_buf* _try_env = NULL;', 'static const char* _try_msg = "";',
@@ -1180,6 +1336,18 @@ class CGen extends BaseGen {
     info.charArrays = new Set();
     if (L === 'c') {
       walk(root.children, (el) => { for (const l of linesOf(el)) { const c = P.classifyLine(l); if (c.kind === 'input') c.vars.forEach((v) => { if ((P.normType(info.types.get(v)) || 'string') === 'string') info.charArrays.add(v); }); } });
+      // Kopien eingelesener Texte (temp := name1) brauchen eigenen Speicher, sonst zeigen beide auf dasselbe Array
+      for (let more = true; more;) {
+        more = false;
+        walk(root.children, (el) => {
+          for (const l of linesOf(el)) {
+            const c = P.classifyLine(l);
+            if (c.kind !== 'assign' || !SIMPLE_IDENT.test(c.target.trim()) || info.charArrays.has(c.target.trim())) continue;
+            const e = c.expr.trim();
+            if (SIMPLE_IDENT.test(e) && info.charArrays.has(e) && P.normType(info.types.get(c.target.trim())) === 'string') { info.charArrays.add(c.target.trim()); more = true; }
+          }
+        });
+      }
       for (const v of info.charArrays) info.types.set(v, 'string');
     }
     this.cur = info;
@@ -1270,13 +1438,21 @@ class CGen extends BaseGen {
           I2 + 'CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;',
           I2 + 'CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;');
       }
-      out.push('using System;', ...(main && usesReal ? ['using System.Globalization;'] : []), ...(this.needs.has('tasks') ? ['using System.Threading.Tasks;'] : []), '', title, `class ${this.opts.className || toClassName(mainName)}`, '{');
+      const fmtNum = this.needs.has('fmtnum');
+      out.push('using System;', ...((main && usesReal) || fmtNum ? ['using System.Globalization;'] : []), ...(this.needs.has('tasks') ? ['using System.Threading.Tasks;'] : []), '', title, `class ${this.opts.className || toClassName(mainName)}`, '{');
       out.push(...td);
+      if (fmtNum) {
+        const I = this.I;
+        out.push(I + this.comment(tr('gen.fmtDouble')), I + 'static string Fmt(double x)', I + '{',
+          I + I + 'string s = x.ToString("R", CultureInfo.InvariantCulture);',
+          I + I + "return s.IndexOfAny(new[] { '.', 'E', 'N', 'I' }) < 0 ? s + \".0\" : s;", I + '}', '');
+      }
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines.map((l) => l.replace(/^(\s*)(.*) \{$/, (m0, a, b) => (/^(static|public)/.test(b.trim()) ? `${a}${b}\n${a}{` : m0)))); });
       out.push('}');
     } else if (L === 'javascript') {
       out.push(title);
       if (this.needs.has('prompt')) out.push(tr('gen.jsPrompt'), 'const prompt = require("prompt-sync")();');
+      if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), 'const fmtNum = (x) => (Number.isInteger(x) ? x.toFixed(1) : String(x));');
       out.push('', ...td);
       const subs = gen.filter((g) => !g.isMain);
       const main = gen.find((g) => g.isMain);
@@ -1649,6 +1825,8 @@ class KtGen extends CGen {
     }
     let r = this.x(expr);
     if (n === 'double' && /^-?\d+$/.test(r)) r += '.0';
+    // Kotlin wandelt Int nicht von selbst in Double um (umfang = a + b + c mit Int-Werten)
+    else if (n === 'double' && P.normType(this.exprType(expr)) === 'int') r = `${IDENT_ONLY.test(r) ? r : `(${r})`}.toDouble()`;
     return this.narrow(type, r);
   }
 
@@ -1893,7 +2071,8 @@ class RsGen extends BaseGen {
       else {
         // Records und Listen haben keine Display-Ausgabe -> Debug-Format
         const t = P.normType(this.exprType(p.expr));
-        f += t && (this.recordTypes.has(t) || t.endsWith('[]')) ? '{:?}' : '{}';
+        // Kommazahlen: {:?} schreibt 80.0 (wie der Interpreter), {} nur 80
+        f += t && (this.recordTypes.has(t) || t.endsWith('[]') || t === 'double') ? '{:?}' : '{}';
         args.push(super.x(p.expr));
       }
     }

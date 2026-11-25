@@ -186,6 +186,7 @@
  "gen.pyMain": "Hauptprogramm: {0}",
  "gen.rsRandom": "/// Einfache Zufallszahl zwischen 0 und 1 (ohne externe Crates)",
  "gen.rsReadLine": "/// Eine Zeile von der Tastatur lesen (ohne Zeilenumbruch)",
+ "gen.fmtDouble": "Kommazahl wie im Struktogramm ausgeben: immer mit Nachkommastelle (80.0), sonst so kurz wie möglich, aber vollständig",
  "gen.rsTry": "/// try/catch nachgebildet: führt f aus und liefert die Meldung eines panic! (throw) als Err",
  "gen.todoLoop": "TODO: Schleife \"{0}\" bitte manuell übersetzen",
  "gen.unknownEl": "Unbekanntes Element: {0}",
