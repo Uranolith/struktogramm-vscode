@@ -5,6 +5,7 @@
  */
 const { defaultElement, clone, mk, toLines } = require('./model');
 const { t } = require('../i18n');
+const { formatLines } = require('./format');
 
 function segs(path) {
   return String(path).split('/').filter((s) => s !== '').map((s) => (/^\d+$/.test(s) ? parseInt(s, 10) : s));
@@ -87,7 +88,8 @@ function update(doc, path, props) {
   const el = get(doc, path);
   if (!el || typeof el !== 'object' || Array.isArray(el)) throw new Error(t('edit.notFound'));
   if (props.text != null) {
-    const lines = toLines(props.text);
+    // Autoformatierung wie die Vorlage: INPUT/OUTPUT groß, übrige Schlüsselwörter klein, „var name: typ“ …
+    const lines = formatLines(toLines(props.text), el.type);
     if (el.type === 'case') {
       // Anzahl der Zweige an die Zahl der Marken anpassen
       // neue Zweige vor dem default-Zweig einfügen, beim Entfernen zuerst leere Zweige löschen

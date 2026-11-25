@@ -1300,9 +1300,8 @@
     const path = sel;
     const close = () => { dialog.hidden = true; dialog.innerHTML = ''; focusCanvas(); };
     const props = () => {
-      // Deklarationen vereinheitlichen: "var x:int" / "var x : int" → "var x: int"
-      const fixDecl = (l) => l.replace(/^(\s*(?:var|const|dim)\s+[^:="']*?)\s*:(?!=)\s*(?=\S)/i, '$1: ');
-      const cmd = { text: ta.value.replace(/\r/g, '').replace(/\n+$/, '').split('\n').map((l) => (type === 'instruction' ? fixDecl(l) : l)), comment: $('dComment').value.replace(/\r/g, ''), color: chosen };
+      // Formatierung (Schlüsselwörter, „var name: typ“ …) übernimmt die Erweiterung beim Speichern (core/format.js)
+      const cmd = { text: ta.value.replace(/\r/g, '').replace(/\n+$/, '').split('\n'), comment: $('dComment').value.replace(/\r/g, ''), color: chosen };
       const rt = dialog.querySelector('input[name="rt"]:checked');
       if (rt) cmd.rootType = rt.value;
       const dis = $('dDisabled');
