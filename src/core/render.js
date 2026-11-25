@@ -70,13 +70,111 @@ const TYPES = new Set(['int', 'integer', 'long', 'short', 'byte', 'double', 'flo
 const TOKEN_RE = /("(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?)|([\p{L}_][\p{L}\p{N}_]*)|(<-|:=|==|!=|<>|<=|>=|\+=|-=|\*=|\/=|[=<>←≠≤≥+\-*/%])/gu;
 const ARITH_WORDS = new Set(['div', 'mod']);
 
+/* Typen an ihrer Stelle erkennen (auch eigene wie Punkt): Deklarationen und Signaturen von Unterprogrammen */
+const { tokenize } = require('./tokenizer');
+const OPEN_B = new Set(['(', '[', '{']), CLOSE_B = new Set([')', ']', '}']);
+const tokAt = (str) => { try { return tokenize(str, 'pseudo'); } catch (e) { return null; } };
+const isOpT = (t, ...v) => t && t.t === 'op' && v.includes(t.v);
+
+/** Typ in einer Deklaration: „var a, b: Typ := …“, „var x as Typ“, „Typ name = …“ -> [[start, end]] */
+function declTypeRanges(str) {
+  const ts = tokAt(str);
+  if (!ts || ts.length < 2 || ts[0].t !== 'id') return [];
+  if (['var', 'dim', 'const'].includes(ts[0].v.toLowerCase())) {
+    let depth = 0;
+    for (let i = 1; i < ts.length; i++) {
+      const t = ts[i];
+      if (isOpT(t, ...OPEN_B)) depth++;
+      else if (isOpT(t, ...CLOSE_B)) depth--;
+      else if (depth === 0 && isOpT(t, ':=', '=', '<-')) return [];
+      else if (depth === 0 && (isOpT(t, ':') || (t.t === 'id' && t.v.toLowerCase() === 'as'))) {
+        let end = i + 1;
+        while (end < ts.length && !isOpT(ts[end], ':=', '=', '<-')) end++;
+        return end > i + 1 ? [[ts[i + 1].start, ts[end - 1].end]] : [];
+      }
+    }
+    return [];
+  }
+  const c = P.classifyLine(str); // C-Stil: int x = 5
+  if (c.kind !== 'decl' || !c.type || !c.decls.length || !c.decls.every((d) => 'suffix' in d)) return [];
+  const k = ts.findIndex((t, i) => i > 0 && t.t === 'id' && t.v === c.decls[0].name);
+  return k > 0 ? [[ts[0].start, ts[k - 1].end]] : [];
+}
+
+/** Typen in einer Signatur: „fib(n: int, a: Punkt): int“, „int summe(int a, int b)“ -> [[start, end], …] */
+function sigTypeRanges(str) {
+  const ts = tokAt(str);
+  if (!ts) return [];
+  const open = ts.findIndex((t) => isOpT(t, '('));
+  if (open < 1) return [];
+  let depth = 0, close = -1;
+  for (let i = open; i < ts.length; i++) {
+    if (isOpT(ts[i], ...OPEN_B)) depth++;
+    else if (isOpT(ts[i], ...CLOSE_B) && --depth === 0) { close = i; break; }
+  }
+  if (close < 0) return [];
+  const R = [];
+  let seg = [];
+  const flush = () => {
+    if (!seg.length) return;
+    const ci = seg.findIndex((t) => isOpT(t, ':'));
+    if (ci >= 0) { if (ci < seg.length - 1) R.push([seg[ci + 1].start, seg[seg.length - 1].end]); }
+    else {
+      const ids = seg.filter((t) => t.t === 'id');
+      const li = seg.lastIndexOf(ids[ids.length - 1]);
+      if (ids.length >= 2 && li > 0) R.push([seg[0].start, seg[li - 1].end]); // C-Stil: int a
+    }
+    seg = [];
+  };
+  depth = 0;
+  for (let i = open + 1; i < close; i++) {
+    const t = ts[i];
+    if (isOpT(t, ...OPEN_B)) depth++;
+    else if (isOpT(t, ...CLOSE_B)) depth--;
+    if (depth === 0 && isOpT(t, ',')) { flush(); continue; }
+    seg.push(t);
+  }
+  flush();
+  const after = ts.slice(close + 1);
+  if (after.length >= 2 && isOpT(after[0], ':')) R.push([after[1].start, after[after.length - 1].end]);
+  // C-Stil: Rückgabetyp vor dem Namen
+  const pre = ts.slice(0, open - 1).filter((t) => t.t === 'id' && !/^(function|procedure|sub|def|func|funktion|prozedur)$/i.test(t.v));
+  if (pre.length) R.push([pre[0].start, ts[open - 2].end]);
+  return R;
+}
+
+/** Name eines Unterprogramms im Kopf: „fib(…)“ bzw. ohne Klammern das einzelne Wort -> [[start, end]] */
+function sigNameRange(str) {
+  const ts = tokAt(str);
+  if (!ts || !ts.length) return [];
+  const open = ts.findIndex((t) => isOpT(t, '('));
+  if (open >= 1 && ts[open - 1].t === 'id') return [[ts[open - 1].start, ts[open - 1].end]];
+  if (open < 0 && ts.length === 1 && ts[0].t === 'id') return [[ts[0].start, ts[0].end]];
+  return [];
+}
+
+/** Kopf eines Unterprogramms: Name in der Farbe für Funktionen, Typen farbig, der Rest wie die Überschrift */
+function highlightTypes(str, ranges, nameRanges = []) {
+  let out = '', pos = 0, m;
+  const WORD = /[\p{L}_][\p{L}\p{N}_]*/gu;
+  while ((m = WORD.exec(str))) {
+    const inName = nameRanges.some(([a, b]) => m.index >= a && m.index < b);
+    if (!inName && !ranges.some(([a, b]) => m.index >= a && m.index < b)) continue;
+    out += esc(str.slice(pos, m.index)) + `<tspan class="${inName ? 'hf' : 'ht'}">${esc(m[0])}</tspan>`;
+    pos = m.index + m[0].length;
+  }
+  return out + esc(str.slice(pos));
+}
+
 /** Zuweisungs-, Vergleichs- und Rechenoperatoren bekommen alle dieselbe Farbe (.ho) */
 function highlight(str) {
   let out = '', pos = 0, m;
+  const typeRanges = declTypeRanges(str);
   TOKEN_RE.lastIndex = 0;
   while ((m = TOKEN_RE.exec(str))) {
     let cls = null;
     if (m[1]) cls = 'hs';
+    else if (m[2] && typeRanges.some(([a, b]) => m.index >= a && m.index < b)) cls = 'ht';
     else if (m[3]) cls = 'ho';
     else if (ARITH_WORDS.has(m[2].toLowerCase())) cls = 'ho';
     else if (isKeyword(str, m[2], m.index)) cls = 'hk';
@@ -405,7 +503,14 @@ class Renderer {
     out.push(this.open(root, path));
     const rx = root.rootType === 'sub' ? ' rx="14" ry="14"' : root.rootType === 'includable' ? ' rx="4" ry="4"' : '';
     out.push(this.rect(x, y, w, s.h, root, rx));
-    out.push(this.textBlock(lines, x + PAD + 4, y, 'title'));
+    // Kopf: Parametertypen und Rückgabetyp farbig (fib(n: int): int); bei Unterprogrammen auch der Name
+    const sub = root.rootType === 'sub';
+    out.push(lines.map((l, k) => {
+      const ty = this.opts.highlight ? sigTypeRanges(l) : [];
+      const nm = this.opts.highlight && sub && k === 0 ? sigNameRange(l) : [];
+      if (!ty.length && !nm.length) return this.text(x + PAD + 4, y + VPAD + k * LH + LH * 0.74, l, 'start', 'title');
+      return `<text class="t title" x="${r(x + PAD + 4)}" y="${r(y + VPAD + k * LH + LH * 0.74)}" xml:space="preserve">${highlightTypes(l, ty, nm)}</text>`;
+    }).join(''));
     out.push('</g>');
     this.seq(root.children, x + INSET, y + hh, w - 2 * INSET, s.h - hh - INSET, path + '/children', out);
   }
@@ -503,4 +608,4 @@ function renderSvg(doc, opts = {}) {
   return { svg, width: W, height: H };
 }
 
-module.exports = { renderSvg, THEMES, darkTint };
+module.exports = { renderSvg, THEMES, darkTint, isKeyword };
