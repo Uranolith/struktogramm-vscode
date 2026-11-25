@@ -1,6 +1,14 @@
 # Änderungen
 
 ## Unveröffentlicht
+- **Aufgabentest:** Kommentare im erzeugten Code in der Sprache der Erweiterung (`struktogramm.language`, bei
+  *Automatisch* die VS-Code-Oberfläche); die Sprache steht am Anfang der Ausgabe, vorgeben mit `--sprache de|en`.
+- **Code nur aus fehlerfreien Struktogrammen:** *Code erzeugen* ist gesperrt, solange die Struktogramm-Datei einen
+  Fehler hat; die Meldung nennt die Anzahl und den ersten Fehler. Verbundener Code wird bei Fehlern nicht nachgeführt.
+- **Neuer Fehler: Zuweisung in einer Bedingung** (`if x := 5`, `while x <- 0`) – in Prüfung und Interpreter mit klarer
+  Meldung statt „Syntaxfehler“.
+- Die Meldung zu `x = 5` ist kurz wie die übrigen Fehler: „Vergleich statt Zuweisung: zugewiesen wird mit := bzw.
+  <-.“
 - **Neuer Fehler: Zuweisung mit `=`** (`x = 5`, `var x: int = 5`, `const MAX = 10`, `for i = 1 to 10`) – `=` ist im
   Struktogramm der Vergleich; die Meldung nennt die richtige Zeile (`x := 5`). Bisher wurden `=` und `<-` beim
   Speichern stillschweigend zu `:=` umgestellt und als Zuweisung ausgeführt; das entfällt: `=` ist überall der
@@ -93,7 +101,7 @@
 - `pi` wird in jeder Sprache übersetzt; Java liest Eingaben zeilenweise (kein leeres `nextLine()` nach `nextInt()`,
   Kommazahlen mit Punkt); C kopiert Texte mit `strcpy`; Kotlin wandelt Ganzzahl-Ausdrücke für Kommazahl-Variablen
   um.
-- **Aufgabentest** (`npm test`, `testufgabentest.cmd` oder VS-Code-Aufgabe): übersetzt alle Struktogramme in den
+- **Aufgabentest** (`npm test`, `test\tasktest.cmd` oder VS-Code-Aufgabe): übersetzt alle Struktogramme in den
   Themenordnern unter `test/samples` (`branching`, `edge_cases`) in alle Sprachen, baut und startet sie
   mit den echten Compilern, vergleicht mit dem Interpreter und protokolliert das Ergebnis in
   `test/out/tasktest.xlsx`; Testfälle je Ordner in `inputs.json`, der erzeugte Code liegt in

@@ -80,7 +80,11 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   *Probleme* listet alle.
   - **Fehler** (rot, „!“) – funktioniert so nicht: Syntaxfehler, Variable ohne Wert, unbekannte Funktion, falsche Zahl
     von Argumenten, `leave` außerhalb einer Schleife, Division durch 0, unlesbarer Schleifenkopf, leere Bedingung,
-    Zuweisung mit `=` statt `:=` bzw. `<-` (`=` ist der Vergleich – die Formatierung ändert es bewusst nicht).
+    Zuweisung mit `=` statt `:=` bzw. `<-` (`=` ist der Vergleich – die Formatierung ändert es bewusst nicht),
+    Zuweisung in einer Bedingung (`if x := 5` – in Bedingungen vergleicht man mit `=`).
+  - **Code wird nur aus einem fehlerfreien Struktogramm erzeugt**: Hat die Datei einen Fehler, nennt *Code erzeugen*
+    die Anzahl und den ersten Fehler (mit *Probleme anzeigen*). Das gilt je Struktogramm-Datei – Fehler in anderen
+    Dateien spielen keine Rolle. Mit dem Struktogramm verbundener Code wird bei Fehlern nicht nachgeführt.
   - **Hinweise** (gelb, „i“, jeweils mit Begründung) – Good Practice und Konventionen: Variable, Parameter oder
     Rückgabewert ohne Typ (mit Vorschlag, z. B. `var summe: int`), Eingabe ohne Aufforderungstext, Kommazahlen mit `=`
     verglichen, Fallauswahl über eine Bedingung, mehrere Anweisungen in einem Block, mögliche Endlosschleife, Wert wird
@@ -304,14 +308,17 @@ Parallelverarbeitung im erzeugten Code:
 - **C** braucht `-fopenmp`, sonst laufen die Zweige nacheinander.
 
 ## Entwicklung
-- **Aufgabentest** – `npm test`, `test	asktest.cmd` oder in VS Code *Terminal → Task ausführen… → Aufgabentest*:
+- **Aufgabentest** – `npm test`, `test\tasktest.cmd` oder in VS Code *Terminal → Task ausführen… → Aufgabentest*:
   übersetzt alle Struktogramme in den Themenordnern unter `test/samples` in alle Zielsprachen, baut und startet sie
   mit den echten Compilern, vergleicht die Ausgaben mit dem eingebauten Interpreter und schreibt das Ergebnis
   (O = erfolgreich, X = nicht erfolgreich, – = Compiler fehlt) nach `test/out/tasktest.xlsx`. Der erzeugte Code liegt
   danach in `test/samples/codefiles` (wird bei jedem Lauf neu erzeugt). Einzelne Sprachen oder Ordner:
   `node test/tasktest.js java edge_cases`.
-  - `test/samples/edge_cases`: Grenzfälle der Code-Erzeugung (Textverkettung, große Zahlen, Runden, Schleifen …);
-    einige sind noch offen und stehen im Protokoll als X.
+  - Die Kommentare im erzeugten Code stehen in der Sprache der Erweiterung: Einstellung `struktogramm.language` aus
+    den Arbeitsbereich- bzw. Benutzereinstellungen von VS Code, bei *Automatisch* die Sprache der VS-Code-Oberfläche.
+    Die verwendete Sprache steht am Anfang der Ausgabe; vorgeben mit `--sprache de` bzw. `--sprache en`.
+  - `test/samples/edge_cases`: Grenzfälle der Code-Erzeugung (Textverkettung, große Zahlen, Runden, Schleifen,
+    Typwechsel, Umwandlungen …); offen ist nur Fall 13 (Exponent-Schreibweise sehr kleiner Kommazahlen je Sprache).
   - `test/samples/checks`: Beispiele für die Prüfungen im Editor (absichtlich fehlerhaft, vom Aufgabentest
     übersprungen).
   - Testfälle je Ordner in `inputs.json`: je Struktogramm eine Liste von Eingabefolgen (eine Zeile je `INPUT`);
