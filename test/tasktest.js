@@ -62,7 +62,8 @@ const selected = ALL.filter((s) => !fileFilter.length || fileFilter.some((x) => 
 if (!selected.length) { console.error(`Keine Struktogramme in ${SAMPLES}` + (fileFilter.length ? ` passend zu „${fileFilter.join(' ')}“` : '')); process.exit(2); }
 
 /* Konsole: Farben nur im Terminal */
-const color = process.stdout.isTTY && !process.env.NO_COLOR;
+// Farben im Terminal; NO_COLOR schaltet sie ab, FORCE_COLOR erzwingt sie (auch bei umgeleiteter Ausgabe)
+const color = !!process.env.FORCE_COLOR && process.env.FORCE_COLOR !== '0' || (process.stdout.isTTY && !process.env.NO_COLOR);
 const paint = (code) => (s) => (color ? `\x1b[${code}m${s}\x1b[0m` : String(s));
 const green = paint('32'), red = paint('31'), gray = paint('90'), bold = paint('1'), cyan = paint('36');
 const mark = (st) => (st === 'O' ? green('O') : st === 'X' ? red('X') : gray('–'));
