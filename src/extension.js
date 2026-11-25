@@ -13,6 +13,7 @@ const { parseSignature } = require('./core/pseudo');
 const { ExecController } = require('./execSession');
 const S = require('./structorizer');
 const { t, setLanguage } = require('./i18n');
+const { lintDoc } = require('./core/lint');
 const { ToolsViewProvider, VIEW_ID } = require('./toolsView');
 const { toolbarLocation } = require('./webview');
 const { ExecViewProvider, VIEW_ID: EXEC_VIEW_ID } = require('./execView');
@@ -414,6 +415,8 @@ async function updateLiveCode(key, link, nsdDoc) {
   try {
     const model = fromNsd(nsdDoc.getText());
     if (!model.roots.length) return;
+    // mit Fehlern im Struktogramm keinen neuen Code – der letzte fehlerfreie Stand bleibt stehen
+    if (lintDoc(model).some((x) => x.severity === 'error')) return;
     code = generateCode(model, link.target, { className: toClassName(link.baseName) });
   } catch (e) { return; } // unvollständiges Diagramm: alten Stand behalten
   if (code.replace(/\r\n/g, '\n') === d.getText().replace(/\r\n/g, '\n')) return;
@@ -424,7 +427,24 @@ async function updateLiveCode(key, link, nsdDoc) {
   link.text = d.getText();
 }
 
+/**
+ * Code wird nur aus einem fehlerfreien Struktogramm erzeugt. Fehler gibt es unabhängig von der Einstellung
+ * struktogramm.checks – sind die Prüfungen aus, nennt die Meldung den ersten Fehler.
+ */
+function blockedByErrors(model) {
+  let errs = [];
+  try { errs = lintDoc(model).filter((x) => x.severity === 'error'); } catch (e) { errs = []; }
+  if (!errs.length) return false;
+  const show = t('ext.showProblems');
+  // nicht auf die Meldung warten: der Befehl ist sofort beendet, die Meldung bleibt stehen
+  vscode.window.showErrorMessage(t('ext.codeBlocked', errs.length, errs[0].message), show).then((pick) => {
+    if (pick === show) vscode.commands.executeCommand('workbench.actions.view.problems');
+  });
+  return true;
+}
+
 async function toCodeFromModel(model, baseName, srcUri) {
+  if (blockedByErrors(model)) return;
   const pick = await pickLanguage(extContext);
   if (!pick) return;
   let code, languageId;
