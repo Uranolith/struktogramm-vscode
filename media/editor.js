@@ -36,6 +36,7 @@
   let bpKinds = new Map();      // Pfad -> 'bp' | 'cond' (Bedingung/Trefferzahl) | 'log' (Logpoint)
   let bpDisabled = new Set();   // deaktivierte Haltepunkte (nur Anzeige)
   let framePath = null;         // in der Aufrufliste von VS Code gewählter Aufruf (Stelle im Diagramm)
+  let lintItems = [];           // Prüfungen der Erweiterung: [{ path, severity: 'error'|'hint', message, label }]
   let execState = 'idle';
   let runPath = null;
   let errPath = null;
@@ -275,6 +276,9 @@
 
   function status(t) { statusbar.textContent = t || ''; }
 
+  /** Kein Tooltip am Element selbst (Kommentar als <title>): Tooltips zeigen nur die Prüf-Marken */
+  function noTitles(svg) { return String(svg).replace(/<title>[\s\S]*?<\/title>/g, ''); }
+
   function render() {
     canvas.innerHTML = svgText;
     applyZoom();
@@ -327,7 +331,7 @@
       closePicker(false); // neues Diagramm ersetzt eine offene Vorschau
       doc = m.doc;
       if (m.symbols) symbols = m.symbols;
-      svgText = m.svg || '';
+      svgText = noTitles(m.svg || '');
       settings = m.settings || settings;
       if (m.hasClipboard != null) hasClipboard = m.hasClipboard;
       if (m.select !== undefined) sel = m.select;
@@ -353,6 +357,13 @@
       bpKinds = new Map(m.active.map((b) => [b.path, b.kind]));
       bpDisabled = new Set(m.disabled || []);
       markExec(false);
+    } else if (m.type === 'reveal') {
+      // aus „Probleme“ (Code-Link): Element markieren, hinscrollen, Tastaturfokus ins Diagramm
+      hideLintPop();
+      if (m.path && nodeFor(m.path)) { sel = m.path; markSelection(true); status(describeSel()); focusCanvas(); }
+    } else if (m.type === 'lint') {
+      lintItems = m.items || [];
+      drawLint(); // Meldungen nur als Tooltip an der Marke, nicht in der Statuszeile
     } else if (m.type === 'execFocus') {
       framePath = m.path || null;
       markExec(false);
@@ -367,7 +378,7 @@
     else if (m.type === 'execCompleted') EX.completed(m.items);
     else if (m.type === 'execCalls') EX.calls(m.items, m.total);
     else if (m.type === 'execMode') setExecMode(m.mode);
-    else if (m.type === 'preview') { if (picker && m.token === picker.token) showPreview(m.svg, m.path); }
+    else if (m.type === 'preview') { if (picker && m.token === picker.token) showPreview(m.svg && noTitles(m.svg), m.path); }
     else if (m.type === 'execReset') {
       errPath = null;
       EX.reset(m.title);
@@ -435,6 +446,7 @@
     canvas.querySelectorAll('.running, .errorel, .bp').forEach((n) => n.classList.remove('running', 'errorel', 'bp'));
     for (const p of breakpoints) { const g = nodeFor(p); if (g) g.classList.add('bp'); }
     drawBreakpointFrames();
+    drawLint();
     const g = nodeFor(runPath);
     if (g) {
       g.classList.add('running');
@@ -470,6 +482,139 @@
     // in der Aufrufliste von VS Code gewählter Aufruf
     if (framePath && framePath !== runPath) frame(framePath, 'frame-focus');
   }
+
+  /**
+   * Fehler- und Hinweismarken oben rechts im Element (eigene Ebene über dem Diagramm). Die Marke trägt den Pfad ihres
+   * Elements: Klick wählt es aus, Doppelklick bearbeitet es; der Tooltip nennt alle Meldungen.
+   */
+  function drawLint() {
+    const svg = canvas.querySelector('svg');
+    if (!svg) return;
+    const NS = 'http://www.w3.org/2000/svg';
+    let layer = svg.querySelector('#lintLayer');
+    if (!layer) { layer = document.createElementNS(NS, 'g'); layer.id = 'lintLayer'; }
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    svg.appendChild(layer); // oberste Ebene, über den Haltepunkt-Rahmen
+    const byPath = new Map();
+    for (const it of lintItems) { if (!byPath.has(it.path)) byPath.set(it.path, []); byPath.get(it.path).push(it); }
+    for (const [p, list] of byPath) {
+      const g = nodeFor(p);
+      const bg = g && (g.querySelector(':scope > rect.bg') || g.querySelector(':scope > rect'));
+      if (!bg) continue;
+      const x = +bg.getAttribute('x'), y = +bg.getAttribute('y'), w = +bg.getAttribute('width');
+      ['error', 'hint'].filter((k) => list.some((i) => i.severity === k)).forEach((k, idx) => {
+        const b = document.createElementNS(NS, 'g');
+        b.setAttribute('class', 'lint-badge ' + k);
+        b.setAttribute('data-path', p);
+        const cx = x + w - 10 - idx * 17, cy = y + 10;
+        const c = document.createElementNS(NS, 'circle');
+        c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', '7');
+        const t = document.createElementNS(NS, 'text');
+        t.setAttribute('x', cx); t.setAttribute('y', cy + 3.6); t.setAttribute('text-anchor', 'middle');
+        t.textContent = k === 'error' ? '!' : 'i';
+        b.append(c, t);
+        b.addEventListener('mouseenter', () => showLintHover(b, list.filter((i) => i.severity === k)));
+        b.addEventListener('mouseleave', () => hideLintHover());
+        layer.appendChild(b);
+      });
+    }
+  }
+
+  /**
+   * F8 / Umschalt+F8 wie in VS Code: zum nächsten bzw. vorherigen Element mit Fehler oder Hinweis (Reihenfolge wie im
+   * Diagramm, am Ende wieder von vorn), auswählen und die Meldungen darunter einblenden (wie das Problem-Fenster).
+   */
+  function gotoProblem(dir) {
+    hideLintPop();
+    const order = [...canvas.querySelectorAll('svg [data-path]')].map((n) => n.getAttribute('data-path'));
+    const pos = (p) => order.indexOf(p);
+    const paths = [...new Set(lintItems.map((i) => i.path))].filter((p) => pos(p) >= 0).sort((a, b) => pos(a) - pos(b));
+    if (!paths.length) { status(T('web.lint.none')); return; }
+    let k = paths.indexOf(sel);
+    if (k >= 0) k = (k + dir + paths.length) % paths.length;
+    else {
+      const cur = sel ? pos(sel) : -1;
+      if (dir > 0) { k = paths.findIndex((p) => pos(p) > cur); if (k < 0) k = 0; }
+      else { k = -1; paths.forEach((p, i) => { if (pos(p) < cur) k = i; }); if (k < 0) k = paths.length - 1; }
+    }
+    sel = paths[k];
+    markSelection(true);
+    status(describeSel());
+    showLintPop(sel, k + 1, paths.length);
+  }
+
+  /**
+   * Meldung gegliedert darstellen: Aussage (fett), „Besser: …“ mit Code-Vorschlag, „Grund: …“ zurückgenommen.
+   * Die Texte kommen fertig übersetzt aus der Erweiterung; gegliedert wird an „Besser…:“/„Better…:“ und „Grund:“/„Reason:“.
+   */
+  function lintHtml(items) {
+    // Namen und Vorschläge in „…“ / “…” als Code; ein Vorschlag ohne solche Anführungszeichen, der nach Code aussieht
+    // (INPUT "n: ", n  ·  abs(a - b) < 0.000001), als Ganzes
+    const code = (txt) => escapeHtml(txt).replace(/„([^“]+)“|“([^”]+)”/g, (m0, a, b) => `<code>${a || b}</code>`);
+    const suggestion = (txt) => (!/[„“”]/.test(txt) && /[()"=<>\[\]]/.test(txt) ? `<code>${escapeHtml(txt)}</code>` : code(txt));
+    return items.map((i) => {
+      let main = String(i.message), better = '', betterLabel = '', reason = '', reasonLabel = '';
+      const r = /\s(Grund|Reason):\s/.exec(main);
+      if (r) { reasonLabel = r[1]; reason = main.slice(r.index + r[0].length); main = main.slice(0, r.index); }
+      const b = /\s((?:Besser|Better)[^:.]*):\s/.exec(main);
+      if (b) { betterLabel = b[1]; better = main.slice(b.index + b[0].length).replace(/\.\s*$/, ''); main = main.slice(0, b.index); }
+      main = main.trim().replace(/\.$/, '');
+      return `<div class="lp-item ${i.severity}"><span class="lp-ico">${i.severity === 'error' ? '!' : 'i'}</span><div class="lp-body">` +
+        `<div class="lp-main">${code(main)}</div>` +
+        (better ? `<div class="lp-better"><span class="lp-label">${escapeHtml(betterLabel)}:</span> ${suggestion(better)}</div>` : '') +
+        (reason ? `<div class="lp-reason"><span class="lp-label">${escapeHtml(reasonLabel)}:</span> ${code(reason)}</div>` : '') +
+        '</div></div>';
+    }).join('');
+  }
+
+  /** Fenster an einem Rechteck ausrichten: darunter, sonst darüber; innerhalb des Fensters */
+  function placePop(pop, r, alignRight) {
+    const w = Math.min(460, window.innerWidth - 24);
+    pop.style.width = w + 'px';
+    const left = alignRight ? r.right - w : r.left;
+    pop.style.left = Math.max(12, Math.min(left, window.innerWidth - w - 12)) + 'px';
+    const below = r.bottom + 6, h = pop.offsetHeight;
+    pop.style.top = (below + h < window.innerHeight - 8 ? below : Math.max(8, r.top - h - 6)) + 'px';
+  }
+
+  /** Hover über einer Marke: Meldungen dieser Art (Fehler bzw. Hinweise) gegliedert anzeigen */
+  let lintHover = null;
+  function hideLintHover() { if (lintHover) { lintHover.remove(); lintHover = null; } }
+  function showLintHover(badge, items) {
+    hideLintHover();
+    if (!items.length) return;
+    lintHover = document.createElement('div');
+    lintHover.className = 'lint-pop';
+    lintHover.setAttribute('role', 'tooltip');
+    const sev = items[0].severity;
+    const head = items.length > 1 ? `${items[0].label} (${items.length})` : items[0].label;
+    lintHover.innerHTML = `<div class="lp-head ${sev}">${escapeHtml(head)}</div>` + lintHtml(items);
+    document.body.appendChild(lintHover);
+    placePop(lintHover, badge.getBoundingClientRect(), true);
+  }
+  $('scroller').addEventListener('scroll', () => hideLintHover(), { passive: true });
+
+  let lintPop = null;
+  function hideLintPop() { if (lintPop) { lintPop.remove(); lintPop = null; } }
+  function showLintPop(path, n, total) {
+    const g = nodeFor(path);
+    if (!g) return;
+    const r = g.getBoundingClientRect();
+    const items = lintItems.filter((i) => i.path === path).sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'error' ? -1 : 1));
+    hideLintHover();
+    lintPop = document.createElement('div');
+    lintPop.id = 'lintPop';
+    lintPop.className = 'lint-pop';
+    lintPop.setAttribute('role', 'status');
+    lintPop.innerHTML = `<div class="lp-head">${escapeHtml(T('web.lint.count', n, total))}<span class="lp-keys">F8 / ${escapeHtml(T('web.lint.shiftF8'))}</span></div>` + lintHtml(items);
+    document.body.appendChild(lintPop);
+    placePop(lintPop, r, false);
+  }
+  // schließt bei Klick oder einer anderen Taste (wie das Problem-Fenster in VS Code)
+  document.addEventListener('mousedown', () => hideLintPop(), true);
+  document.addEventListener('keydown', (e) => { if (e.key !== 'F8' && e.key !== 'Shift') hideLintPop(); }, true);
+  // beim Scrollen passt die Lage nicht mehr zum Element
+  $('scroller').addEventListener('scroll', () => hideLintPop(), { passive: true });
 
   function toggleBreakpoint() {
     if (!sel || sel.endsWith('/#') || /^roots\/\d+$/.test(sel)) { status(T('web.bp.onlyElements')); return; }
@@ -1075,6 +1220,8 @@
     if (e.key === '?') { showHelp(); e.preventDefault(); return; }
     if (e.key === 'Escape') { hideMenu(); return; }
     if (e.key === 'F9') { toggleBreakpoint(); e.preventDefault(); return; }
+    // wie in VS Code: F8 / Umschalt+F8 = nächstes / vorheriges Problem
+    if (e.key === 'F8') { gotoProblem(e.shiftKey ? -1 : 1); e.preventDefault(); return; }
     if (READONLY) {
       if (sel && (e.key.startsWith('Arrow') || ['Home', 'End', 'PageUp', 'PageDown'].includes(e.key))) {
         const np = navTarget(e.key, ctrl);

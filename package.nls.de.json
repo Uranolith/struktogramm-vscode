@@ -70,5 +70,9 @@
   "cmd.zoomReset": "Struktogramm-Zoom zurücksetzen",
   "cmd.debug": "Struktogramm debuggen",
   "cmd.runNoDebug": "Struktogramm ohne Debuggen ausführen",
-  "welcome.debug": "Das geöffnete Struktogramm lässt sich direkt starten:\n[Struktogramm debuggen](command:struktogramm.debug)\n[Ohne Debuggen ausführen](command:struktogramm.runNoDebug)\nHaltepunkte: F9 im Struktogramm. Die Debugger-Auswahl erkennt den Struktogramm-Editor nicht – im Editor startet F5 das Struktogramm direkt."
+  "welcome.debug": "Das geöffnete Struktogramm lässt sich direkt starten:\n[Struktogramm debuggen](command:struktogramm.debug)\n[Ohne Debuggen ausführen](command:struktogramm.runNoDebug)\nHaltepunkte: F9 im Struktogramm. Die Debugger-Auswahl erkennt den Struktogramm-Editor nicht – im Editor startet F5 das Struktogramm direkt.",
+  "config.checks": "Prüfungen im Struktogramm: **Fehler** (rot, „!“) für Dinge, die nicht funktionieren – z. B. Syntaxfehler, Variable ohne Wert, unbekannte Funktion, `leave` außerhalb einer Schleife – und **Hinweise** (gelb, „i“, jeweils mit Begründung) für Abweichungen von DIN 66261 oder bewährter Praxis – z. B. Variable ohne Typ, Eingabe ohne Aufforderungstext, Fallauswahl über eine Bedingung, mögliche Endlosschleife, Wert wird nie verwendet. Die Meldungen erscheinen als Marke am Element (Tooltip beim Darüberfahren) und in der Ansicht *Probleme*.",
+  "config.checks.enum0": "Fehler und Hinweise anzeigen",
+  "config.checks.enum1": "Nur Fehler anzeigen",
+  "config.checks.enum2": "Keine Prüfungen"
 }

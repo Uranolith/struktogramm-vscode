@@ -193,6 +193,16 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 #canvas .el.running > rect.bg { fill: #b8f2b0 !important; }
 #canvas .el.errorel > rect.bg { fill: #ffb3b3 !important; }
 /* Haltepunkt-Rahmen: eigene oberste Ebene (#bpLayer), damit nichts darüber gezeichnet wird */
+/* Prüfungen: Fehler (rot, „!“) und Hinweise (gelb, „i“) oben rechts im Element */
+#canvas .lint-badge { cursor: pointer; }
+#canvas .lint-badge circle { stroke: #ffffff; stroke-width: 1.2; }
+#canvas .lint-badge.error circle { fill: #e51400; }
+#canvas .lint-badge.hint circle { fill: #e2a300; }
+#canvas svg.theme-dark .lint-badge circle { stroke: #1e1e1e; }
+#canvas svg.theme-dark .lint-badge.error circle { fill: #f14c4c; }
+#canvas svg.theme-dark .lint-badge.hint circle { fill: #cca700; }
+#canvas .lint-badge text { fill: #ffffff; font: bold 10px sans-serif; pointer-events: none; }
+#canvas .lint-badge.hint text { fill: #1e1e1e; }
 #canvas .bp-frame { fill: none; stroke: #e51400; stroke-width: 3; pointer-events: none; shape-rendering: crispEdges; }
 #canvas svg.theme-dark .el.running > rect.bg { fill: #1f4d2c !important; }
 #canvas svg.theme-dark .el.errorel > rect.bg { fill: #5c2222 !important; }
@@ -268,3 +278,28 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 #picker .pempty { padding: 4px 6px; opacity: .7; }
 #canvas .el.preview > rect.bg { stroke: var(--vscode-focusBorder, #0078d4); stroke-width: 2.5; stroke-dasharray: 5 3; }
 #canvas .el.preview { opacity: .85; }
+
+/* Meldungen der Prüfungen: Hover an der Marke und F8-Fenster (Stil wie die Hover von VS Code) */
+.lint-pop { position: fixed; z-index: 50; box-sizing: border-box; padding: 8px 10px;
+  background: var(--vscode-editorHoverWidget-background, #f8f8f8); color: var(--vscode-editorHoverWidget-foreground, #1e1e1e);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #c8c8c8); border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+  font-family: var(--vscode-font-family, system-ui, sans-serif); font-size: 12.5px; line-height: 1.45; pointer-events: none; }
+.lint-pop .lp-head { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .04em; opacity: .7; margin-bottom: 6px; }
+.lint-pop .lp-head.error { color: #c72e0f; opacity: 1; }
+.lint-pop .lp-head.hint { color: #9a6b00; opacity: 1; }
+.lint-pop .lp-keys { white-space: nowrap; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.lint-pop .lp-item { display: flex; gap: 8px; align-items: flex-start; }
+.lint-pop .lp-item + .lp-item { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--vscode-editorHoverWidget-border, #dcdcdc); }
+.lint-pop .lp-ico { flex: none; width: 16px; height: 16px; border-radius: 50%; color: #fff; font: bold 11px/16px sans-serif; text-align: center; margin-top: 1px; }
+.lint-pop .lp-item.error .lp-ico { background: #e51400; }
+.lint-pop .lp-item.hint .lp-ico { background: #e2a300; color: #1e1e1e; }
+.lint-pop .lp-body { flex: 1; min-width: 0; }
+.lint-pop .lp-main { font-weight: 600; }
+.lint-pop .lp-better, .lint-pop .lp-reason { margin-top: 3px; }
+.lint-pop .lp-reason { opacity: .8; }
+.lint-pop .lp-label { font-weight: 600; opacity: .75; }
+.lint-pop code { font-family: var(--vscode-editor-font-family, Consolas, monospace); font-size: 12px; padding: 0 4px; border-radius: 3px;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, .16)); white-space: nowrap; }
+body.vscode-dark .lint-pop .lp-head.error, body.vscode-high-contrast .lint-pop .lp-head.error { color: #f48771; }
+body.vscode-dark .lint-pop .lp-head.hint, body.vscode-high-contrast .lint-pop .lp-head.hint { color: #e2c08d; }

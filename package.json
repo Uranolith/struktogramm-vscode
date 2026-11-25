@@ -618,6 +618,21 @@
             "%config.toolbarLocation.enum1%"
           ],
           "markdownDescription": "%config.toolbarLocation%"
+        },
+        "struktogramm.checks": {
+          "type": "string",
+          "enum": [
+            "all",
+            "errors",
+            "off"
+          ],
+          "default": "all",
+          "enumDescriptions": [
+            "%config.checks.enum0%",
+            "%config.checks.enum1%",
+            "%config.checks.enum2%"
+          ],
+          "markdownDescription": "%config.checks%"
         }
       }
     },

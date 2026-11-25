@@ -19,6 +19,7 @@ const { ExecViewProvider, VIEW_ID: EXEC_VIEW_ID } = require('./execView');
 const { executionLocation } = require('./webview');
 const execSplit = require('./execSplit');
 const { BreakpointSync } = require('./breakpoints');
+const { Checks } = require('./checks');
 const { registerDebugger } = require('./debugLaunch');
 
 let extContext = null;
@@ -52,7 +53,10 @@ class NsdEditorProvider {
   }
 
   resolveCustomTextEditor(document, panel) {
-    const state = { document, panel, select: undefined, editNew: false };
+    // ausstehende Markierung (Code-Link in „Probleme“, Struktogramm war noch nicht geöffnet)
+    const pend = this.pendingReveal && this.pendingReveal.get(document.uri.toString());
+    if (pend) this.pendingReveal.delete(document.uri.toString());
+    const state = { document, panel, select: pend, editNew: false };
     this.editors.add(state);
     this.setActive(state);
     if (this.onFirstOpen) this.onFirstOpen();
@@ -88,6 +92,8 @@ class NsdEditorProvider {
       state.editNew = false;
       // Haltepunkte (VS Code) nach jedem Neuzeichnen: Zeilen im XML können sich verschoben haben
       if (this.bpSync) this.bpSync.push(state);
+      // Fehler und Hinweise: Marken an den Elementen und Einträge in „Probleme“
+      if (this.checks) panel.webview.postMessage({ type: 'lint', items: this.checks.run(document, model) });
     };
     state.send = send;
 
@@ -107,6 +113,8 @@ class NsdEditorProvider {
       state.exec.abort();
       subs.forEach((s) => s.dispose());
       this.editors.delete(state);
+      // letzter Editor dieser Datei geschlossen: Einträge in „Probleme“ entfernen
+      if (this.checks && ![...this.editors].some((s) => s.document.uri.toString() === document.uri.toString())) this.checks.clear(document.uri);
       if (this.execEditor === state) this.execEditor = null;
       if (this.active === state) this.setActive(null);
     });
@@ -678,6 +686,7 @@ function activate(context) {
   const provider = new NsdEditorProvider(context);
   // Haltepunkte der Struktogramme = VS-Code-Haltepunkte (Ansicht „Haltepunkte“, Bedingungen, Logpoints …)
   provider.bpSync = new BreakpointSync(context, provider);
+  provider.checks = new Checks(context);
   const preview = new PreviewPanel(context);
   // Werkzeuge in der Editor-Kopfzeile oder in der Struktograf-Seitenleiste (Einstellung struktogramm.toolbarLocation)
   const tools = new ToolsViewProvider(context, provider);
@@ -749,6 +758,20 @@ function activate(context) {
       if (e.affectsConfiguration('struktogramm.executionPanelLocation')) applyExecutionLocation(true);
     }),
     vscode.commands.registerCommand('struktogramm.execution.clear', () => execView.clear()),
+    // Code-Link einer Meldung in „Probleme“: Struktogramm nach vorn holen (bzw. öffnen) und das Element markieren
+    vscode.commands.registerCommand('struktogramm.revealProblem', async (uriText, elPath) => {
+      const uri = vscode.Uri.parse(String(uriText));
+      const st = [...provider.editors].find((s) => s.document.uri.toString() === uri.toString());
+      if (st) {
+        try {
+          st.panel.reveal(st.panel.viewColumn, false);
+          st.panel.webview.postMessage({ type: 'reveal', path: elPath });
+          return;
+        } catch (e) { /* Editor gerade geschlossen (Meldung dazu kommt verzögert): neu öffnen */ }
+      }
+      (provider.pendingReveal = provider.pendingReveal || new Map()).set(uri.toString(), elPath);
+      await vscode.commands.executeCommand('vscode.openWith', uri, 'struktogramm.editor');
+    }),
     vscode.commands.registerCommand('struktogramm.zoomIn', () => zoomFocusedDiagram('in')),
     vscode.commands.registerCommand('struktogramm.zoomOut', () => zoomFocusedDiagram('out')),
     vscode.commands.registerCommand('struktogramm.zoomReset', () => zoomFocusedDiagram('reset')),

@@ -2433,4 +2433,20 @@ function generateCode(doc, lang, opts = {}) {
   return new G(doc, lang, opts).run();
 }
 
-module.exports = { generateCode, TARGETS, toClassName };
+/**
+ * Typen der Variablen je Routine, wie der Generator sie ableitet (für Hinweise wie „Variable ohne Typ – var x: int“).
+ * Liefert je Wurzel { types: Map Name -> vereinheitlichter Typ (int, double, string, boolean, char, int[] …), returnType }.
+ */
+function inferTypes(doc) {
+  try {
+    const g = new CGen(doc, 'java', {});
+    return doc.roots.map((r) => {
+      const sig = g.sigs.get(r);
+      let types = new Map();
+      try { types = g.analyze(r, r.rootType === 'program' ? { ...sig, params: [] } : sig).types; } catch (e) { /* ohne Vorschlag */ }
+      return { types, returnType: (sig && (sig.inferredReturn || null)) || null };
+    });
+  } catch (e) { return doc.roots.map(() => ({ types: new Map(), returnType: null })); }
+}
+
+module.exports = { generateCode, TARGETS, toClassName, inferTypes };
