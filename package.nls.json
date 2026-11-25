@@ -71,7 +71,7 @@
   "cmd.debug": "Debug Structogram",
   "cmd.runNoDebug": "Run Structogram Without Debugging",
   "welcome.debug": "The active structogram can be run directly:\n[Debug Structogram](command:struktogramm.debug)\n[Run Without Debugging](command:struktogramm.runNoDebug)\nBreakpoints: F9 in the structogram. The debugger list does not recognize the structogram editor – inside the editor, F5 starts it directly.",
-  "config.checks": "Checks in the structogram: **errors** (red, “!”) for things that do not work – e.g. syntax errors, a variable without a value, an unknown function, `leave` outside a loop – and **hints** (yellow, “i”, each with a reason) for deviations from DIN 66261 or good practice – e.g. a variable without a type, an input without a prompt, a case selection on a condition, a possible endless loop, a value that is never used. Messages appear as a badge on the element (tooltip on hover) and in the *Problems* view.",
+  "config.checks": "Checks in the structogram: **errors** (red, “!”) for things that do not work – e.g. syntax errors, a variable without a value, an unknown function, `leave` outside a loop, assignment with = instead of := – and **hints** (yellow, “i”, each with a reason) for deviations from good practice or common conventions – e.g. a variable without a type, an input without a prompt, a case selection on a condition, a possible endless loop, a value that is never used. Which hints appear is set per group in the *Hints* settings (good practice, conventions, misleading, possible logic errors). Messages appear as a badge on the element (tooltip on hover) and in the *Problems* view.",
   "config.checks.enum0": "Show errors and hints",
   "config.checks.enum1": "Show errors only",
   "config.checks.enum2": "No checks",

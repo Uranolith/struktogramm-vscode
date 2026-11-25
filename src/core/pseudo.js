@@ -122,10 +122,9 @@ function classifyLine(line) {
   const decl = parseDecl(toks);
   if (decl) return decl;
 
-  // Zuweisungen
+  // Zuweisungen: nur := und <- (= ist im Struktogramm immer der Vergleich – x = 5 ist keine Zuweisung)
   let k = findTop(toks, (t) => t.v === '<-' || t.v === ':=');
-  if (k < 0) k = findTop(toks, (t) => t.v === '=');
-  if (k > 0 && (toks[k].v !== '=' || isLvalue(toks.slice(0, k)))) {
+  if (k > 0) {
     return { kind: 'assign', target: joinTokens(toks.slice(0, k)), expr: joinTokens(toks.slice(k + 1)) };
   }
   k = findTop(toks, (t) => ASSIGN_OPS.has(t.v));
@@ -170,7 +169,9 @@ function parseDecl(toks) {
     i = 1;
     if (!toks[i] || toks[i].t !== 'id') return null;
     // var x: int <- 5 | dim x as int | const x <- 5 | var x, y: int
-    const assignIdx = findTop(toks, (t) => t.v === '<-' || t.v === ':=' || t.v === '=', i);
+    const assignIdx = findTop(toks, (t) => t.v === '<-' || t.v === ':=', i);
+    // var x: int = 5 ist keine gültige Deklaration (= ist der Vergleich)
+    if (assignIdx < 0 && findTop(toks, (t) => t.v === '=', i) >= 0) return null;
     const head = assignIdx < 0 ? toks.slice(i) : toks.slice(i, assignIdx);
     const init = assignIdx < 0 ? null : joinTokens(toks.slice(assignIdx + 1));
     let type = null, namesToks = head;
@@ -189,7 +190,7 @@ function parseDecl(toks) {
   const te = typeEnd(toks, i, true);
   if (te < 0 || !toks[te] || toks[te].t !== 'id') return null;
   const after = toks[te + 1];
-  if (after && !['<-', ':=', '=', ',', '['].includes(after.v)) return null;
+  if (after && !['<-', ':=', ',', '['].includes(after.v)) return null; // int x = 5: = ist der Vergleich
   const type = joinTokens(toks.slice(i, te));
   if (['return', 'new', 'not', 'and', 'or', 'foreach', 'for', 'while', 'until'].includes(type.toLowerCase())) return null;
   const decls = [];
@@ -199,7 +200,7 @@ function parseDecl(toks) {
     while (part[j] && part[j].v === '[') { const c = matchClose(part, j); if (c < 0) return null; suffix += joinTokens(part.slice(j, c + 1)); j = c + 1; }
     let init = null;
     if (part[j]) {
-      if (!['<-', ':=', '='].includes(part[j].v)) return null;
+      if (!['<-', ':='].includes(part[j].v)) return null;
       init = joinTokens(part.slice(j + 1));
     }
     decls.push({ name: part[0].v, suffix, init });
@@ -954,7 +955,8 @@ function parseForText(text) {
   }
   if (l === 'for' || l === 'für' || l === 'zähle' || l === 'von') toks = toks.slice(1);
   if (isWrapped(toks)) toks = toks.slice(1, -1);
-  const asg = findTop(toks, (t) => t.v === '<-' || t.v === ':=' || t.v === '=' || lc(t) === 'from' || lc(t) === 'von');
+  // for i = 1 to 10 ist ungültig: = ist der Vergleich (nur :=, <-, from/von)
+  const asg = findTop(toks, (t) => t.v === '<-' || t.v === ':=' || lc(t) === 'from' || lc(t) === 'von');
   const toK = findTop(toks, (t) => lc(t) === 'to' || lc(t) === 'bis' || lc(t) === 'downto');
   if (asg > 0 && toK > asg) {
     const byK = stepKeyword(toks, toK);

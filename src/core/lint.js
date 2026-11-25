@@ -1,4 +1,5 @@
 'use strict';
+const { assignWithEq } = require('./style');
 /**
  * Prüfungen für Struktogramme: Fehler (funktioniert nicht) und Hinweise (weicht von bewährter Praxis oder üblichen Konventionen ab).
  *
@@ -195,6 +196,10 @@ function lintDoc(doc) {
         if (lines.length > 1 && el.type === 'instruction' && !lines.every((l) => P.classifyLine(l).kind === 'decl')) add(path, 'hint', 'multiLine', tr('lint.multiLine', lines.length));
         for (const line of lines) {
           const c = P.classifyLine(line);
+          // Zuweisung mit = (x = 5, var x: int = 5): = ist im Struktogramm der Vergleich – Fehler mit Korrektur
+          const eq = assignWithEq(line);
+          // = ist keine Zuweisung: nur diesen Fehler melden (keine Folgefehler wie „Syntax“ für dieselbe Zeile)
+          if (eq) { add(path, 'error', 'assignEq', tr('lint.assignEq', line.trim(), eq)); continue; }
           switch (c.kind) {
             case 'assign': {
               const b = targetBase(c.target);
@@ -275,8 +280,11 @@ function lintDoc(doc) {
       }
       if (el.type === 'for') {
         const f = P.parseForText(lines.join(' '));
-        if (!f) add(path, 'error', 'badLoopHead', tr('lint.badLoopHead', lines.join(' ')));
-        else {
+        // for i = 1 to 10: Zuweisung mit = (wie bei Anweisungen ein Fehler, statt „Schleifenkopf nicht lesbar“)
+        const eq = assignWithEq(lines.join(' '));
+        if (eq) add(path, 'error', 'assignEq', tr('lint.assignEq', lines.join(' ').trim(), eq));
+        else if (!f) add(path, 'error', 'badLoopHead', tr('lint.badLoopHead', lines.join(' ')));
+        if (f) {
           setVar(f.var, path);
           loopVars.add(f.var);
           if (f.kind === 'count') [f.start, f.end, f.step].forEach((e) => useExpr(e, path));

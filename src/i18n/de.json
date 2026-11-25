@@ -544,6 +544,7 @@
  "lint.argCount": "„{0}“ erwartet {1} Argument(e), übergeben werden {2}.",
  "lint.leaveOutside": "leave steht außerhalb einer Schleife.",
  "lint.leaveTooFar": "leave {0} verlässt mehr Schleifen, als hier geschachtelt sind ({1}).",
+ "lint.assignEq": "Zuweisung mit = („{0}“). Richtig: „{1}“. Grund: = ist im Struktogramm der Vergleich; eine Zuweisung schreibt man mit := oder <-.",
  "lint.divZero": "Division durch 0.",
  "lint.badLoopHead": "Schleifenkopf nicht lesbar: „{0}“ (z. B. „for i := 1 to 10“ oder „foreach x in feld“).",
  "lint.emptyCond": "Die Bedingung ist leer.",

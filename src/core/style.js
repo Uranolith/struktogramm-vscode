@@ -7,8 +7,9 @@
  * Zuweisung ":=", Vergleich "=" und "<>". Damit lassen sich .nsd-Dateien 1:1 im Original-Structorizer öffnen.
  *
  *  normalize(doc)      jede andere Schreibweise -> Structorizer-Schreibweise:
- *                        "<-" -> ":="   "==" -> "="   "!=" -> "<>"   "div" -> "/"
- *                        sowie "="-Zuweisungen älterer Versionen dieser Extension (x = 5 -> x := 5)
+ *                        "==" -> "="   "!=" -> "<>"   "div" -> "/"
+ *                      Zuweisungen mit ":=" und "<-" sind beide gültig und bleiben, wie sie geschrieben sind
+ *                      Zuweisungen mit "=" bleiben stehen – die Prüfung meldet sie als Fehler (:= schreibt man selbst)
  *  modernize / toStructorizer   Aliase von normalize (ältere Aufrufer)
  *  splitInstructions   jede Anweisung in einen eigenen Block
  */
@@ -89,14 +90,21 @@ function legacyAssignIdx(toks) {
   return isTarget(head) ? k : -1;
 }
 
+/**
+ * Zuweisung mit = statt := (x = 5, var x: int = 5, int x = 5, for i = 1 to 10): die richtige Zeile, sonst null.
+ * Für die Prüfung – umgewandelt wird nicht, das := schreibt man selbst.
+ */
+function assignWithEq(text) {
+  const s = String(text == null ? '' : text);
+  const toks = safeTok(s);
+  const k = legacyAssignIdx(toks);
+  if (k < 0) return null;
+  return `${s.slice(0, toks[k].start).trimEnd()} := ${s.slice(toks[k].end).trimStart()}`.trim();
+}
+
 /** Anweisungszeile -> Structorizer-Schreibweise */
 function normLine(text) {
-  const k = legacyAssignIdx(safeTok(text));
-  return replaceTokens(text, (t, i) => {
-    if (i === k) return ':=';
-    if (isOp(t, '<-')) return ':=';
-    return common(t);
-  });
+  return replaceTokens(text, (t) => common(t));
 }
 
 const COND_TYPES = new Set(['alternative', 'while', 'repeat']);
@@ -141,4 +149,4 @@ function splitInstructions(doc) {
 
 const normalize = (doc) => mapDoc(doc, normCond, normLine);
 
-module.exports = { normalize, modernize: normalize, toStructorizer: normalize, splitInstructions, normCond, normLine };
+module.exports = { normalize, modernize: normalize, toStructorizer: normalize, splitInstructions, normCond, normLine, assignWithEq };
