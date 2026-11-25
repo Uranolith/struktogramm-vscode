@@ -474,7 +474,86 @@ function translateExpr(text, lang, ctx = {}) {
   return joinTokens(mapToks(toks, lang, ctx));
 }
 
+/**
+ * Textvergleiche (a < b, a = b mit Zeichenketten) für Sprachen, in denen die Operatoren dafür nicht taugen:
+ *  Java: a.compareTo(b) < 0, a.equals(b)        C: strcmp(a, b) < 0, strcmp(a, b) == 0
+ *  C#: string.CompareOrdinal(a, b) < 0 (== passt)  Rust: a.as_str() < "x" (String mit Literal)
+ *  C++: string("a") < "b" (nur wenn beide Seiten Literale sind – sonst passt std::string)
+ * Verglichen wird wie im Interpreter zeichenweise nach Zeichencode. Ersetzt jeden betroffenen Vergleich durch einen
+ * fertig übersetzten Baustein; liefert die neue Tokenliste oder null, wenn nichts zu tun war.
+ */
+const STRCMP_LANGS = new Set(['java', 'c', 'csharp', 'rust', 'cpp']);
+function stringCompare(toks, lang, ctx) {
+  if (!toks.length) return null;
+  const isLogic = (t) => ['and', 'or', 'xor'].includes(lc(t)) || t.v === '&&' || t.v === '||';
+  // Teile zwischen and/or einzeln behandeln
+  if (findTop(toks, isLogic) >= 0) {
+    const out = [];
+    let changed = false, cur = [];
+    let depth = 0;
+    const flush = () => { const r = stringCompare(cur, lang, ctx); if (r) changed = true; out.push(...(r || cur)); cur = []; };
+    for (const t of toks) {
+      if (t.t === 'op' && OPEN[t.v]) depth++;
+      else if (t.t === 'op' && CLOSE[t.v]) depth--;
+      if (depth === 0 && isLogic(t)) { flush(); out.push(t); continue; }
+      cur.push(t);
+    }
+    flush();
+    return changed ? out : null;
+  }
+  // not … bzw. ( … )
+  if (lc(toks[0]) === 'not' || toks[0].v === '!') {
+    const r = stringCompare(toks.slice(1), lang, ctx);
+    // geklammert: sonst bände „!“ nur an strcmp(…) bzw. a.compareTo(…) statt an den ganzen Vergleich
+    return r ? [toks[0], tok('(', 'op', true), ...r.map((t, i) => (i === 0 ? { ...t, ws: false } : t)), tok(')', 'op', false)] : null;
+  }
+  if (isWrapped(toks)) {
+    const r = stringCompare(toks.slice(1, -1), lang, ctx);
+    return r ? [toks[0], ...r, toks[toks.length - 1]] : null;
+  }
+  const rels = [];
+  let depth = 0;
+  toks.forEach((t, k) => { if (t.t === 'op' && OPEN[t.v]) depth++; else if (t.t === 'op' && CLOSE[t.v]) depth--; else if (depth === 0 && REL_OPS.has(t.v)) rels.push(k); });
+  if (rels.length !== 1) return null;
+  const k = rels[0];
+  const L = toks.slice(0, k), R = toks.slice(k + 1);
+  if (!L.length || !R.length) return null;
+  const typeOf = (part) => { try { return normType(ctx.exprType ? ctx.exprType(joinTokens(part)) : inferType(joinTokens(part))); } catch (e) { return null; } };
+  const lit = (part) => part.length === 1 && part[0].t === 'str' && part[0].v[0] === '"';
+  const isStr = (part) => lit(part) || typeOf(part) === 'string';
+  if (!isStr(L) && !isStr(R)) return null;
+  const v = toks[k].v;
+  const op = v === '=' || v === '==' || v === '===' ? '==' : v === '<>' || v === '!=' || v === '!==' ? '!=' : v;
+  const eq = op === '==' || op === '!=';
+  const tr = (part) => { const p = part.slice(); p[0] = { ...p[0], ws: false }; return joinTokens(mapToks(p, lang, ctx)); };
+  let code = null;
+  if (lang === 'java') {
+    const a = W(tr(L)), b = tr(R);
+    code = eq ? `${op === '!=' ? '!' : ''}${a}.equals(${b})` : `${a}.compareTo(${b}) ${op} 0`;
+  } else if (lang === 'c') {
+    if (ctx.needs) ctx.needs.add('string');
+    code = `strcmp(${tr(L)}, ${tr(R)}) ${op} 0`;
+  } else if (lang === 'csharp') {
+    if (eq) return null;
+    code = `string.CompareOrdinal(${tr(L)}, ${tr(R)}) ${op} 0`;
+  } else if (lang === 'rust') {
+    // String mit &str-Literal lässt sich nur auf Gleichheit vergleichen, nicht mit < / >
+    if (eq || lit(L) === lit(R)) return null;
+    const asStr = (part) => (lit(part) ? tr(part) : `${W(tr(part))}.as_str()`);
+    code = `${asStr(L)} ${op} ${asStr(R)}`;
+  } else if (lang === 'cpp') {
+    // zwei Literale wären Zeigervergleiche
+    if (!(lit(L) && lit(R))) return null;
+    code = `string(${tr(L)}) ${op} ${tr(R)}`;
+    if (ctx.needs) ctx.needs.add('string');
+  }
+  if (!code) return null;
+  return [{ t: 'id', v: code, ws: toks[0].ws }];
+}
+
 function mapToks(toks, lang, ctx) {
+  // Textvergleiche zuerst (Operanden werden dabei selbst übersetzt)
+  if (STRCMP_LANGS.has(lang)) { const sc = stringCompare(toks, lang, ctx); if (sc) toks = sc; }
   if (MODERN.has(lang)) toks = promoteFloats(toks, ctx);
   const out = [];
   const c = CFAM.has(lang);

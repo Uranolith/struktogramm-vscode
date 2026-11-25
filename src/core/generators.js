@@ -935,6 +935,23 @@ class CGen extends BaseGen {
   }
 
   /**
+   * C und C++ kennen kein switch über Zeichenketten: Fallauswahl über einen Text als if/else-if-Kette mit
+   * Textvergleichen (C: strcmp, siehe stringCompare in pseudo.js)
+   */
+  condCaseBranches(el) {
+    const cb = super.condCaseBranches(el);
+    if (cb || (this.lang !== 'c' && this.lang !== 'cpp')) return cb;
+    const disc = String(el.text[0] || '').trim();
+    if (!disc || P.normType(this.exprType(disc)) !== 'string') return null;
+    const par = (v) => (this.needsParens(v) ? `(${v})` : v);
+    return this.caseInfo(el).map((b) => ({
+      cond: b.isDefault ? null : b.values.length ? b.values.map((v) => `${par(disc)} = ${par(v)}`).map((c, i, a) => (a.length > 1 ? `(${c})` : c)).join(' or ') : 'false',
+      body: b.body,
+      isDefault: b.isDefault,
+    }));
+  }
+
+  /**
    * Fallauswahl mit Bedingungen: JavaScript kennt switch (true) mit Bedingungen als Marken,
    * C# switch (true) mit „case true when Bedingung“; Java, C und C++ verlangen Konstanten → if/else-if-Kette.
    */
