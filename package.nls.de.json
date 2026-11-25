@@ -22,7 +22,6 @@
   "cmd.export.xml": "Als XML exportieren...",
   "cmd.export.aiClip": "KI-Pseudocode in die Zwischenablage kopieren",
   "cmd.pause": "Ausführung anhalten",
-  "config.title": "Struktograf",
   "config.trueLabel": "Beschriftung des true-Zweigs einer Verzweigung (z.B. true, ja, wahr, W). Leer = true.",
   "config.falseLabel": "Beschriftung des false-Zweigs einer Verzweigung (z.B. false, nein, falsch, F). Leer = false.",
   "config.prettyOperators": "Operatoren im Diagramm hübsch darstellen (!= als ≠, <= als ≤, >= als ≥; alte Schreibweise <- als ←).",
@@ -82,5 +81,10 @@
   "config.language": "Sprache von Struktograf: Editor, Werkzeuge, Ausführung, Meldungen der Prüfungen und Kommentare im erzeugten Code. *Automatisch* richtet sich nach der Sprache der VS-Code-Oberfläche (Deutsch, sonst Englisch). Die Texte in den VS-Code-Einstellungen und Befehlsnamen folgen immer der VS-Code-Oberfläche.",
   "config.language.enum0": "Automatisch (wie die VS-Code-Oberfläche)",
   "config.language.enum1": "Deutsch",
-  "config.language.enum2": "Englisch"
+  "config.language.enum2": "Englisch",
+  "config.group.general": "Allgemein",
+  "config.group.display": "Darstellung",
+  "config.group.checks": "Prüfungen",
+  "config.group.code": "Code erzeugen und einlesen",
+  "config.group.structorizer": "Structorizer"
 }

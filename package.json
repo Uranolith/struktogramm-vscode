@@ -502,175 +502,226 @@
         }
       ]
     },
-    "configuration": {
-      "title": "%config.title%",
-      "properties": {
-        "struktogramm.trueLabel": {
-          "type": "string",
-          "default": "",
-          "description": "%config.trueLabel%"
-        },
-        "struktogramm.falseLabel": {
-          "type": "string",
-          "default": "",
-          "description": "%config.falseLabel%"
-        },
-        "struktogramm.prettyOperators": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.prettyOperators%"
-        },
-        "struktogramm.theme": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "light",
-            "dark"
-          ],
-          "default": "auto",
-          "enumDescriptions": [
-            "%config.theme.enum0%",
-            "%config.theme.enum1%",
-            "%config.theme.enum2%"
-          ],
-          "description": "%config.theme%"
-        },
-        "struktogramm.exportTheme": {
-          "type": "string",
-          "enum": [
-            "ask",
-            "editor",
-            "light",
-            "dark"
-          ],
-          "default": "ask",
-          "enumDescriptions": [
-            "%config.exportTheme.enum0%",
-            "%config.exportTheme.enum1%",
-            "%config.exportTheme.enum2%",
-            "%config.exportTheme.enum3%"
-          ],
-          "description": "%config.exportTheme%"
-        },
-        "struktogramm.highlightKeywords": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.highlightKeywords%"
-        },
-        "struktogramm.defaultTargetLanguage": {
-          "type": "string",
-          "default": "",
-          "description": "%config.defaultTargetLanguage%"
-        },
-        "struktogramm.importEngine": {
-          "type": "string",
-          "enum": [
-            "eigene",
-            "structorizer"
-          ],
-          "default": "eigene",
-          "enumDescriptions": [
-            "%config.importEngine.enum0%",
-            "%config.importEngine.enum1%"
-          ],
-          "description": "%config.importEngine%"
-        },
-        "struktogramm.structorizer.jarPath": {
-          "type": "string",
-          "default": "",
-          "description": "%config.structorizer.jarPath%"
-        },
-        "struktogramm.structorizer.javaPath": {
-          "type": "string",
-          "default": "java",
-          "description": "%config.structorizer.javaPath%"
-        },
-        "struktogramm.structorizer.exportOptions": {
-          "type": "array",
-          "items": {
-            "type": "string"
+    "configuration": [
+      {
+        "id": "struktogramm.general",
+        "title": "%config.group.general%",
+        "order": 0,
+        "properties": {
+          "struktogramm.language": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "de",
+              "en"
+            ],
+            "default": "auto",
+            "enumDescriptions": [
+              "%config.language.enum0%",
+              "%config.language.enum1%",
+              "%config.language.enum2%"
+            ],
+            "markdownDescription": "%config.language%",
+            "order": 0
           },
-          "default": [],
-          "description": "%config.structorizer.exportOptions%"
-        },
-        "struktogramm.executionPanelLocation": {
-          "type": "string",
-          "enum": [
-            "editor",
-            "panel"
-          ],
-          "default": "panel",
-          "enumDescriptions": [
-            "%config.executionPanelLocation.enum0%",
-            "%config.executionPanelLocation.enum1%"
-          ],
-          "markdownDescription": "%config.executionPanelLocation%"
-        },
-        "struktogramm.toolbarLocation": {
-          "type": "string",
-          "enum": [
-            "editor",
-            "sidebar"
-          ],
-          "default": "editor",
-          "enumDescriptions": [
-            "%config.toolbarLocation.enum0%",
-            "%config.toolbarLocation.enum1%"
-          ],
-          "markdownDescription": "%config.toolbarLocation%"
-        },
-        "struktogramm.language": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "de",
-            "en"
-          ],
-          "default": "auto",
-          "enumDescriptions": [
-            "%config.language.enum0%",
-            "%config.language.enum1%",
-            "%config.language.enum2%"
-          ],
-          "markdownDescription": "%config.language%"
-        },
-        "struktogramm.checks": {
-          "type": "string",
-          "enum": [
-            "all",
-            "errors",
-            "off"
-          ],
-          "default": "all",
-          "enumDescriptions": [
-            "%config.checks.enum0%",
-            "%config.checks.enum1%",
-            "%config.checks.enum2%"
-          ],
-          "markdownDescription": "%config.checks%"
-        },
-        "struktogramm.hints.bestPractice": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.hints.bestPractice%"
-        },
-        "struktogramm.hints.conventions": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.hints.conventions%"
-        },
-        "struktogramm.hints.confusion": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.hints.confusion%"
-        },
-        "struktogramm.hints.logic": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.hints.logic%"
+          "struktogramm.toolbarLocation": {
+            "type": "string",
+            "enum": [
+              "editor",
+              "sidebar"
+            ],
+            "default": "editor",
+            "enumDescriptions": [
+              "%config.toolbarLocation.enum0%",
+              "%config.toolbarLocation.enum1%"
+            ],
+            "markdownDescription": "%config.toolbarLocation%",
+            "order": 1
+          },
+          "struktogramm.executionPanelLocation": {
+            "type": "string",
+            "enum": [
+              "editor",
+              "panel"
+            ],
+            "default": "panel",
+            "enumDescriptions": [
+              "%config.executionPanelLocation.enum0%",
+              "%config.executionPanelLocation.enum1%"
+            ],
+            "markdownDescription": "%config.executionPanelLocation%",
+            "order": 2
+          }
+        }
+      },
+      {
+        "id": "struktogramm.display",
+        "title": "%config.group.display%",
+        "order": 1,
+        "properties": {
+          "struktogramm.theme": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "light",
+              "dark"
+            ],
+            "default": "auto",
+            "enumDescriptions": [
+              "%config.theme.enum0%",
+              "%config.theme.enum1%",
+              "%config.theme.enum2%"
+            ],
+            "description": "%config.theme%",
+            "order": 0
+          },
+          "struktogramm.exportTheme": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "editor",
+              "light",
+              "dark"
+            ],
+            "default": "ask",
+            "enumDescriptions": [
+              "%config.exportTheme.enum0%",
+              "%config.exportTheme.enum1%",
+              "%config.exportTheme.enum2%",
+              "%config.exportTheme.enum3%"
+            ],
+            "description": "%config.exportTheme%",
+            "order": 1
+          },
+          "struktogramm.highlightKeywords": {
+            "type": "boolean",
+            "default": true,
+            "description": "%config.highlightKeywords%",
+            "order": 2
+          },
+          "struktogramm.prettyOperators": {
+            "type": "boolean",
+            "default": true,
+            "description": "%config.prettyOperators%",
+            "order": 3
+          },
+          "struktogramm.trueLabel": {
+            "type": "string",
+            "default": "",
+            "description": "%config.trueLabel%",
+            "order": 4
+          },
+          "struktogramm.falseLabel": {
+            "type": "string",
+            "default": "",
+            "description": "%config.falseLabel%",
+            "order": 5
+          }
+        }
+      },
+      {
+        "id": "struktogramm.checks",
+        "title": "%config.group.checks%",
+        "order": 2,
+        "properties": {
+          "struktogramm.checks": {
+            "type": "string",
+            "enum": [
+              "all",
+              "errors",
+              "off"
+            ],
+            "default": "all",
+            "enumDescriptions": [
+              "%config.checks.enum0%",
+              "%config.checks.enum1%",
+              "%config.checks.enum2%"
+            ],
+            "markdownDescription": "%config.checks%",
+            "order": 0
+          },
+          "struktogramm.hints.bestPractice": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.hints.bestPractice%",
+            "order": 1
+          },
+          "struktogramm.hints.conventions": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.hints.conventions%",
+            "order": 2
+          },
+          "struktogramm.hints.confusion": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.hints.confusion%",
+            "order": 3
+          },
+          "struktogramm.hints.logic": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.hints.logic%",
+            "order": 4
+          }
+        }
+      },
+      {
+        "id": "struktogramm.code",
+        "title": "%config.group.code%",
+        "order": 3,
+        "properties": {
+          "struktogramm.defaultTargetLanguage": {
+            "type": "string",
+            "default": "",
+            "description": "%config.defaultTargetLanguage%",
+            "order": 0
+          },
+          "struktogramm.importEngine": {
+            "type": "string",
+            "enum": [
+              "eigene",
+              "structorizer"
+            ],
+            "default": "eigene",
+            "enumDescriptions": [
+              "%config.importEngine.enum0%",
+              "%config.importEngine.enum1%"
+            ],
+            "description": "%config.importEngine%",
+            "order": 1
+          }
+        }
+      },
+      {
+        "id": "struktogramm.structorizer",
+        "title": "%config.group.structorizer%",
+        "order": 4,
+        "properties": {
+          "struktogramm.structorizer.jarPath": {
+            "type": "string",
+            "default": "",
+            "description": "%config.structorizer.jarPath%",
+            "order": 0
+          },
+          "struktogramm.structorizer.javaPath": {
+            "type": "string",
+            "default": "java",
+            "description": "%config.structorizer.javaPath%",
+            "order": 1
+          },
+          "struktogramm.structorizer.exportOptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "%config.structorizer.exportOptions%",
+            "order": 2
+          }
         }
       }
-    },
+    ],
     "keybindings": [
       {
         "command": "struktogramm.run",
