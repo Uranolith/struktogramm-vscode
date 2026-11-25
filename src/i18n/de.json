@@ -578,5 +578,10 @@
  "lint.cat.bestPractice": "Good Practice",
  "lint.cat.conventions": "Konventionen",
  "lint.cat.confusion": "Missverständlich",
- "lint.cat.logic": "Mögliche Logikfehler"
+ "lint.cat.logic": "Mögliche Logikfehler",
+ "gen.strCat": "Texte verketten (jeweils neuer Speicher); Zahl bzw. Zeichen als Text",
+ "gen.readLine": "Eine Zeile von der Tastatur lesen (ohne Zeilenumbruch)",
+ "gen.typeMixText": "ACHTUNG: „{0}“ bekommt hier Text, ist aber eine Zahl – {1} erlaubt keinen Typwechsel, dieser Code lässt sich so nicht übersetzen. Abhilfe im Struktogramm: eine eigene Variable für den Text.",
+ "gen.typeMixNumber": "ACHTUNG: „{0}“ bekommt hier eine Zahl, ist aber Text – {1} erlaubt keinen Typwechsel, dieser Code lässt sich so nicht übersetzen. Abhilfe im Struktogramm: eine eigene Variable für die Zahl.",
+ "ext.typeMix": "{0} ist im Struktogramm mal Text, mal Zahl. {1} erlaubt das nicht – der erzeugte Code lässt sich so nicht übersetzen (die Stelle ist im Code mit ACHTUNG markiert). Abhilfe: eine eigene Variable für den Text."
 }

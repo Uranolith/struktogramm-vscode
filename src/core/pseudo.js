@@ -214,13 +214,13 @@ function parseDecl(toks) {
 const MATH_FUNCS = {
   sqrt: { java: 'Math.sqrt', csharp: 'Math.Sqrt', javascript: 'Math.sqrt', python: 'math.sqrt', c: 'sqrt', cpp: 'sqrt' },
   abs: { java: 'Math.abs', csharp: 'Math.Abs', javascript: 'Math.abs', python: 'abs', c: 'abs', cpp: 'abs' },
-  pow: { java: 'Math.pow', csharp: 'Math.Pow', javascript: 'Math.pow', python: 'pow', c: 'pow', cpp: 'pow' },
+  pow: { java: 'Math.pow', csharp: 'Math.Pow', javascript: 'Math.pow', python: 'math.pow', c: 'pow', cpp: 'pow' },
   floor: { java: 'Math.floor', csharp: 'Math.Floor', javascript: 'Math.floor', python: 'math.floor', c: 'floor', cpp: 'floor' },
   ceil: { java: 'Math.ceil', csharp: 'Math.Ceiling', javascript: 'Math.ceil', python: 'math.ceil', c: 'ceil', cpp: 'ceil' },
 };
 const CFAM = new Set(['java', 'c', 'cpp', 'csharp', 'javascript', 'typescript', 'kotlin', 'rust']);
 const MODERN = new Set(['kotlin', 'rust']);
-const MODERN_FN = new Set(['sqrt', 'pow', 'floor', 'ceil', 'abs', 'round', 'random', 'int', 'float', 'str', 'length', 'len',
+const MODERN_FN = new Set(['sqrt', 'pow', 'floor', 'ceil', 'abs', 'round', 'random', 'int', 'trunc', 'float', 'str', 'length', 'len',
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'toradians', 'todegrees']);
 const SIMPLE_CHAIN = /^[\p{L}_][\p{L}\p{N}_.]*(\[[^\]]*\]|\([^()]*\))?$/u;
 
@@ -255,7 +255,7 @@ function modernFn(l, args, lang, ctx) {
       case 'abs': return `Math.abs(${a.out})`;
       case 'round': return `Math.round(${dbl(a)}).toInt()`;
       case 'random': return 'Math.random()';
-      case 'int': return `${wrap(a.out)}.toInt()`;
+      case 'int': case 'trunc': return `${wrap(a.out)}.toInt()`;
       case 'float': return `${wrap(a.out)}.toDouble()`;
       case 'str': return `${wrap(a.out)}.toString()`;
       default: { // length / len
@@ -267,10 +267,10 @@ function modernFn(l, args, lang, ctx) {
   switch (l) {
     case 'sqrt': case 'floor': case 'ceil': return `${dbl(a)}.${l}()`;
     case 'pow': return `${dbl(a)}.powf(${dbl(args[1] || a)})`;
-    case 'abs': return /^-?\d+$/.test(a.out) ? `(${a.out}_i32).abs()` : `${wrap(a.out)}.abs()`;
-    case 'round': return `(${dbl(a)}.round() as i32)`;
+    case 'abs': return /^-?\d+$/.test(a.out) ? `(${a.out}_i32).abs()` : /^-?\d+\.\d+$/.test(a.out) ? `(${a.out}_f64).abs()` : `${wrap(a.out)}.abs()`;
+    case 'round': return `((${dbl(a)} + 0.5).floor() as i32)`;
     case 'random': if (ctx.needs) ctx.needs.add('random'); return 'random()';
-    case 'int': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<i32>().unwrap()` : `(${wrap(a.out)} as i32)`;
+    case 'int': case 'trunc': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<i32>().unwrap()` : `(${wrap(a.out)} as i32)`;
     case 'float': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<f64>().unwrap()` : `(${wrap(a.out)} as f64)`;
     case 'str': return `${wrap(a.out)}.to_string()`;
     default: return `(${wrap(a.out)}.len() as i32)`;
@@ -470,7 +470,8 @@ function requote(strTok, quote) {
  */
 function translateExpr(text, lang, ctx = {}) {
   if (text == null) return '';
-  const toks = ptoks(text);
+  // double(x) ist dasselbe wie float(x): Ganzzahl in Kommazahl
+  const toks = ptoks(text).map((t, i, a) => (t.t === 'id' && t.v.toLowerCase() === 'double' && a[i + 1] && a[i + 1].v === '(' ? { ...t, v: 'float' } : t));
   return joinTokens(mapToks(toks, lang, ctx));
 }
 
@@ -635,7 +636,8 @@ function intDivision(toks, lang, ctx) {
     }
     res.push(t);
   }
-  if (!res.some((t) => t.t === 'op' && t.v === '/' && !t.intDivDone)) return res;
+  const isMod = (t) => lang === 'python' && !t.modDone && ((t.t === 'op' && t.v === '%') || (t.t === 'id' && t.v.toLowerCase() === 'mod'));
+  if (!res.some((t) => (t.t === 'op' && t.v === '/' && !t.intDivDone) || isMod(t))) return res;
   const isMul = (t) => (t.t === 'op' && ['*', '/', '%'].includes(t.v)) || (t.t === 'id' && ['div', 'mod'].includes(t.v.toLowerCase()));
   const KW = new Set(['and', 'or', 'xor', 'not', 'div', 'mod']);
   const endsFactor = (t) => t && (t.t === 'num' || t.t === 'str' || (t.t === 'id' && !KW.has(t.v.toLowerCase())) || (t.t === 'op' && CLOSE[t.v]));
@@ -659,6 +661,15 @@ function intDivision(toks, lang, ctx) {
     ops.forEach((op, k) => {
       const f = parts[k + 1];
       const intOf = (p) => { try { return normType(ctx.exprType ? ctx.exprType(joinTokens(p)) : inferType(joinTokens(p))) === 'int'; } catch (e) { return false; } };
+      if (isMod(op) && f.length) {
+        // Python rechnet -7 % 3 = 2, der Interpreter (wie Java) -1: math.fmod behält das Vorzeichen
+        if (ctx.needs) ctx.needs.add('math');
+        const first = { ...acc[0], ws: false };
+        const fm = [{ t: 'id', v: 'math', ws: false }, tok('.', 'op', false), { t: 'id', v: 'fmod', ws: false }, tok('(', 'op', false), first, ...acc.slice(1),
+          { t: 'op', v: ',', ws: false, modDone: true }, ...f.map((x, k) => (k === 0 ? { ...x, ws: true } : x)), tok(')', 'op', false)];
+        acc = intOf(acc) && intOf(f) ? [{ t: 'id', v: 'int', ws: acc[0].ws }, tok('(', 'op', false), ...fm, tok(')', 'op', false)] : fm;
+        return;
+      }
       if (op.t === 'op' && op.v === '/' && !op.intDivDone && f.length && intOf(acc) && intOf(f)) {
         const first = { ...acc[0], ws: false };
         acc = [{ t: 'id', v: 'int', ws: acc[0].ws }, tok('(', 'op', false), first, ...acc.slice(1), { ...op, intDivDone: true }, ...f, tok(')', 'op', false)];
@@ -799,14 +810,28 @@ function mapToks(toks, lang, ctx) {
           continue;
         }
         nt.v = 'not';
+      } else if ((l === 'floor' || l === 'ceil') && lang === 'python' && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
+        // math.floor/ceil liefern in Python eine Ganzzahl – im Interpreter (wie Java) eine Kommazahl: -3.0
+        const close = matchClose(toks, i + 1);
+        const arg = joinTokens(mapToks(toks.slice(i + 2, close < 0 ? toks.length : close), lang, ctx));
+        if (ctx.needs) ctx.needs.add('math');
+        out.push({ t: 'id', v: `float(math.${l}(${arg}))`, ws: t.ws });
+        i = close < 0 ? toks.length : close;
+        continue;
       } else if (MATH_FUNCS[l] && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
         nt.v = MATH_FUNCS[l][lang] || t.v;
+        if (l === 'abs' && lang === 'c') {
+          const close = matchClose(toks, i + 1);
+          let at = null;
+          try { at = normType(ctx.exprType ? ctx.exprType(joinTokens(toks.slice(i + 2, close))) : null); } catch (e) { at = null; }
+          if (at === 'double') { nt.v = 'fabs'; if (ctx.needs) ctx.needs.add('math'); }
+        }
         if (ctx.needs && (lang === 'python' && nt.v.startsWith('math.'))) ctx.needs.add('math');
         if (ctx.needs && (lang === 'c' || lang === 'cpp') && l !== 'abs') ctx.needs.add('math');
       } else if (l === 'random' && toks[i + 1] && toks[i + 1].v === '(') {
         nt.v = { java: 'Math.random', javascript: 'Math.random', python: 'random.random', c: 'rand', cpp: 'rand', csharp: 'new Random().NextDouble' }[lang] || t.v;
         if (ctx.needs && lang === 'python') ctx.needs.add('random');
-      } else if ((l === 'int' || l === 'float' || l === 'str' || l === 'round') && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
+      } else if ((l === 'int' || l === 'trunc' || l === 'float' || l === 'str' || l === 'round') && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
         const close = matchClose(toks, i + 1);
         const arg = joinTokens(mapToks(toks.slice(i + 2, close < 0 ? toks.length : close), lang, ctx));
         const simple = /^[\p{L}\p{N}_.]+$/u.test(arg);
@@ -815,9 +840,10 @@ function mapToks(toks, lang, ctx) {
           int: { java: `(int) ${a}`, c: `(int) ${a}`, cpp: `(int) ${a}`, csharp: `(int) ${a}`, javascript: `Math.trunc(${arg})`, python: `int(${arg})` },
           float: { java: `(double) ${a}`, c: `(double) ${a}`, cpp: `(double) ${a}`, csharp: `(double) ${a}`, javascript: `Number(${arg})`, python: `float(${arg})` },
           str: { java: `String.valueOf(${arg})`, c: arg, cpp: `to_string(${arg})`, csharp: `Convert.ToString(${arg})`, javascript: `String(${arg})`, python: `str(${arg})` },
-          round: { java: `Math.round(${arg})`, c: `round(${arg})`, cpp: `round(${arg})`, csharp: `Math.Round(${arg})`, javascript: `Math.round(${arg})`, python: `round(${arg})` },
-        }[l];
-        if (ctx.needs && l === 'round' && (lang === 'c' || lang === 'cpp')) ctx.needs.add('math');
+          // wie im Interpreter (Structorizer/Java): .5 rundet aufwärts, auch negativ (-2.5 -> -2)
+          round: { java: `(int) Math.round(${arg})`, c: `(int) floor(${a} + 0.5)`, cpp: `(int) floor(${a} + 0.5)`, csharp: `(int) Math.Floor(${a} + 0.5)`, javascript: `Math.round(${arg})`, python: `math.floor(${a} + 0.5)` },
+        }[l === 'trunc' ? 'int' : l];
+        if (ctx.needs && l === 'round' && (lang === 'c' || lang === 'cpp' || lang === 'python')) ctx.needs.add('math');
         out.push({ t: 'id', v: CAST[lang] || t.v, ws: t.ws });
         i = close < 0 ? toks.length : close;
         continue;
@@ -825,7 +851,13 @@ function mapToks(toks, lang, ctx) {
         if (toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
           const close = matchClose(toks, i + 1);
           const arg = joinTokens(mapToks(toks.slice(i + 2, close), lang, ctx));
-          const repl = { java: `${arg}.length`, javascript: `${arg}.length`, csharp: `${arg}.Length`, python: `len(${arg})`, cpp: `${arg}.size()`, c: `strlen(${arg})` }[lang];
+          let at = null;
+          try { at = normType(ctx.exprType ? ctx.exprType(joinTokens(toks.slice(i + 2, close))) : null); } catch (e) { at = null; }
+          const isArr = !!(at && at.endsWith('[]'));
+          const sz = `(int) (sizeof(${arg}) / sizeof(${arg}[0]))`;
+          if (lang === 'c' && !isArr && ctx.needs) ctx.needs.add('string');
+          const repl = { java: isArr ? `${arg}.length` : `${arg}.length()`, javascript: `${arg}.length`, csharp: `${arg}.Length`, python: `len(${arg})`,
+            cpp: isArr ? sz : `(int) ${arg}.size()`, c: isArr ? sz : `(int) strlen(${arg})` }[lang];
           if (repl) { out.push({ t: 'id', v: repl, ws: t.ws }); i = close; continue; }
         }
       }
@@ -1004,6 +1036,8 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
     if (vt && vt.endsWith('[]')) return vt;
     // ein einzelnes Zeichen bleibt ein Zeichen (in Ausdrücken wie z + "x" wird daraus Text, siehe unten)
     if (vt === 'char') return 'char';
+    // ebenso ein Wahrheitswert (b := a > 3; OUTPUT b)
+    if (vt === 'boolean') return 'boolean';
   }
   // chr(…) allein ist ein Zeichen
   if (toks.length >= 3 && toks[0].t === 'id' && toks[0].v.toLowerCase() === 'chr' && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1) return 'char';
@@ -1031,8 +1065,9 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
         const close = matchClose(toks, i + 1);
         if (funcs.has(t.v) && funcs.get(t.v).returnType) bump(normType(funcs.get(t.v).returnType));
         else if (l === 'random' && toks[i + 2] && toks[i + 2].v !== ')') bump('int'); // random(n): ganze Zahl
-        else if (['sqrt', 'pow', 'random', 'float', 'floor', 'ceil', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'toradians', 'todegrees', 'signum'].includes(l)) bump('double');
-        else if (['len', 'length', 'int', 'round', 'abs', 'ord', 'trunc', 'pos', 'sgn', 'strcmp'].includes(l)) bump('int');
+        else if (['sqrt', 'pow', 'random', 'float', 'double', 'floor', 'ceil', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'toradians', 'todegrees', 'signum'].includes(l)) bump('double');
+        else if (l === 'abs') bump(inferType(joinTokens(toks.slice(i + 2, close)), varTypes, funcs) === 'double' ? 'double' : 'int'); // abs hat den Typ des Arguments
+        else if (['len', 'length', 'int', 'round', 'ord', 'trunc', 'pos', 'sgn', 'strcmp'].includes(l)) bump('int');
         else if (['str', 'input', 'chr', 'tostring', 'uppercase', 'lowercase', 'trim', 'copy', 'insert', 'delete'].includes(l)) bump('string');
         else unknown = true;
         i = close;

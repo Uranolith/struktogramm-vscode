@@ -7,6 +7,8 @@ const { t: tr } = require('../i18n');
 const { walk } = require('./model');
 const { joinTokens, findTop, matchClose, OPEN, CLOSE } = require('./tokenizer');
 
+const DYNAMIC_LANGS = new Set(['python', 'javascript']); // Variablen ohne festen Typ
+
 const TARGETS = {
   python: { label: 'Python', ext: 'py', languageId: 'python' },
   java: { label: 'Java', ext: 'java', languageId: 'java' },
@@ -30,6 +32,8 @@ const TYPE_MAP = {
 
 const SIMPLE_IDENT = P.IDENT_RE;
 const TYPED_LANGS = new Set(['java', 'c', 'cpp', 'csharp', 'kotlin', 'rust']);
+/** einfachen Ausdruck so lassen, sonst klammern (für b ? "true" : "false") */
+const W = (e) => (/^[\p{L}_][\p{L}\p{N}_.]*$/u.test(e) ? e : `(${e})`);
 
 /** genaue Typnamen je Zielsprache (Schlüssel: P.canonType) */
 const EXACT_TYPES = {
@@ -61,6 +65,10 @@ class BaseGen {
     this.lang = lang;
     this.opts = opts || {};
     this.needs = new Set();
+    this.warnings = []; // {kind, name} – z. B. Variable mal Text, mal Zahl (nicht übersetzbar in typisierten Sprachen)
+    // Variable wechselt Ganzzahl/Kommazahl: jeden Ausdruck mit dem Typ übersetzen, den sie an dieser Stelle hat
+    const rawX = this.x.bind(this);
+    this.x = (text) => this.withFlowTypes(() => rawX(this.flowRewrite(text)));
     this.I = '    ';
     this.sigs = new Map();
     this.funcs = new Map();
@@ -104,8 +112,94 @@ class BaseGen {
   }
 
   x(text) {
+    // Textverkettung mit Zahlen („x = “ + x) je Sprache mit Umwandlung (Kotlin/Rust haben eigene Templates)
+    const cc = this.concat(text);
+    if (cc != null) return cc;
     // Ganzzahldivision wird je Division in translateExpr bestimmt (pseudo.js, intDivision)
     return P.translateExpr(text, this.lang, this);
+  }
+
+  /**
+   * „a“ + x + … mit mindestens einem Text: Teile mit ihrem Typ, sonst null.
+   * Nur ein reiner „+“-Ausdruck (keine Vergleiche/Logik auf oberster Ebene).
+   */
+  concatTerms(text) {
+    if (!this.cur) return null;
+    const { splitTop } = require('./tokenizer');
+    const toks = P.ptoks(text);
+    if (findTop(toks, (t) => P.REL_OPS.has(t.v) || ['and', 'or', 'not', 'xor'].includes(String(t.v).toLowerCase()) || t.v === ',') >= 0) return null;
+    const terms = splitTop(toks, '+');
+    if (terms.length < 2 || terms.some((t) => !t.length)) return null;
+    const typed = terms.map((t) => {
+      const src = joinTokens(t);
+      const lit = t.length === 1 && t[0].t === 'str';
+      let ty = lit ? (t[0].v[0] === "'" && t[0].v.length === 3 ? 'string' : 'string') : P.normType(this.exprType(src));
+      if (!lit && t.length === 1 && t[0].t === 'id' && P.normType(this.typeOf(t[0].v)) === 'char') ty = 'char';
+      return { src, lit, ty, code: lit ? null : this.xPlain(src) };
+    });
+    // Verkettung erst ab dem ersten Text (1 + 2 + „a“ rechnet zuerst)
+    const first = typed.findIndex((t) => t.ty === 'string');
+    if (first < 0) return null;
+    if (first > 0) {
+      const head = typed.slice(0, first + 1);
+      if (first > 1) return null; // selten; Zahlen vorn bleiben wie bisher
+      return typed;
+    }
+    return typed;
+  }
+
+  /** Ausdruck ohne Verkettungs-Behandlung übersetzen */
+  xPlain(text) { return P.translateExpr(text, this.lang, this); }
+
+  concat(text) {
+    const L = this.lang;
+    if (!['python', 'javascript', 'csharp', 'cpp', 'c'].includes(L)) return null;
+    const terms = this.concatTerms(text);
+    if (!terms) return null;
+    const mixed = terms.some((t) => t.ty !== 'string');
+    if (!mixed && L !== 'c' && L !== 'cpp') return null; // nur Texte: die Sprache verkettet selbst
+    const litOf = (t) => P.literalInner(P.ptoks(t.src)[0].v);
+    const q = (str) => '"' + str.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+    if (L === 'python') {
+      return 'f"' + terms.map((t) => (t.lit ? litOf(t).replace(/\{/g, '{{').replace(/\}/g, '}}').replace(/"/g, '\\"') : `{${t.code.replace(/"/g, "'")}}`)).join('') + '"';
+    }
+    if (L === 'javascript') {
+      return '`' + terms.map((t) => {
+        if (t.lit) return litOf(t).replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+        if (t.ty === 'double') { this.needs.add('fmtnum'); return '${fmtNum(' + t.code + ')}'; }
+        return '${' + t.code + '}';
+      }).join('') + '`';
+    }
+    if (L === 'csharp') {
+      return terms.map((t) => {
+        if (t.lit) return q(litOf(t));
+        if (t.ty === 'double') { this.needs.add('fmtnum'); return `Fmt(${t.code})`; }
+        return this.needsParens(t.src) ? `(${t.code})` : t.code;
+      }).join(' + ');
+    }
+    if (L === 'cpp') {
+      this.needs.add('string');
+      return terms.map((t, k) => {
+        if (t.lit) return k === 0 ? `string(${q(litOf(t))})` : q(litOf(t));
+        if (t.ty === 'double') { this.needs.add('fmtdouble'); return `fmt_double(${t.code})`; }
+        if (t.ty === 'int') return `to_string(${t.code})`;
+        if (t.ty === 'char') return `string(1, ${t.code})`;
+        if (t.ty === 'boolean') return `string(${t.code} ? "true" : "false")`;
+        return k === 0 ? `string(${t.code})` : (this.needsParens(t.src) ? `(${t.code})` : t.code);
+      }).join(' + ');
+    }
+    // C: Hilfsfunktionen (neuer Speicher je Verkettung)
+    this.needs.add('strcat');
+    this.needs.add('string');
+    const parts = terms.map((t) => {
+      if (t.lit) return q(litOf(t));
+      if (t.ty === 'double') { this.needs.add('fmtdouble'); return `fmt_double(${t.code})`; }
+      if (t.ty === 'int') return `str_int(${t.code})`;
+      if (t.ty === 'char') return `str_chr(${t.code})`;
+      if (t.ty === 'boolean') return `(${t.code} ? "true" : "false")`;
+      return t.code;
+    });
+    return parts.slice(1).reduce((acc, p) => `str_cat(${acc}, ${p})`, parts[0]);
   }
 
   /** Bestehen alle Operanden aus Ganzzahlen? (für / -> div bzw. //) */
@@ -297,8 +391,8 @@ class BaseGen {
             const ot = typeOfToks(other);
             if (ARITH.has(op)) changed = set(t.v, 'int') || changed;
             else if (op === '+') {
-              if (ot === 'string' || ot === 'char' || isStrLit(other)) changed = set(t.v, 'string') || changed;
-              else if (num(ot)) changed = set(t.v, 'int') || changed;
+              // „x = “ + x ist kein Hinweis auf Text: eine Zahl lässt sich an Text anhängen (Verkettung wandelt um)
+              if (num(ot)) changed = set(t.v, 'int') || changed;
               else if (weak && other.length === 1 && other[0].t === 'id' && cands.has(other[0].v)) changed = set(t.v, 'int') || changed;
             } else if (REL.has(op)) {
               if (ot === 'string' || ot === 'char' || isStrLit(other)) changed = set(t.v, 'string') || changed;
@@ -306,6 +400,26 @@ class BaseGen {
               else if (ot === 'boolean') changed = set(t.v, 'boolean') || changed;
             }
           }
+        });
+      }
+      // Argumente: eigenes Unterprogramm -> Parametertyp; int/trunc/round/floor/ceil(x) -> Kommazahl (sonst gäbe es
+      // nichts umzuwandeln); sqrt/abs/sin … -> Zahl
+      for (const e of exprs) {
+        const toks = P.ptoks(e);
+        toks.forEach((t, i) => {
+          if (t.t !== 'id' || !toks[i + 1] || toks[i + 1].v !== '(' || (toks[i - 1] && toks[i - 1].v === '.')) return;
+          const close = matchClose(toks, i + 1);
+          if (close < 0) return;
+          const args = require('./tokenizer').splitTop(toks.slice(i + 2, close), ',');
+          const l = t.v.toLowerCase();
+          args.forEach((a, k) => {
+            if (a.length !== 1 || a[0].t !== 'id' || !open(a[0].v)) return;
+            let want = null;
+            if (this.funcs.has(t.v)) { const prm = this.funcs.get(t.v).params[k]; want = prm && P.normType(prm.type); }
+            else if (['int', 'trunc', 'round', 'floor', 'ceil'].includes(l)) want = 'double';
+            else if (['sqrt', 'abs', 'sin', 'cos', 'tan', 'exp', 'log', 'ln', 'pow', 'power', 'sgn', 'sqr'].includes(l)) want = 'int';
+            if (want) changed = set(a[0].v, want) || changed;
+          });
         });
       }
       // Zuweisungen in beide Richtungen: x := ausdruck  bzw.  temp := name (temp bekannt -> name)
@@ -379,10 +493,141 @@ class BaseGen {
       if (!types.get(v)) types.set(v, 'string');
     });
     for (const n of all) if (!types.has(n)) types.set(n, null);
-    return { types, rawTypes, explicit, params, inline, hoist, forDecl, all, declared: new Set(), fnTypes };
+    // Ganzzahlen, die sich selbst multiplizieren (f := f * i – Fakultät, Potenz, Produkt), überschreiten schnell 32 Bit:
+    // 64-Bit-Ganzzahl (long, long long, Long, i64); einfache Kopien davon (x := f) ebenso
+    const long = new Set();
+    const asg = [];
+    walk(root.children, (el) => {
+      if (el.disabled) return false;
+      if (el.type !== 'instruction') return;
+      for (const line of linesOf(el)) { const c = P.classifyLine(line); if (c.kind === 'assign' && SIMPLE_IDENT.test(c.target.trim())) asg.push([c.target.trim(), c.expr]); }
+    });
+    const intVar = (n) => !explicit.has(n) && !params.has(n) && P.normType(types.get(n)) === 'int';
+    for (const [n, e] of asg) {
+      const toks = P.ptoks(e);
+      if (intVar(n) && toks.some((t) => t.t === 'id' && t.v === n) && findTop(toks, (t) => t.v === '*') >= 0) long.add(n);
+    }
+    for (let more = true; more;) {
+      more = false;
+      for (const [n, e] of asg) if (!long.has(n) && intVar(n) && long.has(e.trim())) { long.add(n); more = true; }
+    }
+    for (const n of long) rawTypes.set(n, 'long');
+    // Typwechsel wie im Interpreter (x := 5 … x := 2.5): gespeichert als Kommazahl, solange sie eine Ganzzahl ist,
+    // wird sie beim Rechnen und Ausgeben umgewandelt (switching). Text und Zahl lassen sich nicht vereinen (mixed).
+    const switching = new Set();
+    const mixed = new Set();
+    const kinds = new Map();
+    for (const [n, e] of asg) {
+      if (explicit.has(n) || params.has(n)) continue;
+      let et = null;
+      try { et = P.normType(P.inferType(e, types, fnTypes)); } catch (err) { et = null; }
+      if (et === 'int' && P.normType(types.get(n)) === 'double') switching.add(n);
+      const k = et === 'string' ? 'text' : et === 'int' || et === 'double' ? 'number' : null;
+      if (k) { if (!kinds.has(n)) kinds.set(n, new Set()); kinds.get(n).add(k); }
+    }
+    for (const [n, ks] of kinds) if (ks.size > 1) mixed.add(n);
+    return { types, rawTypes, explicit, params, inline, hoist, forDecl, all, declared: new Set(), fnTypes,
+      switching, mixed, flow: new Map(), flowLock: new Set() };
   }
 
   defaultParamType() { return 'int'; }
+
+  /** Ist die Variable an dieser Stelle eine Ganzzahl, obwohl sie als Kommazahl gespeichert ist? */
+  flowIsInt(n) {
+    const c = this.cur;
+    return !!(c && c.switching && c.switching.has(n) && !c.flowLock.has(n) && c.flow.get(n) === 'int');
+  }
+
+  /** Typisierte Sprachen: x -> int(x), solange x an dieser Stelle eine Ganzzahl ist */
+  flowRewrite(text) {
+    const c = this.cur;
+    if (text == null || this.flowOff || DYNAMIC_LANGS.has(this.lang) || !c || !c.switching || !c.switching.size) return text;
+    const toks = P.ptoks(String(text));
+    let hit = false;
+    const out = toks.map((t, i) => {
+      if (t.t !== 'id' || !this.flowIsInt(t.v)) return t;
+      const prev = toks[i - 1], next = toks[i + 1];
+      if ((prev && prev.v === '.') || (next && (next.v === '(' || next.v === '['))) return t;
+      // schon umgewandelt: int(x)
+      if (prev && prev.v === '(' && toks[i - 2] && toks[i - 2].t === 'id' && toks[i - 2].v.toLowerCase() === 'int' && next && next.v === ')') return t;
+      hit = true;
+      return { ...t, v: `int(${t.v})` };
+    });
+    return hit ? joinTokens(out) : text;
+  }
+
+  /** Python/JavaScript: Variablen haben dort ihren aktuellen Typ – während fn() mit diesem rechnen */
+  withFlowTypes(fn) {
+    const c = this.cur;
+    if (!DYNAMIC_LANGS.has(this.lang) || !c || !c.switching || !c.switching.size) return fn();
+    const saved = [];
+    for (const n of c.switching) if (this.flowIsInt(n)) { saved.push([n, c.types.get(n)]); c.types.set(n, 'int'); }
+    try { return fn(); } finally { for (const [n, t] of saved) c.types.set(n, t); }
+  }
+
+  /** Variablen, die ein Element (mit allen Unterelementen) setzt */
+  assignedIn(el) {
+    const set = new Set();
+    walk([el], (e) => {
+      if (e.type === 'for') { const f = P.parseForText(linesOf(e).join(' ')); if (f && f.var) set.add(f.var); return; }
+      if (!['instruction', 'call', 'jump'].includes(e.type)) return;
+      for (const l of linesOf(e)) {
+        const c = P.classifyLine(l);
+        if (c.kind === 'assign') c.target.split(',').forEach((t) => set.add(t.trim()));
+        else if (c.kind === 'input') (c.vars || []).forEach((v) => set.add(v));
+      }
+    });
+    return set;
+  }
+
+  /** Anweisung mit schrittweisem Typ (Ganzzahl/Kommazahl) und Warnung bei Text/Zahl übersetzen */
+  flowStmt(c, ind, el, line) {
+    const cur = this.cur;
+    if (!cur || ((!cur.switching || !cur.switching.size) && (!cur.mixed || !cur.mixed.size))) return this.stmt(c, ind, el);
+    const dyn = DYNAMIC_LANGS.has(this.lang);
+    const run = (cc) => this.withFlowTypes(() => this.stmt(cc, ind, el));
+    if (c.kind === 'input') {
+      for (const v of c.vars || []) if (cur.switching.has(v) && !cur.flowLock.has(v)) cur.flow.set(v, 'double');
+      return run(c);
+    }
+    if (c.kind === 'assign') {
+      const n = c.target.trim();
+      let rhs = dyn ? c.expr : this.flowRewrite(c.expr);
+      const pre = [];
+      // Text in einer Zahl-Variable (oder umgekehrt): typisierte Sprachen können das nicht – Hinweis im Code
+      if (!dyn && cur.mixed.has(n)) {
+        let et = null;
+        try { et = P.normType(this.exprType(rhs)); } catch (err) { et = null; }
+        const vt = P.normType(this.declType(n));
+        const cat = (t) => (t === 'string' ? 'text' : t === 'int' || t === 'double' ? 'number' : null);
+        if (cat(et) && cat(vt) && cat(et) !== cat(vt)) {
+          pre.push(ind + this.comment(tr(cat(et) === 'text' ? 'gen.typeMixText' : 'gen.typeMixNumber', n, TARGETS[this.lang].label)));
+          if (!this.warnings.some((w) => w.name === n)) this.warnings.push({ kind: 'typeMix', name: n });
+        }
+      }
+      if (!cur.switching.has(n)) {
+        this.flowOff = true;
+        try { return [...pre, ...run({ ...c, expr: rhs })]; } finally { this.flowOff = false; }
+      }
+      let rt = null;
+      try { rt = P.normType(this.withFlowTypes(() => this.exprType(rhs))); } catch (err) { rt = null; }
+      const now = rt === 'int' ? 'int' : 'double';
+      // Kotlin/Rust wandeln Ganzzahlen nicht von selbst in Kommazahlen
+      if (!dyn && now === 'int' && (this.lang === 'kotlin' || this.lang === 'rust') && !/^-?\d+$/.test(rhs.trim())) rhs = `float(${rhs})`;
+      // der neue Typ gilt schon für die Zuweisung selbst (Python: x = 5 bleibt Ganzzahl, nicht 5.0)
+      if (!cur.flowLock.has(n)) cur.flow.set(n, now);
+      this.flowOff = true;
+      this.noNarrow = !dyn && now === 'int' && (this.lang === 'kotlin' || this.lang === 'rust');
+      let res;
+      try { res = run({ ...c, expr: rhs }); } finally { this.flowOff = false; this.noNarrow = false; }
+      return [...pre, ...res];
+    }
+    if (!dyn && c.kind !== 'decl' && line != null) {
+      const r = this.flowRewrite(line);
+      if (r !== line) c = P.classifyLine(r);
+    }
+    return run(c);
+  }
 
   inferReturn(root, sig, types) {
     let t = null, any = false;
@@ -429,6 +674,7 @@ class BaseGen {
    * float x := 1.5 -> 1.5f,  float x := a * 2 -> (float) (a * 2),  Kotlin .toFloat(),  Rust as f32
    */
   narrow(type, code) {
+    if (this.noNarrow) return code; // schon passend umgewandelt (Typwechsel Ganzzahl -> Kommazahl)
     const c = P.canonType(type);
     if (!c || code == null) return code;
     const L = this.lang;
@@ -490,6 +736,8 @@ class BaseGen {
   /** Teile einer OUTPUT-Anweisung: {lit} (Inhalt mit Escapes) oder {expr} (Pseudocode) */
   /** Ist der Ausdruck eine Kommazahl? (für die Ausgabe wie im Interpreter: 80.0, 0.1) */
   isDouble(expr) { return P.normType(this.exprType(expr)) === 'double'; }
+  /** Wahrheitswert? (Ausgabe wie im Interpreter als true/false) */
+  isBool(expr) { return P.normType(this.exprType(expr)) === 'boolean'; }
 
   outParts(items) {
     return items.map((it) => {
@@ -595,6 +843,16 @@ class BaseGen {
   }
 
   el(el, ind) {
+    const sw = this.cur && this.cur.switching;
+    if (!sw || !sw.size || ['instruction', 'call', 'jump'].includes(el.type)) return this.elPlain(el, ind);
+    // Variablen, die in einer Schleife oder Verzweigung gesetzt werden, haben dort und danach keinen eindeutigen Typ:
+    // als Kommazahl behandeln (bisheriges Verhalten)
+    const added = [...this.assignedIn(el)].filter((n) => sw.has(n) && !this.cur.flowLock.has(n));
+    added.forEach((n) => { this.cur.flowLock.add(n); this.cur.flow.set(n, 'double'); });
+    try { return this.elPlain(el, ind); } finally { added.forEach((n) => this.cur.flowLock.delete(n)); }
+  }
+
+  elPlain(el, ind) {
     const LOOPS = ['for', 'while', 'repeat', 'forever'];
     if (LOOPS.includes(el.type) && !el.disabled) {
       const label = this.loopNeedsLabel(el) ? `L${(this.labelCount = (this.labelCount || 0) + 1)}` : null;
@@ -632,7 +890,7 @@ class BaseGen {
           const c = P.classifyLine(pl);
           if (c.kind === 'typedef') continue; // Typdefinitionen stehen am Dateianfang (typeDefs)
           const multi = c.kind === 'leave' && c.count > 1 ? this.leaveN(c.count, ind) : null;
-          out.push(...(multi || this.stmt(c, ind, el)));
+          out.push(...(multi || this.flowStmt(c, ind, el, pl)));
         }
         break;
       }
@@ -848,6 +1106,9 @@ class CGen extends BaseGen {
   /** Deklaration (mit/ohne Initialisierung) */
   declLine(name, type, init, isConst) {
     const L = this.lang;
+    // genauer Typ aus der Analyse (z. B. long für f := f * i), wenn er zum vereinheitlichten passt
+    const raw = this.cur && this.cur.rawTypes && SIMPLE_IDENT.test(name) ? this.cur.rawTypes.get(name) : null;
+    if (raw && P.canonType(raw) && P.normType(raw) === P.normType(type)) type = raw;
     if (init != null && !/\[/.test(name)) init = this.narrow(type, init);
     if (L === 'javascript') {
       let v = init;
@@ -993,13 +1254,20 @@ class CGen extends BaseGen {
         const rd = t === 'int' || t === 'double' ? `Number(${pr})` : pr;
         out.push(ind + (decl ? `let ${v} = ${rd};` : `${tv} = ${rd};`));
       } else if (L === 'cpp') {
-        if (decl) out.push(ind + this.declLine(v, t, null));
-        out.push(ind + `cin >> ${tv};`);
+        // ganze Zeile lesen: Text mit Leerzeichen
+        this.needs.add('readline');
+        const rd = { int: 'stoi(read_line())', long: 'stoll(read_line())', short: '(short) stoi(read_line())', byte: '(unsigned char) stoi(read_line())',
+          float: 'stof(read_line())', double: 'stod(read_line())', char: 'read_line()[0]', boolean: '(read_line() == "true")' }[ct] || 'read_line()';
+        out.push(ind + (decl ? this.declLine(v, t, rd) : `${tv} = ${rd};`));
       } else { // C
+        // ganze Zeile lesen (fgets): Text mit Leerzeichen, kein Zeilenumbruch im Puffer
+        this.needs.add('readline');
+        this.needs.add('stdlib');
         if (decl) out.push(ind + this.declLine(v, t, null));
-        const fmt = { int: '%d', long: '%lld', short: '%hd', byte: '%hhu', float: '%f', double: '%lf', char: ' %c', boolean: '%d' }[ct];
-        if (fmt) out.push(ind + `scanf("${fmt}", &${tv});`);
-        else out.push(ind + `scanf("%255s", ${tv});`);
+        const rd = { int: 'atoi(read_line())', long: 'atoll(read_line())', short: '(short) atoi(read_line())', byte: '(unsigned char) atoi(read_line())',
+          float: '(float) read_double()', double: 'read_double()', char: 'read_line()[0]', boolean: 'atoi(read_line())' }[ct];
+        if (rd) out.push(ind + `${tv} = ${rd};`);
+        else { this.needs.add('string'); out.push(ind + `strcpy(${tv}, read_line());`); }
       }
     });
     return out;
@@ -1023,6 +1291,7 @@ class CGen extends BaseGen {
         if (SIMPLE_IDENT.test(p.expr.trim()) && P.canonType(this.declType(p.expr.trim())) === 'byte') return `(int) ${this.x(p.expr)}`;
         // Kommazahlen vollständig und mit Nachkommastelle (cout schreibt nur 6 Stellen und 80.0 als 80)
         if (this.isDouble(p.expr)) { this.needs.add('fmtdouble'); return `fmt_double(${this.x(p.expr)})`; }
+        if (this.isBool(p.expr)) return `(${W(this.x(p.expr))} ? "true" : "false")`;
         return this.needsParens(p.expr) ? '(' + this.x(p.expr) + ')' : this.x(p.expr);
       });
       return 'cout << ' +(s.length ? s.join(' << ') + ' << ' : '') + 'endl;';
@@ -1037,6 +1306,7 @@ class CGen extends BaseGen {
           const ct = SIMPLE_IDENT.test(p.expr.trim()) ? P.canonType(this.declType(p.expr.trim())) : null;
           // Kommazahlen vollständig und mit Nachkommastelle (%g schreibt nur 6 Stellen und 80.0 als 80)
           if (t === 'double') { this.needs.add('fmtdouble'); fmt += '%s'; args.push(`fmt_double(${this.x(p.expr)})`); continue; }
+          if (t === 'boolean') { fmt += '%s'; args.push(`${W(this.x(p.expr))} ? "true" : "false"`); continue; }
           const spec = ct === 'long' ? '%lld' : { string: '%s', char: '%c' }[t] || '%d';
           fmt += spec;
           args.push(this.x(p.expr));
@@ -1050,6 +1320,7 @@ class CGen extends BaseGen {
       if (p.lit != null) return '"' + p.lit + '"';
       // C# schreibt 80.0 als 80: Kommazahlen wie im Interpreter mit Nachkommastelle
       if (L === 'csharp' && this.isDouble(p.expr)) { this.needs.add('fmtnum'); return `Fmt(${this.x(p.expr)})`; }
+      if (L === 'csharp' && this.isBool(p.expr)) return `(${W(this.x(p.expr))} ? "true" : "false")`;
       return parts.length > 1 && this.needsParens(p.expr) ? '(' + this.x(p.expr) + ')' : this.x(p.expr);
     });
     if (parts.length > 1 && parts[0].lit == null && parts[1].lit == null) s.unshift('""');
@@ -1232,6 +1503,11 @@ class CGen extends BaseGen {
     if (this.lang === 'c') return this.cHelpers();
     if (this.lang !== 'cpp') return [];
     const out = [];
+    if (this.needs.has('readline')) {
+      this.needs.add('string');
+      out.push(this.comment(tr('gen.readLine')), 'string read_line() {', '    string s;', '    getline(cin, s);',
+        '    if (!s.empty() && s.back() == \'\\r\') s.pop_back();', '    return s;', '}', '');
+    }
     if (this.needs.has('fmtdouble')) {
       this.needs.add('stdlib');
       out.push(this.comment(tr('gen.fmtDouble')), 'string fmt_double(double x) {', '    char s[352];',
@@ -1248,6 +1524,21 @@ class CGen extends BaseGen {
   cHelpers() {
     const out = [];
     const N = this.needs;
+    if (N.has('readline')) {
+      N.add('string');
+      out.push(this.comment(tr('gen.readLine')), 'char* read_line(void) {', '    static char buf[1024];', '    if (!fgets(buf, sizeof buf, stdin)) buf[0] = 0;',
+        '    buf[strcspn(buf, "\\r\\n")] = 0;', '    return buf;', '}',
+        'double read_double(void) {', '    return strtod(read_line(), NULL);', '}', '');
+    }
+    if (N.has('strcat')) {
+      N.add('stdlib');
+      out.push(this.comment(tr('gen.strCat')), 'char* str_cat(const char* a, const char* b) {', '    char* r = malloc(strlen(a) + strlen(b) + 1);',
+        '    strcpy(r, a);', '    strcat(r, b);', '    return r;', '}',
+        'const char* str_int(long long v) {', '    static char buf[8][24];', '    static int k = 0;', '    char* s = buf[k++ % 8];',
+        '    snprintf(s, sizeof buf[0], "%lld", v);', '    return s;', '}',
+        'const char* str_chr(char c) {', '    static char buf[8][2];', '    static int k = 0;', '    char* s = buf[k++ % 8];',
+        '    s[0] = c; s[1] = 0;', '    return s;', '}', '');
+    }
     if (N.has('fmtdouble')) {
       N.add('stdlib');
       out.push(this.comment(tr('gen.fmtDouble')), 'const char* fmt_double(double x) {', '    static char buf[8][352];', '    static int k = 0;',
@@ -1474,6 +1765,11 @@ class CGen extends BaseGen {
           I2 + 'CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;',
           I2 + 'CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;');
       }
+      // Umlaute und andere Sonderzeichen: Ausgabe als UTF-8 (stellt auch die Windows-Konsole um)
+      if (main && /[^\x00-\x7f]/.test(main.lines.join('\n'))) {
+        const k = main.lines.findIndex((l) => /static void Main\(/.test(l));
+        main.lines.splice(k + 1, 0, this.I + this.I + 'Console.OutputEncoding = System.Text.Encoding.UTF8;');
+      }
       const fmtNum = this.needs.has('fmtnum');
       out.push('using System;', ...((main && usesReal) || fmtNum ? ['using System.Globalization;'] : []), ...(this.needs.has('tasks') ? ['using System.Threading.Tasks;'] : []), '', title, `class ${this.opts.className || toClassName(mainName)}`, '{');
       out.push(...td);
@@ -1532,12 +1828,13 @@ class PyGen extends BaseGen {
       case 'decl':
         return c.decls.filter((d) => d.init != null || this.recordTypes.has(P.normType(c.type))).map((d) => {
           if (d.init == null) return ind + `${d.name} = ${this.recordNew(P.normType(c.type), [])}`;
-          let v = this.x(d.init);
+          let v = this.toFloat(c.type || this.typeOf(d.name), d.init, this.x(d.init));
           if (/^\{.*\}$/.test(v)) v = '[' + v.slice(1, -1) + ']';
           return ind + `${d.name} = ${v}`;
         });
       case 'assign': {
         let v = this.x(c.expr);
+        if (SIMPLE_IDENT.test(c.target.trim())) v = this.toFloat(this.typeOf(c.target.trim()), c.expr, v);
         if (/^\{.*\}$/.test(v)) v = '[' + v.slice(1, -1) + ']';
         return [ind + `${this.x(c.target)} = ${v}`];
       }
@@ -1564,10 +1861,20 @@ class PyGen extends BaseGen {
     }
   }
 
+  /** Python: Ganzzahl-Ausdruck für eine Kommazahl-Variable als float (7 -> 7.0, a -> float(a)) */
+  toFloat(type, expr, code) {
+    if (P.normType(type) !== 'double') return code;
+    let et = null;
+    try { et = P.normType(this.exprType(expr)); } catch (e) { et = null; }
+    if (et !== 'int') return code;
+    return /^-?\d+$/.test(String(code).trim()) ? String(code).trim() + '.0' : `float(${code})`;
+  }
+
   outputStmt(items) {
     const parts = this.outParts(items);
     if (!parts.length) return 'print()';
-    if (parts.length === 1) return `print(${parts[0].lit != null ? '"' + parts[0].lit + '"' : this.x(parts[0].expr)})`;
+    const py = (e) => (this.isBool(e) ? `str(${this.x(e)}).lower()` : this.x(e)); // True -> true wie im Interpreter
+    if (parts.length === 1) return `print(${parts[0].lit != null ? '"' + parts[0].lit + '"' : py(parts[0].expr)})`;
     const exprs = parts.filter((p) => p.expr).map((p) => this.x(p.expr));
     const q = exprs.some((e) => e.includes('"')) ? "'" : '"';
     const s = parts.map((p) => {
@@ -1576,7 +1883,7 @@ class PyGen extends BaseGen {
         if (q === "'") l = l.replace(/\\"/g, '"').replace(/'/g, "\\'");
         return l;
       }
-      return '{' + this.x(p.expr) + '}';
+      return '{' + py(p.expr) + '}';
     }).join('');
     return `print(f${q}${s}${q})`;
   }
@@ -2109,7 +2416,7 @@ class RsGen extends BaseGen {
         const t = P.normType(this.exprType(p.expr));
         // Kommazahlen: {:?} schreibt 80.0 (wie der Interpreter), {} nur 80
         f += t && (this.recordTypes.has(t) || t.endsWith('[]') || t === 'double') ? '{:?}' : '{}';
-        args.push(super.x(p.expr));
+        args.push(this.x(p.expr)); // this.x: Verkettung im Ausgabeteil wird zu format!
       }
     }
     return { f: '"' + f + '"', args };
@@ -2118,7 +2425,75 @@ class RsGen extends BaseGen {
   x(text) {
     const parts = this.cur ? concatParts(text) : null;
     if (parts) { const { f, args } = this.fmt(parts); return `format!(${[f, ...args].join(', ')})`; }
-    return super.x(text);
+    return super.x(this.cur ? this.rustMix(text) : text);
+  }
+
+  /**
+   * Rust rechnet und vergleicht nicht mit gemischten Typen (i32 * f64): ganzzahlige Operanden neben einer Kommazahl
+   * werden zu float(…) (-> as f64). Klammern mit ganzzahligem Ergebnis bleiben ganz: (a / 2) * 1.5 teilt ganzzahlig.
+   */
+  rustMix(text) {
+    const { splitTop, matchClose } = require('./tokenizer');
+    const typeOf = (toks) => { try { return toks.length ? P.normType(this.exprType(joinTokens(toks))) : null; } catch (e) { return null; } };
+    const LOGIC = new Set(['and', 'or', 'xor']);
+    const ARITH = new Set(['+', '-', '*', '/']);
+    const isArith = (t) => t && ((t.t === 'op' && ARITH.has(t.v)) || (t.t === 'id' && ['div', 'mod'].includes(t.v.toLowerCase())) || (t.t === 'op' && t.v === '%'));
+    const wrapF = (toks) => [{ t: 'id', v: 'float', ws: toks[0] ? toks[0].ws : false }, { t: 'op', v: '(', ws: false },
+      ...toks.map((t, k) => (k === 0 ? { ...t, ws: false } : t)), { t: 'op', v: ')', ws: false }];
+    let changed = false;
+    // Summe/Produkt mit Kommazahl: ganzzahlige Operanden umwandeln; Klammern mit Kommazahl-Ergebnis innen bearbeiten
+    const arith = (toks) => {
+      if (typeOf(toks) !== 'double') return toks;
+      const ops = [];
+      let depth = 0, start = 0;
+      const operands = [];
+      for (let i = 0; i < toks.length; i++) {
+        const t = toks[i];
+        if (t.t === 'op' && (t.v === '(' || t.v === '[')) depth++;
+        else if (t.t === 'op' && (t.v === ')' || t.v === ']')) depth--;
+        else if (depth === 0 && isArith(t) && i > start) { operands.push(toks.slice(start, i)); ops.push(t); start = i + 1; }
+      }
+      operands.push(toks.slice(start));
+      if (operands.length < 2) {
+        // einzelner Operand: Klammer mit Kommazahl-Ergebnis -> innen weiter
+        if (toks.length > 2 && toks[0].v === '(' && matchClose(toks, 0) === toks.length - 1) return [toks[0], ...arith(toks.slice(1, -1)), toks[toks.length - 1]];
+        return toks;
+      }
+      const out = [];
+      operands.forEach((o, k) => {
+        if (k > 0) out.push(ops[k - 1]);
+        const ot = typeOf(o);
+        if (ot === 'int' && !(o.length === 1 && o[0].t === 'num')) { out.push(...wrapF(o)); changed = true; }
+        else if (ot === 'int') { out.push({ ...o[0], v: o[0].v + '.0' }); changed = true; }
+        else if (ot === 'double' && o.length > 2 && o[0].v === '(' && matchClose(o, 0) === o.length - 1) out.push(o[0], ...arith(o.slice(1, -1)), o[o.length - 1]);
+        else out.push(...o);
+      });
+      return out;
+    };
+    // Vergleich: eine Seite Ganzzahl, die andere Kommazahl
+    const rel = (toks) => {
+      const k = findTop(toks, (t) => P.REL_OPS.has(t.v));
+      if (k <= 0) return arith(toks);
+      let L = toks.slice(0, k), R = toks.slice(k + 1);
+      const lt = typeOf(L), rt = typeOf(R);
+      const conv = (o) => (o.length === 1 && o[0].t === 'num' ? [{ ...o[0], v: o[0].v + '.0' }] : wrapF(o));
+      if (lt === 'int' && rt === 'double') { L = conv(L); changed = true; }
+      else if (lt === 'double' && rt === 'int') { R = conv(R); changed = true; }
+      return [...arith(L), toks[k], ...arith(R)];
+    };
+    const toks = P.ptoks(String(text));
+    const parts = [];
+    let cur = [];
+    let depth = 0;
+    for (const t of toks) {
+      if (t.t === 'op' && (t.v === '(' || t.v === '[')) depth++;
+      else if (t.t === 'op' && (t.v === ')' || t.v === ']')) depth--;
+      if (depth === 0 && t.t === 'id' && (LOGIC.has(t.v.toLowerCase()) || t.v.toLowerCase() === 'not')) { parts.push(cur, [t]); cur = []; continue; }
+      cur.push(t);
+    }
+    parts.push(cur);
+    const out = parts.flatMap((p) => (p.length === 1 && p[0].t === 'id' && (LOGIC.has(p[0].v.toLowerCase()) || p[0].v.toLowerCase() === 'not') ? p : rel(p)));
+    return changed ? joinTokens(out) : text;
   }
 
   /** Bedingung ohne äußere Klammern */
@@ -2199,7 +2574,8 @@ class RsGen extends BaseGen {
           const t = P.normType(this.targetType(v)) || 'string';
           const ct = P.canonType(this.targetType(v)) || t;
           const num = EXACT_TYPES.rust[ct];
-          const rd = ct === 'char' ? 'read_line().chars().next().unwrap()' : ct === 'string' || !num ? 'read_line()' : `read_line().parse::<${num}>().unwrap()`;
+          const rd = ct === 'char' ? 'read_line().chars().next().unwrap()' : ct === 'string' || !num ? 'read_line()'
+            : `read_line().parse::<${num}>().unwrap()`;
           const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
           if (decl) this.cur.declared.add(v);
           out.push(ind + (decl ? `let mut ${v}: ${this.typeName(this.targetType(v) || t)} = ${rd};` : `${this.x(v)} = ${rd};`));
@@ -2430,7 +2806,10 @@ function generateCode(doc, lang, opts = {}) {
   doc = expandIncludes(doc);
   if (!doc.roots.length) return '';
   const G = { python: PyGen, kotlin: KtGen, rust: RsGen }[lang] || CGen;
-  return new G(doc, lang, opts).run();
+  const g = new G(doc, lang, opts);
+  const code = g.run();
+  if (Array.isArray(opts.warnings)) opts.warnings.push(...g.warnings);
+  return code;
 }
 
 /**

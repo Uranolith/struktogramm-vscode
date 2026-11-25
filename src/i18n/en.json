@@ -578,5 +578,10 @@
  "lint.cat.bestPractice": "Good practice",
  "lint.cat.conventions": "Conventions",
  "lint.cat.confusion": "Misleading",
- "lint.cat.logic": "Possible logic errors"
+ "lint.cat.logic": "Possible logic errors",
+ "gen.strCat": "Concatenate texts (new memory each time); number or character as text",
+ "gen.readLine": "Read a line from the keyboard (without line break)",
+ "gen.typeMixText": "WARNING: “{0}” gets text here but is a number – {1} does not allow a type change, this code will not compile. Fix in the structogram: use a separate variable for the text.",
+ "gen.typeMixNumber": "WARNING: “{0}” gets a number here but is text – {1} does not allow a type change, this code will not compile. Fix in the structogram: use a separate variable for the number.",
+ "ext.typeMix": "{0} is sometimes text, sometimes a number in the structogram. {1} does not allow this – the generated code will not compile (the spot is marked with WARNING in the code). Fix: use a separate variable for the text."
 }

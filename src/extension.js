@@ -433,8 +433,11 @@ async function toCodeFromModel(model, baseName, srcUri) {
     if (code == null) return;
     languageId = pick.languageId;
   } else {
-    code = generateCode(model, pick.id, { className: toClassName(baseName) });
+    const warnings = [];
+    code = generateCode(model, pick.id, { className: toClassName(baseName), warnings });
     languageId = TARGETS[pick.id].languageId;
+    const mix = warnings.filter((w) => w.kind === 'typeMix').map((w) => `„${w.name}“`);
+    if (mix.length) vscode.window.showWarningMessage(t('ext.typeMix', mix.join(', '), TARGETS[pick.id].label));
   }
   let doc;
   try { doc = await vscode.workspace.openTextDocument({ language: languageId, content: code }); }

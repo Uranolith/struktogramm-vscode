@@ -15,7 +15,8 @@ if (process.platform === 'win32') {
   if (isDir(adopt)) for (const d of fs.readdirSync(adopt)) if (d.startsWith('jdk-')) extra.push(`${adopt}/${d}/bin`);
   for (const p of ['C:/msys64/ucrt64/bin', `${process.env.LOCALAPPDATA}/Programs/kotlinc/bin`]) if (isDir(p)) extra.push(p);
 }
-const env = { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1' };
+// Ausgabe als UTF-8 wie in einem UTF-8-Terminal (sonst schreiben Python und Java in eine Pipe Windows-1252)
+const env = { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1', PYTHONIOENCODING: 'utf-8' };
 const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
 env[pathKey] = [...extra, env[pathKey]].join(path.delimiter);
 
@@ -29,8 +30,8 @@ const RUN = {
   c: { tool: 'gcc', file: 'prog.c', build: ['gcc', ['-fopenmp', '-o', 'prog_c' + X, 'prog.c', '-lm']], run: (d) => [path.join(d, 'prog_c' + X), []] },
   cpp: { tool: 'g++', file: 'prog.cpp', build: ['g++', ['-pthread', '-o', 'prog_cpp' + X, 'prog.cpp']], run: (d) => [path.join(d, 'prog_cpp' + X), []] },
   csharp: { tool: 'dotnet', file: 'cs/Program.cs', build: ['dotnet', ['build', 'cs', '-nologo', '-v', 'q', '-o', 'cs/out']], run: (d) => ['dotnet', ['cs/out/cs.dll']] },
-  java: { tool: 'javac', file: `${CLASS_NAME}.java`, build: ['javac', ['-encoding', 'UTF-8', '-d', 'jcls', `${CLASS_NAME}.java`]], run: (d) => ['java', ['-cp', 'jcls', CLASS_NAME]] },
-  kotlin: { tool: 'kotlinc', file: 'prog.kt', build: ['kotlinc', ['prog.kt', '-include-runtime', '-nowarn', '-d', 'prog_kt.jar'], true], run: (d) => ['java', ['-jar', 'prog_kt.jar']] },
+  java: { tool: 'javac', file: `${CLASS_NAME}.java`, build: ['javac', ['-encoding', 'UTF-8', '-d', 'jcls', `${CLASS_NAME}.java`]], run: (d) => ['java', ['-Dstdout.encoding=UTF-8', '-cp', 'jcls', CLASS_NAME]] },
+  kotlin: { tool: 'kotlinc', file: 'prog.kt', build: ['kotlinc', ['prog.kt', '-include-runtime', '-nowarn', '-d', 'prog_kt.jar'], true], run: (d) => ['java', ['-Dstdout.encoding=UTF-8', '-jar', 'prog_kt.jar']] },
   rust: { tool: 'rustc', file: 'prog.rs', build: ['rustc', ['-o', 'prog_rs' + X, 'prog.rs']], run: (d) => [path.join(d, 'prog_rs' + X), []] },
 };
 
