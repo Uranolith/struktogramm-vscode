@@ -520,6 +520,7 @@ class Interpreter {
           break;
         }
         case 'case': {
+          if (P.hasAssignOp(el.text[0])) throw new ExecError(tr('exec.assignInCond'), path);
           const disc = yield* this.eval(el.text[0] || '', path);
           const labels = el.text.slice(1);
           const n = el.branches.length;
@@ -644,6 +645,7 @@ class Interpreter {
     let s = (lines || []).map((l) => String(l).trim()).filter(Boolean).join(' ');
     s = P.stripKeyword(s, kws).replace(/\s*\?$/, '');
     if (!s) return true;
+    if (P.hasAssignOp(s)) throw new ExecError(tr('exec.assignInCond'), path);
     return yield* this.eval(s, path);
   }
 

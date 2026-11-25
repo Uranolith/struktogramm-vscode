@@ -56,6 +56,11 @@ function typeEnd(toks, i, strict) {
  * Eine Zeile Pseudocode klassifizieren.
  * @returns {{kind:string, [k:string]:any}}
  */
+/** Enthält der Text eine Zuweisung (:= oder <-)? In Bedingungen verboten – dort vergleicht man mit = */
+function hasAssignOp(text) {
+  try { return ptoks(String(text == null ? '' : text)).some((t) => t.t === 'op' && (t.v === ':=' || t.v === '<-')); } catch (e) { return false; }
+}
+
 function classifyLine(line) {
   const s = String(line || '').trim();
   if (!s) return { kind: 'empty' };
@@ -1156,6 +1161,7 @@ function isStringLiteral(text) {
 }
 
 module.exports = {
+  hasAssignOp,
   classifyLine, translateExpr, negateCond, addConst, parseForText, stripKeyword, normType, inferType,
   parseSignature, literalInner, isStringLiteral, ptoks, IDENT_RE, REL_OPS, INPUT_KW, OUTPUT_KW, typeEnd, requote, canonType,
 };

@@ -254,11 +254,14 @@ function lintDoc(doc) {
       if (el.type === 'alternative' || el.type === 'while' || el.type === 'repeat') {
         const cond = condText(el);
         if (!cond) add(path, 'error', 'emptyCond', tr('lint.emptyCond'));
+        // Zuweisung in der Bedingung (if x := 5): verboten – eigene Meldung statt „Syntaxfehler“
+        else if (P.hasAssignOp(cond)) add(path, 'error', 'assignInCond', tr('lint.assignInCond'));
         else useExpr(cond, path);
       }
       if (el.type === 'case') {
         const disc = String((el.text || [])[0] || '').trim();
         if (!disc) add(path, 'error', 'emptyCond', tr('lint.emptyCond'));
+        else if (P.hasAssignOp(disc)) add(path, 'error', 'assignInCond', tr('lint.assignInCond'));
         else useExpr(disc, path);
         const labels = (el.text || []).slice(1).map((l) => String(l).trim());
         const n = (el.branches || []).length;
