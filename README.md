@@ -207,8 +207,8 @@ Fallauswahl über einen Text zur `if / else if`-Kette; verglichen wird wie im In
 C# `Parallel.Invoke`, C++ `std::thread`, C OpenMP (`#pragma omp parallel sections`, mit `-fopenmp` übersetzen),
 Kotlin `thread { }`, Rust `std::thread::scope`. Das Programm wartet, bis alle Zweige
 fertig sind. In Java arbeitet jeder Zweig mit Kopien der Variablen, geänderte Werte werden danach übernommen.
-Beim Ausführen im Editor laufen die Zweige dagegen nacheinander. Ein Beispiel mit allen Elementen, Rekursion und
-Parallelverarbeitung ist `test/samples/gesamttest.nsd`.
+Beim Ausführen im Editor laufen die Zweige dagegen nacheinander. Beispiele für alle Elemente liegen nach Themen in
+den Ordnern unter `test/samples`.
 
 Schlüsselwörter (blau, fett), Funktionsaufrufe (dunkelgelb, fett), Datentypen (petrol), Zeichenketten (rot),
 Operatoren (lila, fett: Zuweisung `:=`, Vergleiche `=` `<>` `<` `>` `≤` `≥`, Rechnen `+ - * / %` `mod`) werden im Diagramm farbig
@@ -395,8 +395,8 @@ Parallelverarbeitung im erzeugten Code:
   veröffentlichen → Run workflow*, Tag z. B. `v1.0.2`). Voraussetzung ist im Marketplace unter *Trusted Publishing*
   eine Regel für dieses Repository, den Workflow `publish.yml` und die Umgebung `marketplace`.
 - **Sprachtest** – `node test/langtest.js datei.nsd --input 3 python rust`: ein einzelnes Struktogramm mit einer
-  Eingabe in alle (oder die genannten) Sprachen übersetzen, ausführen und mit dem Interpreter vergleichen; ohne
-  Angabe `test/samples/gesamttest.nsd`. Sprachen ohne installierten Compiler werden übersprungen.
+  Eingabe in alle (oder die genannten) Sprachen übersetzen, ausführen und mit dem Interpreter vergleichen. Sprachen
+  ohne installierten Compiler werden übersprungen.
 
 ## Lizenz
 Diese Extension steht unter der MIT-Lizenz. Structorizer (© Bob Fisch, Kay Gürtzig u.a.) ist ein

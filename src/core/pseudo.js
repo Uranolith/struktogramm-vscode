@@ -911,6 +911,10 @@ function intDivision(toks, lang, ctx) {
         const fn = kw === 'div' || (kw === '/' && ints) ? '_idiv' : (kw === 'mod' || kw === '%') && (ints || lang === 'javascript') ? '_imod' : null;
         if (fn) {
           if (ctx.needs) ctx.needs.add(fn === '_idiv' ? 'checkdiv' : 'checkmod');
+          // Rust: _idiv/_imod gelten für jeden Ganzzahltyp – bei zwei Zahlen ohne Variable (6 div 2) wäre der Typ offen
+          // und _idiv(6, 2).abs() nicht übersetzbar (Fund des Zufallstests): erste Zahl als i32
+          const pureInt = (p) => p.length && p.every((x) => (x.t === 'num' && !/[.eE]/.test(x.v)) || (x.t === 'op' && ['+', '-', '*', '(', ')'].includes(x.v)));
+          if (lang === 'rust' && pureInt(acc) && pureInt(f)) acc = [{ t: 'id', v: `(${joinTokens(acc)}) as i32`, ws: acc[0].ws }];
           const first = { ...acc[0], ws: false };
           acc = [{ t: 'id', v: fn, ws: acc[0].ws }, tok('(', 'op', false), first, ...acc.slice(1), { t: 'op', v: ',', ws: false },
             ...f.map((x, k) => (k === 0 ? { ...x, ws: true } : x)), tok(')', 'op', false)];

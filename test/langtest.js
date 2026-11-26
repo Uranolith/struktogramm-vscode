@@ -4,7 +4,7 @@
 //   node test/langtest.js [datei.nsd] [--input 7] [python java ...]
 //   mehrere Eingaben (je INPUT eine Zeile): --input 1500,1000
 //
-// Standard: test/samples/gesamttest.nsd (alle Elementtypen, Rekursion, Parallelverarbeitung) mit Eingabe 7.
+// Eingabe ohne --input: 7.
 // Sprachen ohne installierten Compiler werden übersprungen. Gearbeitet wird in einem temporären Ordner.
 const fs = require('fs');
 const os = require('os');
@@ -15,7 +15,7 @@ const { generateCode, TARGETS } = require('../src/core/generators');
 const { Interpreter } = require('../src/core/executor');
 
 const args = process.argv.slice(2);
-let file = path.join(__dirname, 'samples', 'gesamttest.nsd');
+let file = null;
 let input = '7';
 const only = [];
 for (let i = 0; i < args.length; i++) {
@@ -23,6 +23,7 @@ for (let i = 0; i < args.length; i++) {
   else if (/\.nsd$/i.test(args[i])) file = path.resolve(args[i]);
   else only.push(args[i]);
 }
+if (!file) { console.error('Aufruf: node test/langtest.js datei.nsd [--input 7] [python java …]'); process.exit(2); }
 const doc = fromNsd(fs.readFileSync(file, 'utf8'));
 const mainIdx = Math.max(0, doc.roots.findIndex((r) => r.rootType === 'program'));
 const className = 'Programm';

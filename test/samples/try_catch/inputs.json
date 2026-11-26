@@ -11,5 +11,6 @@
   "09_index_error.nsd": [[]],
   "10_throw_expr.nsd": [[]],
   "11_error_texts.nsd": [["abc", "1,5"], ["2.5", "x"], [" 4 ", "3"]],
-  "12_nested_catch.nsd": [[]]
+  "12_nested_catch.nsd": [[]],
+  "13_literal_div.nsd": [[]]
 }
