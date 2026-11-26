@@ -5,3 +5,4 @@ build-vsix.py
 docs/**
 .gitignore
 .github/**
+.vscode-test/**

@@ -393,6 +393,11 @@ Parallelverarbeitung im erzeugten Code:
   Kotlin und C# übersetzen alle Programme in einem Compiler-Aufruf, die übrigen laufen parallel (`--jobs`).
   Abweichungen landen als `.nsd` in `test/out/fuzz`; nachstellen mit `--n 1 --seed <Seed>`. Auf GitHub läuft er
   nachts mit festem und zufälligem Seed (`.github/workflows/fuzz.yml`).
+- **Test im echten VS Code** – `npm run test:vscode`: startet ein VS Code mit der Entwicklungsversion der Erweiterung
+  (`@vscode/test-electron`, beim ersten Mal wird es nach `.vscode-test/` geladen) und prüft über die echten Befehle:
+  Ausführen mit Eingaben (Ausgabe wie im Interpreter, Dateien der Dateifunktionen neben der `.nsd`), Code erzeugen für
+  alle acht Sprachen samt Übersetzen und Ausführen genau dieses Codes, Meldungen beim Erzeugen und den Live-Code
+  (`test/vscode/`).
 - **Veröffentlichen** – ohne gespeichertes Zugangstoken über *OIDC Trusted Publishing*: Wird auf GitHub ein Release mit
   der `.vsix` veröffentlicht, lädt der Workflow `.github/workflows/publish.yml` genau diese Datei hoch
   (`vsce publish --oidc`). Für ein bestehendes Release lässt er sich auch von Hand starten (*Actions → Marketplace

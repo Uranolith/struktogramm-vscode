@@ -41,7 +41,8 @@
   "scripts": {
     "test": "node test/builtins.js && node test/tasktest.js",
     "test:builtins": "node test/builtins.js -v",
-    "test:fuzz": "node test/fuzz.js"
+    "test:fuzz": "node test/fuzz.js",
+    "test:vscode": "node test/vscode/run.js"
   },
   "activationEvents": [
     "onDebugResolve:struktogramm",
@@ -889,5 +890,8 @@
         "when": "activeCustomEditorId == struktogramm.editor"
       }
     ]
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "^3.1.0"
   }
 }

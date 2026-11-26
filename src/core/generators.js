@@ -2565,8 +2565,10 @@ class CGen extends BaseGen {
           I2 + 'CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;',
           I2 + 'CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;');
       }
-      // Umlaute und andere Sonderzeichen: Ausgabe als UTF-8 (stellt auch die Windows-Konsole um)
-      if (main && (gen.some((g) => /[^\x00-\x7f]/.test(g.lines.join('\n'))) || this.needs.has('files') ||
+      // Umlaute und andere Sonderzeichen: Ausgabe als UTF-8 (stellt auch die Windows-Konsole um) – auch, wenn sie erst
+      // über eine Eingabe kommen („Jörg“ wurde sonst zu „J�rg“; Fund des VS-Code-Tests)
+      const readsInput = gen.some((g) => g.lines.some((l) => /Console\.ReadLine\(/.test(l)));
+      if (main && (readsInput || gen.some((g) => /[^\x00-\x7f]/.test(g.lines.join('\n'))) || this.needs.has('files') ||
           /[^\x00-\x7f]/.test(checkHelpers('csharp', this.needs).join('\n')))) {
         const k = main.lines.findIndex((l) => /static void Main\(/.test(l));
         main.lines.splice(k + 1, 0, this.I + this.I + 'Console.OutputEncoding = System.Text.Encoding.UTF8;');
