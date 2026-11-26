@@ -374,7 +374,7 @@ const SFN = {
   max: { python: (a) => `max(${a.map((x) => x.out).join(', ')})`, java: (a) => `Math.max(${a[0].out}, ${a[1].out})`, csharp: (a) => `Math.Max(${a[0].out}, ${a[1].out})`, javascript: (a) => `Math.max(${a.map((x) => x.out).join(', ')})`, kotlin: (a) => `maxOf(${a[0].out}, ${a[1].out})`, rust: (a) => `${W(a[0].out)}.max(${a[1].out})`, cpp: (a) => `max(${a[0].out}, ${a[1].out})`, c: (a) => `(${W(a[0].out)} > ${W(a[1].out)} ? ${W(a[0].out)} : ${W(a[1].out)})` },
   split: { python: (a) => `${W(a[0].out)}.split(${a[1].out})`, java: (a) => `${W(a[0].out)}.split(java.util.regex.Pattern.quote(${a[1].out}))`, csharp: (a) => `${W(a[0].out)}.Split(${a[1].out})`, javascript: (a) => `${W(a[0].out)}.split(${a[1].out})`, kotlin: (a) => `${W(a[0].out)}.split(${a[1].out}).toTypedArray()`, rust: (a) => `${W(a[0].out)}.split(${rsStr(a[1])}).map(String::from).collect::<Vec<String>>()` },
   strcmp: { python: (a) => `((${a[0].out} > ${a[1].out}) - (${a[0].out} < ${a[1].out}))`, java: (a) => `${W(a[0].out)}.compareTo(${a[1].out})`, csharp: (a) => `string.Compare(${a[0].out}, ${a[1].out})`, javascript: (a) => `${W(a[0].out)}.localeCompare(${a[1].out})`, kotlin: (a) => `${W(a[0].out)}.compareTo(${a[1].out})`, rust: (a) => `(${W(a[0].out)}.cmp(&${W(a[1].out)}) as i32)`, cpp: (a) => `${W(a[0].out)}.compare(${a[1].out})`, c: (a, ctx) => { need(ctx, 'string'); return `strcmp(${a[0].out}, ${a[1].out})`; } },
-  copyarray: { python: (a) => `list(${a[0].out})`, java: (a) => `${W(a[0].out)}.clone()`, csharp: (a) => `${W(a[0].out)}.ToArray()`, javascript: (a) => `[...${W(a[0].out)}]`, kotlin: (a) => `${W(a[0].out)}.copyOf()`, rust: (a) => `${W(a[0].out)}.clone()`, cpp: (a) => a[0].out },
+  copyarray: { python: (a) => `list(${a[0].out})`, java: (a) => `${W(a[0].out)}.clone()`, csharp: (a) => `System.Linq.Enumerable.ToArray(${a[0].out})`, javascript: (a) => `[...${W(a[0].out)}]`, kotlin: (a) => `${W(a[0].out)}.copyOf()`, rust: (a) => `${W(a[0].out)}.clone()`, cpp: (a) => a[0].out },
 };
 /** Turtleizer -> Python-Modul turtle (Structorizer: 0° = oben, y nach unten) */
 const TURTLE_PY = {
@@ -830,6 +830,13 @@ function mapToks(toks, lang, ctx) {
         out.push({ t: 'id', v: MODERN.has(lang) ? modernNewArray(toks[i + 1].v, size, lang) : NEW_ARRAY[lang](normType(toks[i + 1].v), size), ws: t.ws });
         i = c < 0 ? toks.length : c;
         continue;
+      } else if (lang === 'c' && ctx.cCall && ctx.funcs && ctx.funcs.has(t.v) && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
+        // C: eigenes Unterprogramm – Array-Argumente mit Länge (Plan 4.2)
+        const close = matchClose(toks, i + 1);
+        const argSrcs = splitTop(toks.slice(i + 2, close < 0 ? toks.length : close), ',').filter((x) => x.length).map(joinTokens);
+        out.push({ t: 'id', v: ctx.cCall(t.v, argSrcs), ws: t.ws });
+        i = close < 0 ? toks.length : close;
+        continue;
       } else if (MODERN.has(lang) && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.') &&
           (MODERN_FN.has(l) || (ctx.funcs && ctx.funcs.has(t.v)))) {
         const close = matchClose(toks, i + 1);
@@ -928,7 +935,7 @@ function mapToks(toks, lang, ctx) {
           const sz = `(int) (sizeof(${arg}) / sizeof(${arg}[0]))`;
           if (lang === 'c' && !isArr && ctx.needs) ctx.needs.add('string');
           const repl = { java: isArr ? `${arg}.length` : `${arg}.length()`, javascript: `${arg}.length`, csharp: `${arg}.Length`, python: `len(${arg})`,
-            cpp: `(int) ${arg}.size()`, c: isArr ? sz : `(int) strlen(${arg})` }[lang]; // C++: Arrays sind std::vector
+            cpp: `(int) ${arg}.size()`, c: isArr ? ((ctx.cArrLen && ctx.cArrLen(joinTokens(toks.slice(i + 2, close)))) || sz) : `(int) strlen(${arg})` }[lang]; // C++: std::vector, C: Länge mitgeführt
           if (repl) { out.push({ t: 'id', v: repl, ws: t.ws }); i = close; continue; }
         }
       }
@@ -1120,6 +1127,10 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
   if (toks[0].t === 'id' && varTypes.has(toks[0].v)) {
     const fa = fieldAccess(toks, 0, varTypes, funcs);
     if (fa && fa.end === toks.length - 1) return fa.type;
+  }
+  // copyArray(x) hat den Typ von x
+  if (toks.length >= 3 && toks[0].t === 'id' && toks[0].v.toLowerCase() === 'copyarray' && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1) {
+    return inferType(joinTokens(toks.slice(2, -1)), varTypes, funcs);
   }
   // chr(…) allein ist ein Zeichen
   if (toks.length >= 3 && toks[0].t === 'id' && toks[0].v.toLowerCase() === 'chr' && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1) return 'char';

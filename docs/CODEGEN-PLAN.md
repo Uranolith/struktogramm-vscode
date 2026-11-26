@@ -199,12 +199,16 @@ den Abschnitt „Grenzen“ des README.
   Deklarationen, `foreach`-Variable mit genauem Typ.
   Anmerkung, nicht geändert: Der vorhandene `long`-Sonderfall (`f := f * i`) rechnet ein Produkt aus
   `int`-Operanden (`a * b`) erst in 32 Bit und weitet dann – in Java/C/C#/Kotlin kann es dabei schon überlaufen.
-- [ ] **4.1 `new int[n]` in allen Sprachen** (S)
+- [x] **4.1 `new int[n]` in allen Sprachen** (S)
+  *Erledigt* (C: `calloc` mit Länge, C++: `vector<int>(n)`).
   *Teilweise erledigt:* Python, JS, Java, C# (`NEW_ARRAY` in pseudo.js; Text-Arrays mit `""` statt `null`
   gefüllt). Kotlin und Rust hatten es schon. Offen: C und C++ (mit 4.2/4.6).
   Bisher nur für Kotlin und Rust (`pseudo.js` ≈ Z. 764). Python `[0] * n`, JS `new Array(n).fill(0)`, C
   `int q[n]` bzw. `calloc`, C++ `vector<int>(n)`, Java/C# `new int[n]`.
-- [ ] **4.2 C: Länge von Array-Parametern** (M)
+- [x] **4.2 C: Länge von Array-Parametern** (M)
+  *Erledigt:* Array-Parameter bekommen `int name_len`; dynamische Arrays (aus `new`, Funktion, `copyArray`, anderem
+  Array) sind Zeiger mit Begleitvariable `name_len`, am Anfang der Routine deklariert; eine Funktion mit
+  Array-Ergebnis gibt `T*` zurück und die Länge über `int* _len`; `length`, `foreach` und Aufrufe nutzen die Länge.
   `sizeof(f)/sizeof(f[0])` auf einem Parameter misst den Zeiger: still falsche Ergebnisse. Lösung: zusätzlicher
   Parameter `int f_len` bei jeder Funktion mit Array-Parameter und `length(f)` → `f_len`. Alternative:
   `struct { int* data; int len; }`. Test: `s37_array_param_len`.
@@ -214,7 +218,8 @@ den Abschnitt „Grenzen“ des README.
   `&mut a`/`&a`, Array-Parameter werden unverändert weitergereicht.
   Umsetzung von 1.3: `&mut Vec<T>` bzw. `&[T]`, je nachdem ob das Unterprogramm schreibt. Test:
   `s37_array_param_len`.
-- [ ] **4.4 `copyArray`** (S)
+- [x] **4.4 `copyArray`** (S)
+  *Erledigt:* C `_arr_dup`, C++ über `vector`, C# `System.Linq.Enumerable.ToArray`; `copyArray(x)` hat den Typ von x.
   C++ `auto b = a;` erzeugt bei C-Arrays einen Zeiger, das Original ändert sich mit (C++ besser durchgängig
   `vector`). C fehlt ganz, C# fehlt `using System.Linq`. Test: `d03_copyarray`.
 - [ ] **4.5 Text-Arrays in C** (S)

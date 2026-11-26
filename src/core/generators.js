@@ -1463,6 +1463,99 @@ class CGen extends BaseGen {
     return (TYPE_MAP[this.lang] && TYPE_MAP[this.lang][n]) || n;
   }
 
+  /** C: Ist der Typ ein Array (int[], string[], Punkt[] …)? */
+  cIsArrayType(t) { const n = P.normType(t); return !!(n && n.endsWith('[]')); }
+
+  /** C: Elementtyp eines Array-Typs (int[] -> int, string[] -> char*) */
+  cElemType(t) { const n = P.normType(t) || 'int[]'; return this.typeName(n.endsWith('[]') ? n.slice(0, -2) : n); }
+
+  /**
+   * C-Arrays kennen ihre Länge nicht (Plan 4.2). Ein lokales Array, dem genau einmal auf oberster Ebene ein
+   * Array-Literal zugewiesen wird, bleibt ein festes Array (Länge über sizeof). Alle anderen sind dynamisch:
+   * Zeiger plus Begleitvariable name_len. Array-Parameter bekommen den Parameter name_len.
+   */
+  cArrayInfo(root, info, params) {
+    info.cArrLens = new Map();
+    info.cPtrArrays = new Set();
+    for (const p of params) if (this.cIsArrayType(p.type || p.inferredType)) info.cArrLens.set(p.name, `${p.name}_len`);
+    const asg = new Map();
+    walk(root.children, (el, depth) => {
+      if (el.disabled) return false;
+      if (!['instruction', 'call', 'jump'].includes(el.type)) return;
+      for (const l of linesOf(el)) {
+        const c = P.classifyLine(l);
+        if (c.kind !== 'assign' || !SIMPLE_IDENT.test(c.target.trim())) continue;
+        const n = c.target.trim();
+        if (!asg.has(n)) asg.set(n, []);
+        asg.get(n).push({ expr: c.expr, depth });
+      }
+    });
+    for (const [n, list] of asg) {
+      if (info.params.has(n) || info.explicit.has(n) || !this.cIsArrayType(info.types.get(n))) continue;
+      const fixed = list.length === 1 && list[0].depth === 0 && isArrayLit(list[0].expr);
+      if (!fixed) { info.cPtrArrays.add(n); info.cArrLens.set(n, `${n}_len`); }
+    }
+  }
+
+  /** C: Länge eines Arrays als Ausdruck (Begleitvariable, Literal-Anzahl oder sizeof bei festen Arrays) */
+  cArrLen(src) {
+    const s = String(src).trim();
+    if (this.cur && this.cur.cArrLens && this.cur.cArrLens.has(s)) return this.cur.cArrLens.get(s);
+    if (isArrayLit(s)) return String(arrayItems(s).length);
+    if (SIMPLE_IDENT.test(s)) return `(int) (sizeof(${s}) / sizeof(${s}[0]))`;
+    return null;
+  }
+
+  /** C: Aufruf eines eigenen Unterprogramms – nach jedem Array-Argument seine Länge, bei Array-Ergebnis &Länge */
+  cCall(name, argSrcs, lenOut) {
+    const sig = this.funcs.get(name);
+    if (!sig) return null;
+    const out = [];
+    argSrcs.forEach((a, k) => {
+      const p = sig.params[k];
+      const isArr = !!p && this.cIsArrayType(p.type || p.inferredType);
+      if (isArr && isArrayLit(a)) {
+        const items = arrayItems(a);
+        out.push(`(${this.cElemType(p.type || p.inferredType)}[]){${items.map((i) => this.x(i)).join(', ')}}`, String(items.length));
+        return;
+      }
+      out.push(this.x(a));
+      if (isArr) out.push(this.cArrLen(a) || '0');
+    });
+    if (this.cIsArrayType(sig.returnType || sig.inferredReturn)) { if (!lenOut) this.needs.add('lenignore'); out.push(lenOut || '&_len_ignore'); }
+    return `${name}(${out.join(', ')})`;
+  }
+
+  /** C: Zuweisung an ein dynamisches Array – Zeiger und Länge setzen */
+  cPtrAssign(n, expr, ind) {
+    const e = String(expr).trim();
+    const toks = P.ptoks(e);
+    const et = this.cElemType(this.cur.types.get(n));
+    const { splitTop } = require('./tokenizer');
+    this.needs.add('stdlib');
+    if (toks[0] && toks[0].t === 'id' && toks[0].v.toLowerCase() === 'new' && toks[2] && toks[2].v === '[') {
+      const size = this.x(joinTokens(toks.slice(3, matchClose(toks, 2))));
+      if (P.normType(this.cur.types.get(n)) === 'string[]') { this.needs.add('strarray'); return [ind + `${n} = _str_array(${size});`, ind + `${n}_len = ${size};`]; }
+      return [ind + `${n} = calloc(${size}, sizeof(${et}));`, ind + `${n}_len = ${size};`];
+    }
+    const call = toks[0] && toks[0].t === 'id' && toks[1] && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1;
+    const args = call ? splitTop(toks.slice(2, -1), ',').map(joinTokens).filter(Boolean) : [];
+    if (call && this.funcs.has(toks[0].v)) return [ind + `${n} = ${this.cCall(toks[0].v, args, `&${n}_len`)};`];
+    if (call && toks[0].v.toLowerCase() === 'copyarray' && args.length === 1) {
+      this.needs.add('arrdup');
+      const len = this.cArrLen(args[0]);
+      return [ind + `${n} = _arr_dup(${this.x(args[0])}, ${len}, sizeof(${et}));`, ind + `${n}_len = ${len};`];
+    }
+    if (isArrayLit(e)) {
+      this.needs.add('arrdup');
+      const items = arrayItems(e);
+      return [ind + `${n} = _arr_dup((${et}[]){${items.map((i) => this.x(i)).join(', ')}}, ${items.length}, sizeof(${et}));`, ind + `${n}_len = ${items.length};`];
+    }
+    // anderes Array: dasselbe Array wie im Interpreter (Referenz)
+    if (SIMPLE_IDENT.test(e)) return [ind + `${n} = ${this.x(e)};`, ind + `${n}_len = ${this.cArrLen(e)};`];
+    return [ind + this.comment(`TODO: ${n} = ${e}`)];
+  }
+
   /** Array-Typ aus dem Elementtyp: C++ std::vector (kennt seine Länge, Kopie mit =), sonst T[] */
   arrayType(base) {
     if (this.lang !== 'cpp') return base + '[]';
@@ -1514,6 +1607,8 @@ class CGen extends BaseGen {
         const target = c.target;
         if (target.includes(',') && !/[[(]/.test(target)) return this.tupleAssign(c, ind);
         const n = target.trim();
+        // C: dynamisches Array (Zeiger mit Länge)
+        if (L === 'c' && this.cur.cPtrArrays && this.cur.cPtrArrays.has(n)) return this.cPtrAssign(n, c.expr, ind);
         if (this.cur.inline.get(el) && this.cur.inline.get(el).has(n) && !this.cur.declared.has(n)) {
           this.cur.declared.add(n);
           return [ind + this.declLine(n, this.typeOf(n), this.x(c.expr))];
@@ -1531,6 +1626,17 @@ class CGen extends BaseGen {
         if (this.curIsMain && (L === 'c' || L === 'cpp')) return [ind + `return ${c.expr ? this.x(c.expr) : '0'};`];
         if (this.curIsMain && c.expr && c.expr.trim() !== '0') return this.stmt({ kind: 'exit', expr: c.expr }, ind, el);
         if (this.curIsMain) return [ind + (L === 'javascript' ? 'process.exit(0);' : 'return;')];
+        // C: Array als Ergebnis – Länge über *_len; ein festes lokales Array wird kopiert (es endet mit der Funktion)
+        if (L === 'c' && c.expr && this.curSig && this.cIsArrayType(this.retType(this.curSig))) {
+          const e = c.expr.trim();
+          const len = this.cArrLen(e) || '0';
+          const fixedLocal = SIMPLE_IDENT.test(e) && !(this.cur.cArrLens && this.cur.cArrLens.has(e));
+          if (fixedLocal || isArrayLit(e)) this.needs.add('arrdup');
+          const et = this.cElemType(this.retType(this.curSig));
+          const val = isArrayLit(e) ? `_arr_dup((${et}[]){${arrayItems(e).map((i) => this.x(i)).join(', ')}}, ${len}, sizeof(${et}))`
+            : fixedLocal ? `_arr_dup(${e}, ${len}, sizeof(${et}))` : this.x(e);
+          return [ind + `*_len = ${len};`, ind + `return ${val};`];
+        }
         return [ind + (c.expr ? `return ${this.narrow(this.curSig ? this.retType(this.curSig) : null, this.x(c.expr))};` : 'return;')];
       }
       case 'exit': {
@@ -1840,8 +1946,8 @@ class CGen extends BaseGen {
             out.push(ind + `${this.typeName(et)} ${tmp}[] = {${vals}};`);
             coll = tmp;
           }
-          out.push(ind + this.comment(tr('gen.foreachC', v, f.coll)));
-          out.push(ind + `for (int _i = 0; _i < (int)(sizeof(${coll}) / sizeof(${coll}[0])); _i++) {`);
+          // (die Länge kommt aus cArrLen: sizeof, Länge des Parameters oder Begleitvariable – kein Hinweis mehr nötig)
+          out.push(ind + `for (int _i = 0; _i < ${lit ? `(int) (sizeof(${coll}) / sizeof(${coll}[0]))` : this.cArrLen(f.coll) || `(int) (sizeof(${coll}) / sizeof(${coll}[0]))`}; _i++) {`);
           out.push(ind + this.I + `${tn} ${v} = ${coll}[_i];`);
       }
     }
@@ -2025,6 +2131,10 @@ class CGen extends BaseGen {
         // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
         'long long read_int(void) {', '    return (long long) read_double();', '}');
     }
+    // Arrays mit Länge (Plan 4.2): Kopie auf dem Heap, Text-Array mit "" gefüllt, Länge eines nicht gebrauchten Ergebnisses
+    if (N.has('arrdup')) { N.add('string'); N.add('stdlib'); out.push(this.comment(tr('gen.cArrDup')), 'void* _arr_dup(const void* a, int n, size_t sz) {', '    void* r = malloc(n * sz + 1);', '    memcpy(r, a, n * sz);', '    return r;', '}'); }
+    if (N.has('strarray')) { N.add('stdlib'); out.push('char** _str_array(int n) {', '    char** r = malloc((n + 1) * sizeof(char*));', '    for (int i = 0; i < n; i++) r[i] = (char*) "";', '    return r;', '}'); }
+    if (N.has('lenignore')) out.push('static int _len_ignore;');
     // Division und Rest innerhalb von try: bei 0 abfangbarer Fehler wie im Interpreter
     if (N.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `int _idiv(int a, int b) { if (b == 0) _throw(${JSON.stringify(tr('exec.divZero'))}); return a / b; }`);
     if (N.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `int _imod(int a, int b) { if (b == 0) _throw(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; }`);
@@ -2157,6 +2267,7 @@ class CGen extends BaseGen {
         });
       }
       for (const v of info.charArrays) info.types.set(v, 'string');
+      this.cArrayInfo(root, info, isMain ? [] : sig.params);
     }
     this.cur = info;
     this.curIsMain = isMain;
@@ -2173,12 +2284,27 @@ class CGen extends BaseGen {
       if (v != null || !par) return v;
       return /\[\]$/.test(this.typeName(info.types.get(n) || 'int')) || P.normType(info.types.get(n)) ? 'null' : '0';
     };
-    const hoisted = [...info.hoist].map((n) => bodyInd + this.declLine(n, info.types.get(n) || (L === 'javascript' ? null : 'int'), L === 'javascript' ? null : initOf(n)));
+    const hoisted = [...info.hoist].filter((n) => !(info.cPtrArrays && info.cPtrArrays.has(n))).map((n) => bodyInd + this.declLine(n, info.types.get(n) || (L === 'javascript' ? null : 'int'), L === 'javascript' ? null : initOf(n)));
     for (const n of info.hoist) info.declared.add(n);
+    // C: dynamische Arrays (Zeiger) mit Länge am Anfang der Routine (Plan 4.2)
+    if (info.cPtrArrays) for (const n of info.cPtrArrays) {
+      hoisted.push(bodyInd + `${this.cElemType(info.types.get(n))}* ${n} = NULL;`, bodyInd + `int ${n}_len = 0;`);
+      info.declared.add(n);
+    }
     const body = this.seq(root.children, bodyInd);
     const ret = isMain ? null : this.retType(sig);
-    const rt = ret ? this.typeName(ret) : 'void';
+    let rt = ret ? this.typeName(ret) : 'void';
+    // C: Array als Rückgabewert -> Zeiger, die Länge über den zusätzlichen Parameter _len
+    const cRetArr = L === 'c' && /\[\]$/.test(rt);
+    if (cRetArr) rt = rt.slice(0, -2) + '*';
     const params = isMain ? [] : sig.params.map((p) => (L === 'javascript' ? p.name : `${this.typeName(p.type || p.inferredType || 'int')}${L === 'cpp' && /^vector</.test(this.typeName(p.type || p.inferredType || 'int')) ? '&' : ''} ${p.name}`.replace(/^(.+?)\[\] (\w+)$/, L === 'c' || L === 'cpp' ? '$1 $2[]' : '$1[] $2')));
+    // C: jedes Array-Argument bringt seine Länge mit (int f_len), ein Array-Ergebnis gibt sie über int* _len zurück
+    if (L === 'c' && !isMain) {
+      const withLen = [];
+      sig.params.forEach((p, k) => { withLen.push(params[k]); if (this.cIsArrayType(p.type || p.inferredType)) withLen.push(`int ${p.name}_len`); });
+      if (cRetArr) withLen.push('int* _len');
+      params.splice(0, params.length, ...withLen);
+    }
     const doc = (root.comment || []).filter((s) => s.trim()).map((s) => this.comment(s));
     const pre = L === 'java' || L === 'csharp' ? I : '';
     doc.forEach((d) => head.push(pre + d));
