@@ -9,6 +9,7 @@
  *              {type:'execOut', lines:[{text, kind}]}
  */
 const { Interpreter, Signal, fmt, truthy } = require('./core/executor');
+const { safeTarget } = require('./safeWebview');
 const { t } = require('./i18n');
 
 /** Trefferzahl-Bedingung eines Haltepunkts: „3“ (ab dem 3. Mal), „>= 3“, „== 3“, „> 3“, „< 3“, „% 2“ (jedes 2. Mal) */
@@ -29,7 +30,7 @@ function hitMatches(cond, hits) {
 
 class ExecSession {
   constructor(webview, model, rootIndex, opts = {}) {
-    this.webview = webview;
+    this.webview = safeTarget(webview); // Editor/Vorschau kann während des Laufs geschlossen werden
     this.model = model;
     this.rootIndex = rootIndex;
     this.interp = new Interpreter(model, opts);
@@ -283,7 +284,7 @@ class ExecSession {
 class ExecController {
   /** getBaseDir: Ordner für relative Pfade der Datei-API (fileOpen …) */
   constructor(webview, getModel, getBaseDir) {
-    this.webview = webview;
+    this.webview = safeTarget(webview);
     this.getModel = getModel;
     this.getBaseDir = getBaseDir || (() => undefined);
     this.session = null;

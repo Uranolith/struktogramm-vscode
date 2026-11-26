@@ -1,5 +1,11 @@
 # Änderungen
 
+## Unveröffentlicht
+- **Robuster beim Schließen von Ansichten:** Alle Nachrichten an Struktogramm-Editor, Vorschau und Seitenleisten-
+  Ansichten laufen über eine abgesicherte Funktion. Wird eine Ansicht geschlossen, während die Erweiterung noch an sie
+  sendet (laufendes Programm, Debugger, Haltepunkte, Einstellungsänderung), entsteht kein Fehler „Webview is
+  disposed“ mehr; der PNG-Export bricht dann mit einer Meldung ab, statt zu warten.
+
 ## 1.0.1
 - **Zahnrad für die Einstellungen** oben rechts im Struktogramm-Editor: öffnet wie *Struktograf: Settings* die
   Einstellungen von VS Code, gefiltert auf Struktograf.

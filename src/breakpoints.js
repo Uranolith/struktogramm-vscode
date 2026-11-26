@@ -8,6 +8,7 @@
  * F9 im Diagramm setzt/entfernt einen VS-Code-Haltepunkt, jede Änderung geht an Diagramm und Ausführung.
  */
 const vscode = require('vscode');
+const { safePost } = require('./safeWebview');
 const { elementLines, fromNsd } = require('./core/nsdxml');
 const P = require('./core/pseudo');
 const { t } = require('./i18n');
@@ -71,7 +72,7 @@ class BreakpointSync {
     if (!this.editors.editors.has(state)) return;
     const { active, disabled } = this.collect(state.document);
     const kind = (b) => (b.logMessage ? 'log' : b.condition || b.hitCondition ? 'cond' : 'bp');
-    state.panel.webview.postMessage({ type: 'breakpoints', active: active.map((b) => ({ path: b.path, kind: kind(b) })), disabled: disabled.map((b) => b.path) });
+    safePost(() => state.panel.webview, { type: 'breakpoints', active: active.map((b) => ({ path: b.path, kind: kind(b) })), disabled: disabled.map((b) => b.path) });
     if (state.exec) state.exec.setDebug({ breakpoints: active, functions: this.functions() });
   }
 

@@ -14,6 +14,7 @@
  * (dann wird die Sitzung nachträglich angehängt).
  */
 const vscode = require('vscode');
+const { safePost } = require('./safeWebview');
 const path = require('path');
 const { t } = require('./i18n');
 const { fmt, isRecord, typeLabel } = require('./core/executor');
@@ -83,7 +84,7 @@ class DebugBridge {
 
   /** Befehl an die Ausführung im Editor (über die Webview: sie kennt das Tempo) */
   command(state, cmd, extra) {
-    if (state && this.editors.editors.has(state)) state.panel.webview.postMessage({ type: 'execCommand', cmd, ...(extra || {}) });
+    if (state && this.editors.editors.has(state)) safePost(() => state.panel.webview, { type: 'execCommand', cmd, ...(extra || {}) });
   }
 
   /** In der Aufrufliste von VS Code gewählter Aufruf: Stelle im Diagramm markieren */
@@ -391,7 +392,7 @@ class StruktogrammDebugAdapter {
     this.ended = true;
     // ohne Debug-Sitzung führen Laufzeitfehler wieder direkt zum Ende
     if (this.state && this.state.exec) this.state.exec.setDebug({ breakOnError: false });
-    if (this.state && this.bridge.editors.editors.has(this.state)) this.state.panel.webview.postMessage({ type: 'execFocus', path: null });
+    if (this.state && this.bridge.editors.editors.has(this.state)) safePost(() => this.state.panel.webview, { type: 'execFocus', path: null });
     this.bridge.unbind(this.state, this);
     if (!quiet) this.emit({ type: 'event', event: 'exited', body: { exitCode: code } });
     this.emit({ type: 'event', event: 'terminated', body: {} });
@@ -402,7 +403,7 @@ class StruktogrammDebugAdapter {
     const f = this.frameById(frameId);
     if (!f || !this.state || !this.bridge.editors.editors.has(this.state)) return;
     const at = frameId === 1 ? null : f.at; // oberster Aufruf ist ohnehin markiert
-    this.state.panel.webview.postMessage({ type: 'execFocus', path: at });
+    safePost(() => this.state.panel.webview, { type: 'execFocus', path: at });
   }
 
   /* ------------------------------ Hilfen ------------------------------ */

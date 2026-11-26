@@ -4,6 +4,7 @@
  * Befehle gehen an den zuletzt aktiven Struktogramm-Editor, sein Zustand (gesperrte Knöpfe, Tempo, Zoom) kommt zurück.
  */
 const vscode = require('vscode');
+const { safePost } = require('./safeWebview');
 const { t, allStrings, getLanguage } = require('./i18n');
 const { toolbarLocation } = require('./webview');
 
@@ -69,7 +70,7 @@ class ToolsViewProvider {
     // Aktionen mit Dialog oder Tastaturbedienung: Fokus in den Editor, damit es direkt weitergeht
     const focus = !!(msg.kind || ['edit', 'help', 'addSub'].includes(msg.a));
     if (focus) target.panel.reveal(target.panel.viewColumn, false);
-    target.panel.webview.postMessage({ ...msg, type: 'tool' });
+    safePost(() => target.panel.webview, { ...msg, type: 'tool' });
   }
 
   /** Zustand eines Editors merken und anzeigen, wenn er der aktive ist */
@@ -82,10 +83,10 @@ class ToolsViewProvider {
   refresh(force) {
     if (!this.view) return;
     const ed = this.editors.active;
-    if (ed && force) ed.panel.webview.postMessage({ type: 'toolStateRequest' });
+    if (ed && force) safePost(() => ed.panel.webview, { type: 'toolStateRequest' });
     // Dateiname als Beschreibung neben dem Titel der Ansicht (wie VS Code es macht)
     this.view.description = ed ? decodeURIComponent(ed.document.uri.path.split('/').pop()) : '';
-    this.view.webview.postMessage({
+    safePost(() => this.view.webview, {
       type: 'state',
       hasEditor: !!ed,
       file: ed ? decodeURIComponent(ed.document.uri.path.split('/').pop()) : '',
@@ -97,7 +98,7 @@ class ToolsViewProvider {
   /** Reihenfolge und eingeklappte Kategorien auf den Standard zurücksetzen */
   resetLayout() {
     this.context.globalState.update(LAYOUT_KEY, undefined);
-    if (this.view) this.view.webview.postMessage({ type: 'resetLayout' });
+    if (this.view) safePost(() => this.view.webview, { type: 'resetLayout' });
   }
 }
 

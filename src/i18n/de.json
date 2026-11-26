@@ -599,5 +599,6 @@
  "gen.typeMixNumber": "ACHTUNG: „{0}“ bekommt hier eine Zahl, ist aber Text – {1} erlaubt keinen Typwechsel, dieser Code lässt sich so nicht übersetzen. Abhilfe im Struktogramm: eine eigene Variable für die Zahl.",
  "ext.codeBlocked": "Code wird nur aus einem fehlerfreien Struktogramm erzeugt – {0} Fehler, z. B.: {1}",
  "ext.showProblems": "Probleme anzeigen",
+ "ext.pngClosed": "Das Struktogramm wurde geschlossen, bevor das Bild erzeugt war.",
  "ext.typeMix": "{0} ist im Struktogramm mal Text, mal Zahl. {1} erlaubt das nicht – der erzeugte Code lässt sich so nicht übersetzen (die Stelle ist im Code mit ACHTUNG markiert). Abhilfe: eine eigene Variable für den Text."
 }

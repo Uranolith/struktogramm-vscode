@@ -6,6 +6,7 @@
  * eine Kopie aller Meldungen und hebt den Verlauf je Editor auf, damit es ihn jederzeit nachzeichnen kann.
  */
 const vscode = require('vscode');
+const { safePost } = require('./safeWebview');
 const { t, allStrings, getLanguage } = require('./i18n');
 const { executionLocation } = require('./webview');
 const { getSplit, setSplit } = require('./execSplit');
@@ -115,7 +116,7 @@ class ExecViewProvider {
     if (executionLocation() !== 'panel') return;
     if (msg.type === 'execReset') this.reveal(editorState);
     if (this.view && this.shown === editorState) {
-      this.view.webview.postMessage(msg);
+      safePost(() => this.view.webview, msg);
       // Eingabe erwartet: Fokus ins Panel, damit man direkt tippen kann
       if (msg.type === 'execState' && msg.state === 'input') this.view.show(false);
     }
@@ -141,13 +142,13 @@ class ExecViewProvider {
     this.shown = editorState || null;
     const file = editorState ? decodeURIComponent(editorState.document.uri.path.split('/').pop()) : '';
     this.view.description = file;
-    this.view.webview.postMessage({ type: 'replay', hasEditor: !!editorState, file, msgs: editorState ? this.logs.get(editorState) || [] : [] });
+    safePost(() => this.view.webview, { type: 'replay', hasEditor: !!editorState, file, msgs: editorState ? this.logs.get(editorState) || [] : [] });
   }
 
   clear() {
     const ed = this.shown;
     if (ed) this.logs.set(ed, (this.logs.get(ed) || []).filter((m) => m.type !== 'execOut'));
-    if (this.view) this.view.webview.postMessage({ type: 'clear' });
+    if (this.view) safePost(() => this.view.webview, { type: 'clear' });
   }
 }
 

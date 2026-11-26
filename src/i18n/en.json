@@ -599,5 +599,6 @@
  "gen.typeMixNumber": "WARNING: “{0}” gets a number here but is text – {1} does not allow a type change, this code will not compile. Fix in the structogram: use a separate variable for the number.",
  "ext.codeBlocked": "Code is only generated from a structogram without errors – {0} error(s), e.g.: {1}",
  "ext.showProblems": "Show Problems",
+ "ext.pngClosed": "The structogram was closed before the image was created.",
  "ext.typeMix": "{0} is sometimes text, sometimes a number in the structogram. {1} does not allow this – the generated code will not compile (the spot is marked with WARNING in the code). Fix: use a separate variable for the text."
 }

@@ -1,5 +1,6 @@
 'use strict';
 const vscode = require('vscode');
+const { safePost } = require('./safeWebview');
 const path = require('path');
 const { parseCode, supportedLanguage } = require('./core/parsers');
 const { generateCode, TARGETS, toClassName } = require('./core/generators');
@@ -68,7 +69,7 @@ class NsdEditorProvider {
       postMessage: (m) => {
         if (this.execView) this.execView.forward(state, m);
         for (const l of this.execListeners) l(state, m);
-        const r = panel.webview.postMessage(m);
+        const r = safePost(() => panel.webview, m);
         if (m.type === 'execState') {
           this.execEditor = state;
           // Eingabe erwartet: Fokus in den Editor, damit der Cursor direkt im Eingabefeld steht
@@ -88,13 +89,13 @@ class NsdEditorProvider {
       } catch (e) {
         error = t('ext.cannotRead', e.message);
       }
-      panel.webview.postMessage({ type: 'update', doc: model, svg, error, symbols: collectSymbols(model), select: state.select, editNew: state.editNew, settings: settings(), hasClipboard: !!this.clipboard });
+      safePost(() => panel.webview, { type: 'update', doc: model, svg, error, symbols: collectSymbols(model), select: state.select, editNew: state.editNew, settings: settings(), hasClipboard: !!this.clipboard });
       state.select = undefined;
       state.editNew = false;
       // Haltepunkte (VS Code) nach jedem Neuzeichnen: Zeilen im XML können sich verschoben haben
       if (this.bpSync) this.bpSync.push(state);
       // Fehler und Hinweise: Marken an den Elementen und Einträge in „Probleme“
-      if (this.checks) panel.webview.postMessage({ type: 'lint', items: this.checks.run(document, model) });
+      if (this.checks) safePost(() => panel.webview, { type: 'lint', items: this.checks.run(document, model) });
     };
     state.send = send;
 
@@ -136,7 +137,7 @@ class NsdEditorProvider {
             send();
             const key = document.uri.toString();
             const pend = this.pending.get(key);
-            if (pend) { this.pending.delete(key); panel.webview.postMessage({ type: 'execCommand', ...pend }); }
+            if (pend) { this.pending.delete(key); safePost(() => panel.webview, { type: 'execCommand', ...pend }); }
             break;
           }
           case 'op': {
@@ -157,10 +158,10 @@ class NsdEditorProvider {
               path = apply(model, { op: 'insert', path: msg.path, kind: msg.kind, where: msg.where });
               svg = render(model).svg;
             } catch (e) { break; }
-            panel.webview.postMessage({ type: 'preview', token: msg.token, svg, path });
+            safePost(() => panel.webview, { type: 'preview', token: msg.token, svg, path });
             break;
           }
-          case 'copy': this.clipboard = msg.element; this.editors.forEach((s) => s.panel.webview.postMessage({ type: 'clipboard', has: true })); break;
+          case 'copy': this.clipboard = msg.element; this.editors.forEach((s) => safePost(() => s.panel.webview, { type: 'clipboard', has: true })); break;
           case 'toCode': await toCode(document.uri, this); break;
           case 'newFile': await newFile(document.uri); break;
           case 'exportSvg': await exportSvg(document); break;
@@ -275,7 +276,7 @@ class PreviewPanel {
     } catch (e) {
       error = 'Der Code konnte nicht umgewandelt werden: ' + e.message;
     }
-    this.panel.webview.postMessage({ type: 'update', doc: model, svg, error, settings: settings() });
+    safePost(() => this.panel.webview, { type: 'update', doc: model, svg, error, settings: settings() });
   }
 }
 
@@ -572,7 +573,10 @@ function requestPng(webview, svg) {
   const id = ++pngSeq;
   return new Promise((resolve, reject) => {
     pngWaiters.set(id, { resolve, reject });
-    webview.postMessage({ type: 'renderPng', id, svg });
+    // Ansicht inzwischen geschlossen: sofort abbrechen statt 20 Sekunden zu warten
+    safePost(webview, { type: 'renderPng', id, svg }).then((ok) => {
+      if (!ok && pngWaiters.delete(id)) reject(new Error(t('ext.pngClosed')));
+    });
     setTimeout(() => { if (pngWaiters.delete(id)) reject(new Error('PNG-Erzeugung hat zu lange gedauert.')); }, 20000);
   });
 }
@@ -725,7 +729,7 @@ function activate(context) {
   const applyToolbarLocation = (reveal) => {
     const loc = toolbarLocation();
     vscode.commands.executeCommand('setContext', 'struktograf.toolsInSidebar', loc === 'sidebar');
-    provider.editors.forEach((s) => s.panel.webview.postMessage({ type: 'toolbarMode', mode: loc }));
+    provider.editors.forEach((s) => safePost(() => s.panel.webview, { type: 'toolbarMode', mode: loc }));
     if (reveal && loc === 'sidebar') vscode.commands.executeCommand('workbench.view.extension.struktograf');
   };
   applyToolbarLocation(false);
@@ -743,7 +747,7 @@ function activate(context) {
   const applyExecutionLocation = (reveal) => {
     const loc = executionLocation();
     vscode.commands.executeCommand('setContext', 'struktograf.execInPanel', loc === 'panel');
-    provider.editors.forEach((s) => s.panel.webview.postMessage({ type: 'execMode', mode: loc }));
+    provider.editors.forEach((s) => safePost(() => s.panel.webview, { type: 'execMode', mode: loc }));
     if (reveal && loc === 'panel' && provider.active) execView.reveal(provider.active);
   };
   applyExecutionLocation(false);
@@ -756,16 +760,16 @@ function activate(context) {
     const msg = { type: 'execCommand', cmd, ...(extra || {}) };
     if (uri && (uri.fsPath || uri.path) && /\.nsd$/i.test(uri.fsPath || uri.path)) {
       const open = [...provider.editors].find((s) => s.document.uri.toString() === uri.toString());
-      if (open) { open.panel.reveal(); open.panel.webview.postMessage(msg); return; }
+      if (open) { open.panel.reveal(); safePost(() => open.panel.webview, msg); return; }
       if (cmd === 'run' || cmd === 'step') provider.pending.set(uri.toString(), { cmd, ...(extra || {}) });
       await vscode.commands.executeCommand('vscode.openWith', uri, 'struktogramm.editor');
       return;
     }
-    if (preview.panel && preview.panel.active) { preview.panel.webview.postMessage(msg); return; }
+    if (preview.panel && preview.panel.active) { safePost(() => preview.panel.webview, msg); return; }
     // laufende oder pausierte Ausführung hat Vorrang (z.B. F10 im Struktogramm, dann F5 aus einem anderen Editor)
     const ex = provider.execEditor;
-    if (ex && ex.exec && ex.exec.running && provider.editors.has(ex)) { ex.panel.webview.postMessage(msg); return; }
-    if (provider.active) { provider.active.panel.webview.postMessage(msg); return; }
+    if (ex && ex.exec && ex.exec.running && provider.editors.has(ex)) { safePost(() => ex.panel.webview, msg); return; }
+    if (provider.active) { safePost(() => provider.active.panel.webview, msg); return; }
     if (cmd === 'run') vscode.window.showInformationMessage(t('ext.runHint'));
   }
   /** Debug-Sitzung für ein Struktogramm starten (wie F5 bzw. Strg+F5); ohne uri: das aktive */
@@ -804,7 +808,7 @@ function activate(context) {
       if (st) {
         try {
           st.panel.reveal(st.panel.viewColumn, false);
-          st.panel.webview.postMessage({ type: 'reveal', path: elPath });
+          safePost(() => st.panel.webview, { type: 'reveal', path: elPath });
           return;
         } catch (e) { /* Editor gerade geschlossen (Meldung dazu kommt verzögert): neu öffnen */ }
       }
