@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.1
+- **Zahnrad für die Einstellungen** oben rechts im Struktogramm-Editor: öffnet wie *Struktograf: Settings* die
+  Einstellungen von VS Code, gefiltert auf Struktograf.
+
 ## 1.0.0
 Schreibweise, Prüfungen und Code-Erzeugung sind festgelegt. Die Extension bleibt als **Preview**
 gekennzeichnet – sie ist noch experimentell.
