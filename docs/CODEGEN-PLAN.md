@@ -27,8 +27,8 @@ Typableitung, Textverkettung und Bibliotheksfunktionen. Die Liste steht unten be
   `expressions`, `builtins`, `identifiers`, `records`.
   Die Test-Artefakte bleiben draußen: der Eingabe-Prompt landet auf stdout, `const`-Syntax und automatisch
   wachsende Arrays kennt der Interpreter nicht.
-  *Erledigt:* 54 Struktogramme in 9 Ordnern. Der Dateitest (`fileCreate` …) fehlt noch: Der Interpreter schreibt
-  relativ zum aktuellen Verzeichnis, `npm test` würde also Dateien ins Repo legen. Er kommt mit 6.2.
+  *Erledigt:* 54 Struktogramme in 9 Ordnern. Der Dateitest (`fileCreate` …) kam mit 6.2 (`test/samples/files`); damals schrieb der Interpreter
+  relativ zum aktuellen Verzeichnis, `npm test` hätte also Dateien ins Repo gelegt.
 - [x] **0.2 Bekannte Fehler markieren** (S)
   Neuer Eintrag `"_known": { "datei.nsd": ["c", "rust"] }` in `inputs.json`. `tasktest.js` zeigt bekannte Fehler
   als `K` statt `X` an, und die Suite gilt als bestanden, solange nur bekannte Fehler auftreten. Wird ein
@@ -295,9 +295,22 @@ den Abschnitt „Grenzen“ des README.
   Fehlend laut Test: `signum` (alle außer teilweise), `isArray`/`isString`/`isNumber`/`isBool`/`isChar` (alle;
   in typisierten Sprachen zur Übersetzungszeit aus dem Typ bekannt → `true`/`false`), `split` (C, C++, Java),
   `copyArray` (C, C#).
-- [ ] **6.2 Dateifunktionen** (L)
+- [x] **6.2 Dateifunktionen** (L)
   `fileOpen` … `fileEOF` fehlen in allen Sprachen. Je Sprache eine kleine Hilfsschicht (Handle = Index in eine
   Liste offener Dateien). Alternative: ausdrücklich „nicht übersetzbar“ (1.6) und das README anpassen.
+  *Erledigt:* `src/core/filehelpers.js` erzeugt je Sprache dieselbe Hilfsschicht wie der Interpreter: Nummer =
+  Position + 1, Fehlercodes -2/-3/-1, Lesen lädt die ganze Datei, Schreiben hängt an. Gelesen wird nach Wort
+  (`fileReadInt`, `fileReadDouble` – jetzt auch im Interpreter streng wie `INPUT`), Zeichen (Unicode-Zeichen,
+  `\r\n` = `\n`) oder Zeile. Fehler (Dateiende, keine Zahl, Datei nicht geöffnet) sind wie im Interpreter in `try`
+  abfangbar, mit denselben Texten. `fileWrite` wandelt den Wert wie `OUTPUT` in Text um; `fileWriteLine` schreibt
+  `\n` (Interpreter vorher: `\r\n` unter Windows).
+  **`fileRead`** hat keinen festen Typ. Entscheidung wie bei `INPUT` (1.2): `v := fileRead(h)` liest je nach Typ
+  von `v` wie `fileReadInt`, `fileReadDouble` oder als Text (ohne Anführungszeichen, `{…}` als Text). Ohne
+  Typangabe wird der Typ aus der Verwendung abgeleitet (gerechnet → Zahl, sonst Text). Der Interpreter folgt dem.
+  Mitten in einem Ausdruck bleibt `fileRead` in Python/JavaScript/Interpreter dynamisch, in den Sprachen mit
+  festen Typen liefert es Text (Kommentar im Code und Meldung).
+  Tests: `test/samples/files` (6 Struktogramme). `test/languages.js` lässt den Interpreter dafür in einem eigenen,
+  leeren Ordner arbeiten.
 - [x] **6.3 Weitere Interpreter-Funktionen** (M)
   *Großteils erledigt:* weitere Namen werden auf vorhandene Funktionen abgebildet (`FN_ALIAS`: `upper`, `lower`,
   `ln`, `power`, `real`, `intToStr`, `floatToStr`, `toString`, `strToInt`, `strToFloat`); neu `odd`, `randint`,
@@ -353,6 +366,8 @@ den Abschnitt „Grenzen“ des README.
   Ein Lauf über 150 Seeds (5000–5149) fand außerdem `for i := -1 to -1` → `i < ;` in C, C++, JavaScript, Kotlin
   (`until`) und Rust (`..`): Die Vereinfachung „Ende `n - 1` → `i < n`“ hielt das Literal `-1` für „etwas minus 1“.
   Test `control_flow/11_for_bounds`. Java, C# und Kotlin: 20 Seeds (9000–9019) ohne Befund.
+  Mit 6.2 schreibt und liest der Zufallstest auch Dateien. Dabei gefunden: `abs(3 / -4)` in Rust („ambiguous numeric
+  type“, nur Zahlen ohne Variable) – Test `expressions/14_abs_const`.
   Ein Generator für zufällige, gültige Struktogramme beginnt mit einer kleinen Teilmenge und wächst schrittweise:
   - Zuweisungen, Ausgaben, `if`, `while`, `for`
   - danach `case`, `repeat`, `leave`/`continue`

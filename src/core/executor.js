@@ -322,6 +322,35 @@ class Interpreter {
     return this.fileValue(this.fileToken(f, path));
   }
 
+  /** fileRead in eine Text-Variable: "Text" und 'Text' ohne Anführungszeichen, {Liste} als Text, sonst ein Wort */
+  fileReadStr(f, path) {
+    const ws = /^\s*/.exec(f.text.slice(f.pos))[0].length;
+    const i = f.pos + ws, c = f.text[i];
+    if (c === undefined) throw new ExecError(tr('exec.eofData'), path);
+    if (c !== '"' && c !== "'" && c !== '{') return this.fileToken(f, path);
+    let e = f.text.indexOf(c === '{' ? '}' : c, i + 1);
+    if (e < 0) e = f.text.length;
+    f.pos = e + 1;
+    return c === '{' ? f.text.slice(i, e + 1) : f.text.slice(i + 1, e);
+  }
+
+  /**
+   * v := fileRead(h) in eine Variable mit bekanntem Typ: wie fileReadInt, fileReadDouble bzw. als Text – so wie der
+   * erzeugte Code (generators.js, fileReadTyped). Liefert den Ausdruck, der stattdessen ausgewertet wird, oder null.
+   */
+  fileReadTyped(c) {
+    const et = P.ptoks(c.expr);
+    if (et.length < 3 || et[0].t !== 'id' || et[0].v.toLowerCase() !== 'fileread' || et[1].v !== '(' || matchClose(et, 1) !== et.length - 1) return null;
+    if (this.subs.some((s) => s.sig && s.sig.name === et[0].v)) return null;
+    const tt = P.ptoks(c.target);
+    if (!tt.length || tt[0].t !== 'id' || (tt.length > 1 && !(tt[1].v === '[' && matchClose(tt, 1) === tt.length - 1))) return null;
+    let t = this.frame.types.get(tt[0].v) || this.staticType(this.frame.rootIndex, tt[0].v, true);
+    if (t && tt.length > 1) t = t.endsWith('[]') ? t.slice(0, -2) : null;
+    else if (t && t.endsWith('[]')) t = null;
+    const fn = { int: 'fileReadInt', double: 'fileReadDouble', string: '_fileReadStr' }[P.normType(t)];
+    return fn ? fn + joinTokens(et.slice(1)) : null;
+  }
+
   /* --------------------------- Turtleizer (Structorizer) --------------------------- */
   /**
    * Turtle-Grafik: Start bei (0|0), Blick nach oben, y wächst nach unten (Bildschirm).
@@ -390,17 +419,19 @@ class Interpreter {
         if (!/^[+-]?\d+$/.test(t)) throw new ExecError(tr('exec.notInt', t), path);
         return parseInt(t, 10);
       }
-      case 'filereaddouble': {
+      case 'filereaddouble': { // streng wie INPUT (parseFloat nähme 2.5abc als 2.5)
         const t = this.fileToken(this.fileHandle(args[0], 'r', path), path);
-        const v = parseFloat(t);
-        if (isNaN(v)) throw new ExecError(tr('exec.notNumber', t), path);
-        return new Float(v);
+        if (!NUM_RE.test(t)) throw new ExecError(tr('exec.notNumber', t), path);
+        return new Float(parseFloat(t));
       }
+      case '_filereadstr': return this.fileReadStr(this.fileHandle(args[0], 'r', path), path);
       case 'filereadchar': {
         const f = this.fileHandle(args[0], 'r', path);
         if (f.pos >= f.text.length) throw new ExecError(tr('exec.eofChar'), path);
         if (f.text.startsWith('\r\n', f.pos)) { f.pos += 2; return '\n'; }
-        return f.text[f.pos++];
+        const ch = String.fromCodePoint(f.text.codePointAt(f.pos)); // ein Zeichen, auch außerhalb der BMP (wie im erzeugten Code)
+        f.pos += ch.length;
+        return ch;
       }
       case 'filereadline': {
         const f = this.fileHandle(args[0], 'r', path);
@@ -413,7 +444,7 @@ class Interpreter {
       }
       case 'filewrite': case 'filewriteline': {
         const f = this.fileHandle(args[0], 'w', path);
-        fs.appendFileSync(f.path, fmt(args[1]) + (name === 'filewriteline' ? require('os').EOL : ''), 'utf8');
+        fs.appendFileSync(f.path, fmt(args[1]) + (name === 'filewriteline' ? '\n' : ''), 'utf8'); // \n wie im erzeugten Code
         return null;
       }
       default: return undefined;
@@ -689,7 +720,7 @@ class Interpreter {
         }
         return;
       case 'assign': {
-        const v = yield* this.eval(c.expr, path);
+        const v = yield* this.eval(this.fileReadTyped(c) || c.expr, path);
         const targets = splitTop(P.ptoks(c.target), ',');
         if (targets.length > 1) {
           const vals = Array.isArray(v) ? v : [v];
@@ -800,14 +831,15 @@ class Interpreter {
    * Typ einer Variable bzw. eines Parameters, wie ihn die Codeerzeugung für diese Routine ableitet (generators.js,
    * inferTypes) – nur einfache Typen (int, double, string, boolean), sonst null. Einmal je Interpreter berechnet.
    */
-  staticType(rootIndex, name) {
+  staticType(rootIndex, name, arrays = false) {
     if (this.opts.dynamicTypes) return null;
     if (!this._static) {
       try { this._static = require('./generators').inferTypes(this.doc); } catch (e) { this._static = []; }
     }
     const s = this._static[rootIndex];
     const t = s && s.types ? P.normType(s.types.get(name)) : null;
-    return ['int', 'double', 'string', 'boolean'].includes(t) ? t : null;
+    const simple = (x) => ['int', 'double', 'string', 'boolean'].includes(x);
+    return simple(t) || (arrays && t && t.endsWith('[]') && simple(t.slice(0, -2))) ? t : null;
   }
 
   coerce(v, t) {
@@ -1046,7 +1078,7 @@ class Interpreter {
     const a = args.map(num);
     const f = (v) => new Float(v);
     const lname = name.toLowerCase();
-    if (lname.startsWith('file')) {
+    if (lname.startsWith('file') || lname === '_filereadstr') {
       const r = this.fileBuiltin(lname, args, path);
       if (r !== undefined) return r;
     }

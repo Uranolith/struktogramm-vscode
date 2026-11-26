@@ -180,6 +180,8 @@
  "gen.random01": "random number 0 … below 1 (like random() in the structogram)",
  "gen.utf8": "count text in characters (UTF-8) as in the structogram, not in bytes",
  "gen.split": "split a text at a separator (empty parts are kept)",
+ "gen.files": "file functions as in the structogram (fileOpen … fileWriteLine): file number = position in the list + 1",
+ "gen.fileReadText": "fileRead yields text here – use fileReadInt or fileReadDouble for numbers",
  "gen.checkIdx": "index inside try: outside the array raises a catchable error as in the structogram",
  "gen.untranslatable": "NOT TRANSLATABLE: {0} does not exist in {1} – this line has to be adapted by hand.",
  "ext.untranslatable": "Not translatable to {1}: {0}. The places are marked with “NOT TRANSLATABLE” in the code.",

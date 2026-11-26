@@ -196,7 +196,9 @@ Beim Erzeugen von Code werden diese Befehle in die Zielsprache übersetzt, z.B. 
 Bedingungen als Marken (`case true of  kdnr < 2000: …`) wird zu `switch (true)` (JavaScript),
 `switch (true) { case true when … }` (C#), `when { … }` (Kotlin) bzw. `match true { _ if … }` (Rust); in Java, C, C++
 und Python, wo `case`-Marken Konstanten sein müssen, zu einer `if / else if`-Kette. Turtle-Befehle werden für
-Python in das Modul `turtle` übersetzt; die Datei-API wird nur ausgeführt, nicht übersetzt.
+Python in das Modul `turtle` übersetzt; die Datei-API (`fileOpen` … `fileWriteLine`) bekommt in jeder Sprache eine
+kleine Hilfsschicht mit demselben Verhalten wie im Interpreter (Dateinummern, Fehlercodes `-2`/`-3`/`-1`, Lesen nach
+Wort, Zeichen oder Zeile).
 Textvergleiche (`name < "m"`, `a = b`, auch in Fallauswahl und Schleifenbedingungen) werden je Sprache passend
 übersetzt – Java `compareTo`/`equals`, C `strcmp`, C# `string.CompareOrdinal`, Rust `as_str()`, in C und C++ wird eine
 Fallauswahl über einen Text zur `if / else if`-Kette; verglichen wird wie im Interpreter zeichenweise.
@@ -332,7 +334,10 @@ Damit Interpreter und erzeugter Code dasselbe ausgeben, gilt:
   Zeichen (UTF-8). Arrays tragen ihre Länge mit (`int name_len`), eine Funktion mit Array-Ergebnis gibt sie über
   `int* _len` zurück. **C++** verwendet für Arrays `std::vector`.
 - Methoden wie `s.length()`, `s.substring(0, 2)` oder `s.toUpperCase()` werden auf die Struktogramm-Funktionen
-  abgebildet. Arrays, die wachsen (`push`, `append`, `pop`), und die Datei-API werden nicht übersetzt.
+  abgebildet. Arrays, die wachsen (`push`, `append`, `pop`), werden nicht übersetzt.
+- **`fileRead`** liest in eine Variable je nach deren Typ eine ganze Zahl, eine Kommazahl oder Text (ohne Typangabe
+  wie bei `INPUT` aus der Verwendung abgeleitet). Mitten in einem Ausdruck liefert es in den Sprachen mit festen Typen
+  Text (Hinweis im Code); für Zahlen dann `fileReadInt` bzw. `fileReadDouble` verwenden.
 
 Parallelverarbeitung im erzeugten Code:
 - **Rust** lässt nicht zu, dass ein Zweig eine Variable ändert, die ein anderer Zweig verwendet – der Compiler

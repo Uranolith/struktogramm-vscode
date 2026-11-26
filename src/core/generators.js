@@ -6,6 +6,7 @@ const P = require('./pseudo');
 const { t: tr } = require('../i18n');
 const { walk } = require('./model');
 const { joinTokens, findTop, matchClose, OPEN, CLOSE } = require('./tokenizer');
+const { fileHelpers, FILE_HELPER_NAMES } = require('./filehelpers');
 
 const DYNAMIC_LANGS = new Set(['python', 'javascript']); // Variablen ohne festen Typ
 // Sprachen, in denen break innerhalb von switch nur das switch verlässt (nicht die umgebende Schleife)
@@ -501,6 +502,8 @@ class BaseGen {
           else if (c.kind === 'assign') {
             exprs.push(c.expr);
             if (SIMPLE_IDENT.test(c.target)) { assigns.push([c.target, c.expr]); cands.add(c.target); }
+            // v := fileRead(h) wie INPUT v: Zahl, wenn mit v gerechnet wird, sonst Text (Plan 6.2)
+            if (SIMPLE_IDENT.test(c.target) && /^fileread\s*\(/i.test(c.expr.trim()) && !this.funcs.has(c.expr.trim().replace(/\s*\(.*$/s, ''))) inputVars.add(c.target);
           } else if (c.kind === 'output') c.items.forEach((i) => exprs.push(i));
           else if (c.kind !== 'decl') exprs.push(c.expr || line);
         }
@@ -1257,7 +1260,11 @@ class BaseGen {
           const c = P.classifyLine(pl);
           if (c.kind === 'typedef') continue; // Typdefinitionen stehen am Dateianfang (typeDefs)
           const multi = c.kind === 'leave' ? (c.count > 1 ? this.leaveN(c.count, ind) : leaveSwitch()) : null;
-          const lines = viaTry(c, () => multi || this.flowStmt(c, ind, el, pl));
+          const outerNotes = this.lineNotes; // verschachtelt: finally-Teil beim Verlassen eines try (tryExit)
+          const notes = this.lineNotes = [];
+          let lines;
+          try { lines = viaTry(c, () => multi || this.flowStmt(c, ind, el, pl)); } finally { this.lineNotes = outerNotes; }
+          for (const n of notes) lines.unshift(ind + this.comment(n));
           // Nicht übersetzbare Befehle: Kommentar vor der Zeile und Meldung beim Erzeugen (Plan 1.6/9.1)
           const bad = untranslatableIn(pl, this.lang, (n) => this.funcs.has(n), (n) => { const t = P.normType(this.typeOf(n)); return !!(t && t.endsWith('[]')); });
           if (bad.length) {
@@ -1290,6 +1297,8 @@ class BaseGen {
    */
   procLine(line) {
     const { matchClose, splitTop } = require('./tokenizer');
+    const fr = this.fileReadTyped(line);
+    if (fr) return fr;
     const toks = P.ptoks(line);
     if (toks.length < 3 || toks[0].t !== 'id' || toks[1].v !== '(' || matchClose(toks, 1) !== toks.length - 1) return line;
     if (this.funcs.has(toks[0].v)) return line;
@@ -1303,6 +1312,32 @@ class BaseGen {
       case 'delete': return args.length !== 3 ? line : `${args[0]} := delete(${args.join(', ')})`;
       default: return line;
     }
+  }
+
+  /**
+   * v := fileRead(h) in eine Variable mit bekanntem Typ (Plan 6.2): Ganzzahl -> fileReadInt, Kommazahl ->
+   * fileReadDouble, Text -> _fileReadStr (Anführungszeichen weg). Der Interpreter macht es genauso (executor.js).
+   */
+  fileReadTyped(line) {
+    const c = P.classifyLine(line);
+    if (c.kind !== 'assign') return null;
+    const et = P.ptoks(c.expr);
+    if (et.length < 3 || et[0].t !== 'id' || et[0].v.toLowerCase() !== 'fileread' || et[1].v !== '(' ||
+      require('./tokenizer').matchClose(et, 1) !== et.length - 1 || this.funcs.has(et[0].v)) return null;
+    const fn = { int: 'fileReadInt', double: 'fileReadDouble', string: '_fileReadStr' }[P.normType(this.exprType(c.target.trim()))];
+    return fn ? `${c.target} := ${fn}${joinTokens(et.slice(1))}` : null;
+  }
+
+  /** Wert für fileWrite als Text wie bei OUTPUT (Kommazahl mit Nachkommastelle, true/false) */
+  fileStr(src) {
+    return P.normType(this.exprType(src)) === 'string' ? this.x(src) : this.x(`"" + (${src})`);
+  }
+
+  /** fileRead ohne festen Typ in einer Sprache mit festen Typen: liefert Text – Kommentar an der Zeile und Meldung */
+  warnFileRead() {
+    const msg = tr('gen.fileReadText');
+    if (this.lineNotes && !this.lineNotes.includes(msg)) this.lineNotes.push(msg);
+    if (!this.warnings.some((w) => w.kind === 'fileReadText')) this.warnings.push({ kind: 'fileReadText', name: 'fileRead' });
   }
 
   /** Name der Fehlervariable eines TRY-Elements */
@@ -2107,6 +2142,7 @@ class CGen extends BaseGen {
         'string u_insert(const string& w, const string& s, int i) { string r = s; r.insert(u_off(s, i < 1 ? 0 : i - 1), w); return r; }',
         'string u_delete(const string& s, int i, int n) { size_t a = u_off(s, i < 1 ? 0 : i - 1); string r = s; r.erase(a, u_off(s.substr(a), n < 0 ? 0 : n)); return r; }', '');
     }
+    if (this.needs.has('files')) { for (const n of ['stdexcept', 'vector', 'string', 'stdlib']) this.needs.add(n); out.push(...fileHelpers('cpp'), ''); }
     if (this.needs.has('aindex')) out.push('template <class T, class U> int u_index(const vector<T>& a, const U& x) {', '    for (size_t i = 0; i < a.size(); i++) if (a[i] == x) return (int) i;', '    return -1;', '}', '');
     if (this.needs.has('range')) out.push('vector<int> u_range(int a, int b) {', '    vector<int> r;', '    for (int i = a; i < b; i++) r.push_back(i);', '    return r;', '}', '');
     if (this.needs.has('split')) {
@@ -2151,6 +2187,7 @@ class CGen extends BaseGen {
   cHelpers() {
     const out = [];
     const N = this.needs;
+    if (N.has('files')) for (const n of ['cthrow', 'stdlib', 'string', 'stdbool']) N.add(n);
     if (N.has('readline')) {
       N.add('string');
       out.push(this.comment(tr('gen.readLine')), 'char* read_line(void) {', '    static char buf[1024];', '    if (!fgets(buf, sizeof buf, stdin)) buf[0] = 0;',
@@ -2196,6 +2233,7 @@ class CGen extends BaseGen {
         tr('gen.cThrow'),
         'void _throw(const char* msg) {', '    if (_try_env) { _try_msg = msg; longjmp(*_try_env, 1); }', '    fprintf(stderr, "%s\\n", msg);', '    exit(1);', '}');
     }
+    if (N.has('files')) out.push(...fileHelpers('c'));
     // Zahlen einlesen, streng wie im Interpreter: anderer Text ist ein Fehler (abfangbar, wenn das Programm try nutzt)
     if (N.has('readnum')) {
       N.add('string');
@@ -2452,6 +2490,7 @@ class CGen extends BaseGen {
       out.push(title, `public class ${cls} {`);
       if (this.needs.has('scanner')) out.push(this.I + 'static Scanner scanner = new Scanner(System.in);', '');
       if (this.needs.has('fmtnum')) out.push(this.I + this.comment(tr('gen.fmtDouble')), ...fmtHelper('java').map((l) => this.I + l), '');
+      if (this.needs.has('files')) out.push(...fileHelpers('java', this.I), '');
       out.push(...td);
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
       out.push('}');
@@ -2468,7 +2507,7 @@ class CGen extends BaseGen {
           I2 + 'CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;');
       }
       // Umlaute und andere Sonderzeichen: Ausgabe als UTF-8 (stellt auch die Windows-Konsole um)
-      if (main && /[^\x00-\x7f]/.test(main.lines.join('\n'))) {
+      if (main && (gen.some((g) => /[^\x00-\x7f]/.test(g.lines.join('\n'))) || this.needs.has('files'))) {
         const k = main.lines.findIndex((l) => /static void Main\(/.test(l));
         main.lines.splice(k + 1, 0, this.I + this.I + 'Console.OutputEncoding = System.Text.Encoding.UTF8;');
       }
@@ -2484,6 +2523,7 @@ class CGen extends BaseGen {
         const I = this.I;
         out.push(I + this.comment(tr('gen.fmtDouble')), ...fmtHelper('csharp').map((l) => I + l), '');
       }
+      if (this.needs.has('files')) out.push(...fileHelpers('csharp', this.I), '');
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines.map((l) => l.replace(/^(\s*)(.*) \{$/, (m0, a, b) => (/^(static|public)/.test(b.trim()) ? `${a}${b}\n${a}{` : m0)))); });
       out.push('}');
     } else if (L === 'javascript') {
@@ -2505,6 +2545,7 @@ class CGen extends BaseGen {
       if (this.needs.has('checkidx')) { const [pre, mid, post] = tr('exec.indexArray', '@@1@@', '@@2@@').split(/@@[12]@@/); out.push(this.comment(tr('gen.checkIdx')), `const _ix = (a, i) => { if (i < 0 || i >= a.length) throw new Error(\`${pre}\${i}${mid}\${a.length}${post}\`); return i; };`); }
       if (this.needs.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `const _idiv = (a, b) => { if (b === 0) throw new Error(${JSON.stringify(tr('exec.divZero'))}); return Math.trunc(a / b); };`);
       if (this.needs.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `const _imod = (a, b) => { if (b === 0) throw new Error(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; };`);
+      if (this.needs.has('files')) out.push(...fileHelpers('javascript'));
       out.push('', ...td);
       const subs = gen.filter((g) => !g.isMain);
       const main = gen.find((g) => g.isMain);
@@ -2520,6 +2561,7 @@ class CGen extends BaseGen {
         if (this.needs.has('math')) inc.push('#include <math.h>');
         if (this.needs.has('ctype')) inc.push('#include <ctype.h>');
         if (this.needs.has('cthrow')) inc.push('#include <setjmp.h>');
+        if (this.needs.has('files')) inc.push('#include <errno.h>');
       } else {
         inc.push('#include <iostream>');
         if (this.needs.has('string')) inc.push('#include <string>');
@@ -2530,6 +2572,7 @@ class CGen extends BaseGen {
         if (this.needs.has('vector')) inc.push('#include <vector>');
         if (this.needs.has('numeric')) inc.push('#include <numeric>');
         if (this.needs.has('thread')) inc.push('#include <thread>');
+        if (this.needs.has('files')) inc.push('#include <cstdio>', '#include <cerrno>');
         inc.push('', 'using namespace std;');
       }
       out.push(title, ...inc, '', ...td, ...helpers);
@@ -2810,6 +2853,7 @@ ${this.I}pass`), '', '');
       const [pre, mid, post] = tr('exec.indexArray', '@@1@@', '@@2@@').split(/@@[12]@@/);
       out.push(this.comment(tr('gen.checkIdx')), 'def _ix(a, i):', '    if i < 0 or i >= len(a):', `        raise IndexError(f${JSON.stringify(pre + '{i}' + mid + '{len(a)}' + post)})`, '    return i', '', '');
     }
+    if (this.needs.has('files')) out.push(...fileHelpers('python'), '', '');
     out.push(...td);
     parts.forEach((p) => out.push(...p, '', ''));
     mainParts.forEach((p, i) => { if (i) out.push(''); out.push(...p); });
@@ -3148,6 +3192,7 @@ class KtGen extends CGen {
     if (this.needs.has('exit')) out.push('import kotlin.system.exitProcess');
     out.push('', ...this.typeDefs());
     if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('kotlin'), '');
+    if (this.needs.has('files')) out.push(...fileHelpers('kotlin'), '');
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
     return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
   }
@@ -3656,6 +3701,7 @@ class RsGen extends BaseGen {
     if (this.enumConsts.length || this.recordTypes.size) out.push('');
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
     if (this.needs.has('fmtnum')) out.push('', this.comment(tr('gen.fmtDouble')), ...fmtHelper('rust'));
+    if (this.needs.has('files')) out.push('', ...fileHelpers('rust'));
     if (this.needs.has('input')) {
       out.push('', tr('gen.rsReadLine'), 'fn read_line() -> String {',
         '    use std::io::Write;', '    std::io::stdout().flush().unwrap();', '    let mut s = String::new();',
@@ -3728,8 +3774,6 @@ function expandIncludes(doc) {
 const ALL_LANGS = ['python', 'java', 'c', 'cpp', 'csharp', 'javascript', 'kotlin', 'rust'];
 const UNTRANSLATABLE = (() => {
   const m = {};
-  const files = ['fileopen', 'filecreate', 'fileappend', 'fileclose', 'fileeof', 'fileread', 'filereadchar', 'filereadint', 'filereaddouble', 'filereadline', 'filewrite', 'filewriteline'];
-  for (const f of files) m[f] = [];
   m.copyrecord = ALL_LANGS.slice();
   m.range = ALL_LANGS.slice(); // range mit Schrittweite: nur Python, Java, JavaScript (sonst bleibt der Aufruf stehen)
   const turtle = ['forward', 'fd', 'backward', 'bk', 'left', 'rl', 'right', 'rr', 'gotoxy', 'gotox', 'gotoy', 'penup', 'up', 'pendown', 'down',
@@ -3792,6 +3836,7 @@ const RESERVED = {
   rust: 'as break const continue crate else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while async await dyn abstract become box do final macro override priv typeof unsized virtual yield try ' +
     'main read_line fmt_num random try_block Flow String Vec',
 };
+for (const k of Object.keys(RESERVED)) RESERVED[k] += ' ' + FILE_HELPER_NAMES; // Dateifunktionen (Plan 6.2)
 const RESERVED_SETS = Object.fromEntries(Object.entries(RESERVED).map(([k, v]) => [k, new Set(v.split(/\s+/))]));
 
 /** Selbst vergebene Namen eines Dokuments: Variablen, Parameter, Unterprogramme, Record-Typen und -Felder, Aufzählungswerte */

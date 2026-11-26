@@ -116,8 +116,14 @@ const norm = (s) => String(s || '').replace(/\r/g, '').split('\n').map((l) => l.
  * zurückgegeben werden auch die tatsächlich gelesenen Eingaben, damit das echte Programm genau diese bekommt.
  */
 function interpret(doc, inputs, maxSteps = 2e6) {
+  // eigener, leerer Ordner für die Dateifunktionen (fileCreate …) – wie der Arbeitsordner des erzeugten Programms
+  const baseDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'nsd-ref-'));
+  try { return interpretIn(doc, inputs, maxSteps, baseDir); } finally { fs.rmSync(baseDir, { recursive: true, force: true }); }
+}
+
+function interpretIn(doc, inputs, maxSteps, baseDir) {
   const mainIdx = Math.max(0, doc.roots.findIndex((r) => r.rootType === 'program'));
-  const g = new Interpreter(doc).run(mainIdx);
+  const g = new Interpreter(doc, { baseDir }).run(mainIdx);
   const out = [], used = [];
   const queue = inputs.map(String);
   let last = queue.length ? queue[queue.length - 1] : '0';

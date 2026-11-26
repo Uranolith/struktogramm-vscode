@@ -21,6 +21,10 @@ Test-Struktogramme) und an vielen Stellen korrigiert. Plan und Entscheidungen: `
   `signum`, `isArray` & Co., `split`, `odd`, `randint`, `sum`, weitere Namen (`upper`, `intToStr`, `strToInt` …)
   und Methoden wie `s.length()`, `s.substring(…)`.
 - **Namen**, die in der Zielsprache reserviert sind (`class`, `new`, in Python `len`, `str` …), werden umbenannt.
+- **Dateifunktionen** (`fileOpen` … `fileWriteLine`) werden jetzt in alle acht Sprachen übersetzt, mit demselben
+  Verhalten wie im Interpreter. `v := fileRead(h)` liest je nach Typ von `v` eine Zahl oder Text.
+  `fileReadDouble` lehnt jetzt wie `INPUT` Text wie `2.5abc` ab, `fileReadChar` liefert auch Zeichen außerhalb der
+  Basisebene (Emoji) ganz, und `fileWriteLine` schreibt unter Windows `\n` statt `\r\n`.
 
 ## 1.0.3
 - **Testlauf der automatischen Veröffentlichung:** Keine Änderungen an der Erweiterung – inhaltlich gleich 1.0.2.

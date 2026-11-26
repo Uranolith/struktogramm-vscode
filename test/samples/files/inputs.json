@@ -1,0 +1,9 @@
+{
+  "_note": "Testfälle für node test/tasktest.js – Dateifunktionen (Plan 6.2): schreiben, lesen (Wort, Zahl, Zeichen, Zeile), fileRead je Zieltyp, Fehler im try. Jedes Programm legt seine Dateien selbst an.",
+  "01_write_read.nsd": [[5],[2]],
+  "02_chars_eof.nsd": [[]],
+  "03_fileread_typed.nsd": [[]],
+  "04_errors_try.nsd": [[]],
+  "05_lines_sub.nsd": [[]],
+  "06_fileread_untyped.nsd": [[]]
+}

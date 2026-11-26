@@ -273,7 +273,12 @@ function modernFn(l, args, lang, ctx) {
   switch (l) {
     case 'sqrt': case 'floor': case 'ceil': return `${dbl(a)}.${l}()`;
     case 'pow': return `${dbl(a)}.powf(${dbl(args[1] || a)})`;
-    case 'abs': return /^-?\d+$/.test(a.out) ? `(${a.out}_i32).abs()` : /^-?\d+\.\d+$/.test(a.out) ? `(${a.out}_f64).abs()` : `${wrap(a.out)}.abs()`;
+    case 'abs':
+      if (/^-?\d+$/.test(a.out)) return `(${a.out}_i32).abs()`;
+      if (/^-?\d+\.\d+$/.test(a.out)) return `(${a.out}_f64).abs()`;
+      // nur Zahlen und Rechenzeichen (abs(3 / -4)): Typ festlegen, sonst „ambiguous numeric type“ (Fund des Zufallstests)
+      if (/^[\d\s+\-*/%().]+$/.test(a.out)) return `((${a.out}) as ${/\./.test(a.out) ? 'f64' : 'i32'}).abs()`;
+      return `${wrap(a.out)}.abs()`;
     case 'round': return `((${dbl(a)} + 0.5).floor() as i32)`;
     case 'random': if (ctx.needs) ctx.needs.add('random'); return 'random()';
     case 'int': case 'trunc': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<i32>().unwrap()` : `(${wrap(a.out)} as i32)`;
@@ -562,6 +567,30 @@ for (const fn of ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log']) {
     c: (a, ctx) => { need(ctx, 'math'); return `${fn}(${a[0].out})`; }, cpp: (a, ctx) => { need(ctx, 'math'); return `${fn}(${a[0].out})`; },
   };
 }
+/**
+ * Dateifunktionen (Plan 6.2): Aufruf der Hilfsschicht aus filehelpers.js. Rust bekommt Texte als Referenz (&),
+ * fileWrite wandelt den Wert wie OUTPUT in Text um (ctx.fileStr). fileRead hat in den Sprachen mit festen Typen keinen
+ * eigenen Typ: In eine Zahl-Variable wird es zu fileReadInt/fileReadDouble (Generator, procLine), sonst liefert es Text.
+ */
+const FILE_LANGS = ['python', 'java', 'c', 'cpp', 'csharp', 'javascript', 'kotlin', 'rust'];
+const fileFn = (build) => Object.fromEntries(FILE_LANGS.map((l) => [l, (a, ctx) => { need(ctx, 'files'); return build(a, ctx, l); }]));
+for (const n of ['open', 'create', 'append']) SFN['file' + n] = fileFn((a, ctx, l) => `file_${n}(${l === 'rust' ? '&' + W(a[0].out) : a[0].out})`);
+for (const [n, h] of [['close', 'close'], ['eof', 'eof'], ['readint', 'read_int'], ['readdouble', 'read_double'], ['readchar', 'read_char'], ['readline', 'read_line'], ['_readstr', 'read_str']]) {
+  SFN[n === '_readstr' ? '_filereadstr' : 'file' + n] = fileFn((a) => `file_${h}(${a[0].out})`);
+}
+SFN.fileread = fileFn((a, ctx, l) => {
+  if (l === 'python' || l === 'javascript') return `file_read(${a[0].out})`;
+  if (ctx && ctx.warnFileRead) ctx.warnFileRead();
+  return `file_read_str(${a[0].out})`;
+});
+for (const [n, h] of [['write', 'write'], ['writeline', 'writeln']]) {
+  SFN['file' + n] = fileFn((a, ctx, l) => {
+    if (a.length < 2) return null;
+    const s = ctx && ctx.fileStr ? ctx.fileStr(a[1].src) : a[1].out;
+    return `file_${h}(${a[0].out}, ${l === 'rust' ? '&' + W(s) : s})`;
+  });
+}
+
 /** random(n): ganze Zufallszahl 0 … n-1 */
 const RANDOM_N = {
   python: (a, ctx) => { need(ctx, 'random'); return `random.randrange(${a[0].out})`; },
@@ -1498,6 +1527,11 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
         else if (l === '_aindexof') bump('int');
         else if (l === 'odd') { if (toks.length === close + 1 && i === 0) return 'boolean'; unknown = true; }
         else if (l === 'randint') bump('int');
+        // Dateifunktionen (Plan 6.2); fileRead hat keinen festen Typ
+        else if (['fileopen', 'filecreate', 'fileappend', 'filereadint'].includes(l)) bump('int');
+        else if (l === 'filereaddouble') bump('double');
+        else if (['filereadline', 'filereadchar', '_filereadstr'].includes(l)) bump('string');
+        else if (l === 'fileeof') { if (toks.length === close + 1 && i === 0) return 'boolean'; unknown = true; }
         else if (l === 'sum') { const at = inferType(joinTokens(toks.slice(i + 2, close)), varTypes, funcs); bump(at && at.endsWith('[]') ? at.slice(0, -2) : 'int'); }
         else if (['isarray', 'isstring', 'isnumber', 'isbool', 'ischar'].includes(l)) { if (toks.length === close + 1 && i === 0) return 'boolean'; unknown = true; }
         else if (l === 'min' || l === 'max') { // breitester Typ der Argumente

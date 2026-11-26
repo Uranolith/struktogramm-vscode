@@ -81,7 +81,7 @@ function program(seed) {
     return out;
   };
   const stmt = (d, vars, inLoop) => {
-    const kinds = ['assign', 'assign', 'dbl', 'str', 'arr', 'out', 'out'];
+    const kinds = ['assign', 'assign', 'dbl', 'str', 'arr', 'out', 'out', 'file'];
     if (d > 0) kinds.push('if', 'for', 'while', 'repeat', 'case', 'call');
     if (inLoop) kinds.push('leave', 'continue');
     switch (R.pick(kinds)) {
@@ -110,6 +110,12 @@ function program(seed) {
         return [mk.instruction(`${w} := 0`), mk.repeat(`until ${w} >= ${R.int(1, 3)}`, [mk.instruction(`${w} := ${w} + 1`), ...stmts(d - 1, vars, true)])];
       }
       case 'call': return mk.instruction(`${R.pick(INTS)} := f(${intExpr(1, vars)}, ${R.pick(DBLS)}) mod 1000`);
+      case 'file': { // Text, Ganzzahl und Kommazahl schreiben und zurücklesen (Plan 6.2)
+        const v = R.pick(INTS), d = R.pick(DBLS);
+        return mk.instruction(['fh := fileCreate("fz.txt")', 'fileWriteLine(fh, s)', `fileWriteLine(fh, ${intExpr(1, vars)})`, `fileWrite(fh, ${R.pick(DBLS)})`,
+          'fileClose(fh)', 'fh := fileOpen("fz.txt")', 's := fileReadLine(fh)', `${v} := fileReadInt(fh)`, `${d} := fileReadDouble(fh)`,
+          `OUTPUT "eof ", fileEOF(fh)`, 'fileClose(fh)']);
+      }
       case 'leave': return mk.alternative(cond(vars), [mk.jump('leave')], []);
       case 'continue': return mk.alternative(cond(vars), [mk.jump('continue')], []);
       default: return mk.instruction('OUTPUT "?"');

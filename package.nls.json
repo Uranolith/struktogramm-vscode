@@ -78,7 +78,7 @@
   "config.hints.conventions": "Show **conventions** hints (yellow): case selection on a condition, conditions as case labels, several statements in one block, empty loop body, empty block, structogram without a name. Common conventions from teaching and practice – DIN 66261 only defines the symbols, not such rules.",
   "config.hints.confusion": "Show **misleading** hints (yellow) – works, but invites mistakes: “else” branch labeled with a condition, variable sometimes text and sometimes a number, decimal numbers compared with `=`, value never used.",
   "config.hints.logic": "Show **possible logic error** hints (yellow): endless loop without exit, loop condition never changes, unreachable element.",
-  "config.hints.codegen": "Show **code generation** hints (yellow): commands that cannot be translated into one or all target languages (file functions, turtle commands, growing arrays …).",
+  "config.hints.codegen": "Show **code generation** hints (yellow): commands that cannot be translated into one or all target languages (turtle commands, growing arrays …).",
   "config.language": "Language of Struktograf: editor, tools, execution, check messages and comments in generated code. *Automatic* follows the VS Code display language (German, otherwise English). Texts in the VS Code settings and command names always follow the VS Code display language.",
   "config.language.enum0": "Automatic (like the VS Code display language)",
   "config.language.enum1": "German",

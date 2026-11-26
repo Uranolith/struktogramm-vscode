@@ -180,6 +180,8 @@
  "gen.random01": "Zufallszahl 0 … unter 1 (wie random() im Struktogramm)",
  "gen.utf8": "Texte in Zeichen (UTF-8) zählen wie im Struktogramm, nicht in Bytes",
  "gen.split": "Text an einem Trennzeichen zerlegen (leere Teile bleiben erhalten)",
+ "gen.files": "Dateifunktionen wie im Struktogramm (fileOpen … fileWriteLine): Nummer einer Datei = Position in der Liste + 1",
+ "gen.fileReadText": "fileRead liefert hier Text – für Zahlen fileReadInt oder fileReadDouble verwenden",
  "gen.checkIdx": "Index innerhalb von try: außerhalb des Arrays ein abfangbarer Fehler wie im Struktogramm",
  "gen.untranslatable": "NICHT ÜBERSETZBAR: {0} gibt es in {1} nicht – diese Zeile muss von Hand angepasst werden.",
  "ext.untranslatable": "Nicht übersetzbar nach {1}: {0}. Die Stellen sind im Code mit „NICHT ÜBERSETZBAR“ markiert.",

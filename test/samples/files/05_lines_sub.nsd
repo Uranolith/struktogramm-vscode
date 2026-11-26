@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<roots xmlns:nsd="https://structorizer.fisch.lu">
+	<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-26" changedby="" changed="2026-11-26" origin="Struktograf (VS Code)" text="&#34;Zeilen&#34;" comment="&#34;&#34;" color="ffffff" type="program" style="nice">
+		<children>
+			<instruction text="&#34;f := fileCreate(&#34;&#34;zahlen.txt&#34;&#34;)&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			<for text="&#34;for i := 1 to 5&#34;" comment="&#34;&#34;" color="ffffff" counterVar="i" startValue="1" endValue="5" stepConst="1" style="COUNTER" disabled="0">
+				<qFor>
+					<instruction text="&#34;fileWriteLine(f, i * i)&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qFor>
+			</for>
+			<instruction text="&#34;fileClose(f)&#34;,&#34;f := fileAppend(&#34;&#34;zahlen.txt&#34;&#34;)&#34;,&#34;fileWriteLine(f, 100)&#34;,&#34;fileClose(f)&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			<instruction text="&#34;g := fileOpen(&#34;&#34;zahlen.txt&#34;&#34;)&#34;,&#34;summe := 0&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			<while text="&#34;while not fileEOF(g)&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qWhile>
+					<instruction text="&#34;summe := summe + fileReadInt(g)&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qWhile>
+			</while>
+			<instruction text="&#34;fileClose(g)&#34;,&#34;OUTPUT summe, &#34;&#34; &#34;&#34;, zaehle(&#34;&#34;zahlen.txt&#34;&#34;)&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+		</children>
+	</root>
+	<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-26" changedby="" changed="2026-11-26" origin="Struktograf (VS Code)" text="&#34;zaehle(name)&#34;" comment="&#34;&#34;" color="ffffff" type="sub" style="nice">
+		<children>
+			<instruction text="&#34;h := fileOpen(name)&#34;,&#34;n := 0&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			<while text="&#34;while not fileEOF(h)&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qWhile>
+					<instruction text="&#34;zeile := fileReadLine(h)&#34;,&#34;n := n + 1&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qWhile>
+			</while>
+			<instruction text="&#34;fileClose(h)&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			<jump text="&#34;return n&#34;" comment="&#34;&#34;" color="ffffff" disabled="0"></jump>
+		</children>
+	</root>
+</roots>
