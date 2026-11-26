@@ -1,10 +1,7 @@
 {
   "_note": "Testfälle für node test/tasktest.js – Befehlssatz des Structorizers, der im README als übersetzbar beschrieben ist: inc/dec, signum, isArray/isString/… Je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).",
-  "_known": {
-    "02_signum.nsd": { "*": "6.1" },
-    "03_isx.nsd": { "*": "6.1" }
-  },
   "01_incdec.nsd": [[]],
   "02_signum.nsd": [[]],
-  "03_isx.nsd": [[]]
+  "03_isx.nsd": [[]],
+  "04_aliases.nsd": [[]]
 }

@@ -945,7 +945,8 @@ class BaseGen {
     const { tokenize, matchClose, joinTokens } = require('./tokenizer');
     const T = tokenize(code, 'c');
     const out = [];
-    const KW = new Set(['as', 'true', 'false', 'if', 'else', 'let', 'mut']);
+    // Schlüsselwörter und Typnamen sind keine Operanden (parse::<f64>() darf nicht zu parse::<(f64 as f64)>() werden)
+    const KW = new Set(['as', 'true', 'false', 'if', 'else', 'let', 'mut', 'f64', 'f32', 'i64', 'i32', 'i16', 'u8', 'usize', 'bool', 'char', 'str', 'String', 'Vec']);
     const float = rt === 'f32' || rt === 'f64';
     for (let i = 0; i < T.length; i++) {
       const t = T[i];
@@ -1541,6 +1542,10 @@ class CGen extends BaseGen {
     const call = toks[0] && toks[0].t === 'id' && toks[1] && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1;
     const args = call ? splitTop(toks.slice(2, -1), ',').map(joinTokens).filter(Boolean) : [];
     if (call && this.funcs.has(toks[0].v)) return [ind + `${n} = ${this.cCall(toks[0].v, args, `&${n}_len`)};`];
+    if (call && toks[0].v.toLowerCase() === 'split' && args.length === 2) {
+      this.needs.add('split');
+      return [ind + `${n} = str_split(${this.x(args[0])}, ${this.x(args[1])}, &${n}_len);`];
+    }
     if (call && toks[0].v.toLowerCase() === 'copyarray' && args.length === 1) {
       this.needs.add('arrdup');
       const len = this.cArrLen(args[0]);
@@ -2071,6 +2076,12 @@ class CGen extends BaseGen {
         'string u_insert(const string& w, const string& s, int i) { string r = s; r.insert(u_off(s, i < 1 ? 0 : i - 1), w); return r; }',
         'string u_delete(const string& s, int i, int n) { size_t a = u_off(s, i < 1 ? 0 : i - 1); string r = s; r.erase(a, u_off(s.substr(a), n < 0 ? 0 : n)); return r; }', '');
     }
+    if (this.needs.has('split')) {
+      out.push(this.comment(tr('gen.split')), 'vector<string> u_split(const string& s, const string& sep) {', '    vector<string> r;',
+        '    if (sep.empty()) { r.push_back(s); return r; }', '    size_t a = 0, p;',
+        '    while ((p = s.find(sep, a)) != string::npos) { r.push_back(s.substr(a, p - a)); a = p + sep.size(); }',
+        '    r.push_back(s.substr(a));', '    return r;', '}', '');
+    }
     if (this.needs.has('random01')) out.push(this.comment(tr('gen.random01')), 'double random01() {', '    return rand() / (RAND_MAX + 1.0);', '}', '');
     if (this.needs.has('cppfinally')) {
       out.push(this.comment(tr('gen.cppFinallyGuard')), 'struct _Finally {', '    function<void()> f;', '    _Finally(function<void()> g) : f(g) {}',
@@ -2125,6 +2136,17 @@ class CGen extends BaseGen {
       N.add('string');
       out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('c'), '');
     }
+    if (N.has('split')) {
+      N.add('string'); N.add('stdlib');
+      out.push(this.comment(tr('gen.split')), 'char** str_split(const char* s, const char* sep, int* n) {',
+        '    size_t ls = strlen(sep);', '    int cnt = 1;', '    if (ls) for (const char* p = strstr(s, sep); p; p = strstr(p + ls, sep)) cnt++;',
+        '    char** r = malloc((cnt + 1) * sizeof(char*));', '    int k = 0;', '    const char* a = s;',
+        '    if (ls) for (const char* p = strstr(a, sep); p; p = strstr(a, sep)) {', '        size_t m = p - a;',
+        '        r[k] = malloc(m + 1); memcpy(r[k], a, m); r[k][m] = 0;', '        k++; a = p + ls;', '    }',
+        '    r[k] = malloc(strlen(a) + 1); strcpy(r[k], a); k++;', '    *n = k;', '    return r;', '}');
+    }
+    if (N.has('sumarr')) out.push('int sum_int(const int* a, int n) { int s = 0; for (int i = 0; i < n; i++) s += a[i]; return s; }',
+      'double sum_double(const double* a, int n) { double s = 0; for (int i = 0; i < n; i++) s += a[i]; return s; }');
     if (N.has('strdup')) out.push('char* str_dup(const char* s) {', '    char* r = malloc(strlen(s) + 1);', '    strcpy(r, s);', '    return r;', '}');
     // Positionen und Längen in Zeichen (UTF-8), wie im Interpreter (Plan 5.10)
     if (['strpos', 'strcopy', 'strinsert', 'strdelete'].some((n) => N.has(n))) N.add('utf8');
@@ -2462,6 +2484,7 @@ class CGen extends BaseGen {
         if (this.needs.has('stdexcept')) inc.push('#include <stdexcept>');
         if (this.needs.has('cppfinally')) inc.push('#include <functional>');
         if (this.needs.has('vector')) inc.push('#include <vector>');
+        if (this.needs.has('numeric')) inc.push('#include <numeric>');
         if (this.needs.has('thread')) inc.push('#include <thread>');
         inc.push('', 'using namespace std;');
       }
@@ -2833,7 +2856,8 @@ class KtGen extends CGen {
       if (this.isDouble(p.expr)) { this.needs.add('fmtnum'); s += '${fmt(' + e + ')}'; return; }
       const next = parts[k + 1];
       const nextStartsIdent = next && next.lit != null && /^[\p{L}\p{N}_]/u.test(next.lit);
-      s += IDENT_ONLY.test(e) && !nextStartsIdent ? '$' + e : '${' + e + '}';
+      // $name nur für Variablen – true/false/null sind Schlüsselwörter und brauchen ${…}
+      s += IDENT_ONLY.test(e) && !nextStartsIdent && !['true', 'false', 'null'].includes(e) ? '$' + e : '${' + e + '}';
     });
     return '"' + s + '"';
   }

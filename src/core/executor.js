@@ -1113,7 +1113,8 @@ class Interpreter {
         const [s, e, st] = a.length === 1 ? [0, a[0], 1] : [a[0], a[1], a[2] || 1];
         const r = []; for (let k = s; st > 0 ? k < e : k > e; k += st) r.push(k); return r;
       }
-      case 'sum': return (a[0] || []).reduce((x, y) => x + num(y), 0);
+      // Summe einer Liste mit Kommazahlen ist eine Kommazahl (wie + bei Kommazahlen) – sonst schrieb die Ausgabe 4 statt 4.0
+      case 'sum': { const arr = Array.isArray(args[0]) ? args[0] : []; return mkNum(arr.reduce((x, y) => x + num(y), 0), arr.some(isFloat)); }
       case 'odd': return a[0] % 2 !== 0;
       case 'sqr': return mkNum(a[0] * a[0], isFloat(args[0]));
       case 'inc': case 'dec': throw new ExecError(tr('exec.procLine', name), path);

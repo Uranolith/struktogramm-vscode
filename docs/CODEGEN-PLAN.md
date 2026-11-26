@@ -286,7 +286,10 @@ den Abschnitt „Grenzen“ des README.
 
 ## Phase 6 – Bibliotheksfunktionen
 
-- [ ] **6.1 Dokumentierte Befehle vollständig übersetzen** (M)
+- [x] **6.1 Dokumentierte Befehle vollständig übersetzen** (M)
+  *Erledigt* bis auf `copyRecord`: `signum` (Kommazahl), `isArray`/`isString`/`isNumber`/`isBool`/`isChar` (beim
+  Übersetzen aus dem Typ, `isChar` auf Text zur Laufzeit), `split` (C/C++ über Hilfsfunktionen, Java behält leere
+  Teile), `copyArray`.
   Fehlend laut Test: `signum` (alle außer teilweise), `isArray`/`isString`/`isNumber`/`isBool`/`isChar` (alle;
   in typisierten Sprachen zur Übersetzungszeit aus dem Typ bekannt → `true`/`false`), `split` (C, C++, Java),
   `copyArray` (C, C#).
@@ -294,6 +297,11 @@ den Abschnitt „Grenzen“ des README.
   `fileOpen` … `fileEOF` fehlen in allen Sprachen. Je Sprache eine kleine Hilfsschicht (Handle = Index in eine
   Liste offener Dateien). Alternative: ausdrücklich „nicht übersetzbar“ (1.6) und das README anpassen.
 - [ ] **6.3 Weitere Interpreter-Funktionen** (M)
+  *Großteils erledigt:* weitere Namen werden auf vorhandene Funktionen abgebildet (`FN_ALIAS`: `upper`, `lower`,
+  `ln`, `power`, `real`, `intToStr`, `floatToStr`, `toString`, `strToInt`, `strToFloat`); neu `odd`, `randint`,
+  `sum`. `int`/`float` auf Text parsen, `str` auf Kommazahlen schreibt wie der Interpreter (`3.0`). Interpreter:
+  `sum` über Kommazahlen ist eine Kommazahl. Offen: `range`, `substring`, `indexOf`, `contains`, `startsWith`/
+  `endsWith` als Funktionen (siehe `npm run test:builtins`).
   `intToStr`, `strToInt`, `strToFloat`, `floatToStr`, `toString`, `odd`, `power`, `ln`, `upper`/`lower`,
   `substring`, `indexOf`, `contains`, `startsWith`/`endsWith`, `strip`, `randint`, `size`, `sum` – heute in allen
   Sprachen roh übernommen. Entweder übersetzen oder in 0.5 als „nicht übersetzbar“ führen.
@@ -366,3 +374,4 @@ den Abschnitt „Grenzen“ des README.
 | 26.11.2026 | Phase 3 (Teil) | 3.1–3.5 erledigt, 3.6 Teil Eingabe; dazu 4.1 (ohne C/C++) und 5.9. Interpreter folgt der Typableitung bei Parametern und `INPUT` (Entscheidung); 1.1 präzisiert (Zähler bleiben `int`) |
 | 26.11.2026 | 3.6 | Eingabe: Kommazahl für Ganzzahl abschneiden. 1.1 neu entschieden: Typ ist Sache des Anwenders, Hinweis-Kommentar statt automatischem 64 Bit (64-Bit-Umbau verworfen) |
 | 26.11.2026 | Phase 4 | Arrays: Rust als Referenz (`&mut`/`&`), C++ `std::vector`, C mit Länge (`name_len`, `_len`), `copyArray` in C/C#, Elemente aus Text-Arrays in Rust |
+| 26.11.2026 | Phase 5, 6.1, 6.3 | Ausdrücke, Texte (UTF-8, auch Eingabe in C#/JS), Befehlssatz; Gesamtlauf: 770 erfolgreich, 0 neue Fehler. Bekannte Fehler nur noch bei Bezeichnern (Phase 7) |

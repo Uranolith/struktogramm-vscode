@@ -1,16 +1,5 @@
 {
   "_note": "Testfälle für node test/tasktest.js – Ausdrücke: Sonderzeichen in Texten, Textvergleich und -verkettung, min/max, strcmp, random, Mathematik. Je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).",
-  "_known": {
-    "03_output_forms.nsd": { "python": "5.1", "c": "5.1", "cpp": "5.1", "kotlin": "5.1", "rust": "5.2" },
-    "04_text_funcs.nsd": { "*": "6.3" },
-    "05_umlaut_idents.nsd": { "c": "5.10", "cpp": "5.6", "rust": "5.10" },
-    "06_nested_calls.nsd": { "java": "5.3", "c": "5.3", "cpp": "5.3", "csharp": "5.3", "kotlin": "5.3", "rust": "5.3" },
-    "07_strcmp.nsd": { "java": "5.5", "cpp": "5.5", "csharp": "5.5", "javascript": "5.5", "kotlin": "5.5" },
-    "08_random.nsd": { "c": "5.4", "cpp": "5.4" },
-    "09_math_mix.nsd": { "kotlin": "5.7" },
-    "10_mathdoc.nsd": { "c": "5.3", "cpp": "5.3", "kotlin": "5.3", "rust": "5.3" },
-    "11_strdoc.nsd": { "cpp": "5.6" }
-  },
   "01_special_chars.nsd": [[]],
   "02_string_compare.nsd": [["abc", "abc"], ["xyz", "abd"], ["b", "a"]],
   "03_output_forms.nsd": [[]],

@@ -263,7 +263,7 @@ function modernFn(l, args, lang, ctx) {
       case 'random': return 'Math.random()';
       case 'int': case 'trunc': return `${wrap(a.out)}.toInt()`;
       case 'float': return `${wrap(a.out)}.toDouble()`;
-      case 'str': return `${wrap(a.out)}.toString()`;
+      case 'str': if (typeOf(a) === 'double') { if (ctx.needs) ctx.needs.add('fmtnum'); return `fmt(${a.out})`; } return `${wrap(a.out)}.toString()`; // Kommazahl wie im Interpreter
       default: { // length / len
         const t = typeOf(a);
         return `${wrap(a.out)}.${t === 'string' ? 'length' : 'size'}`;
@@ -278,7 +278,7 @@ function modernFn(l, args, lang, ctx) {
     case 'random': if (ctx.needs) ctx.needs.add('random'); return 'random()';
     case 'int': case 'trunc': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<i32>().unwrap()` : `(${wrap(a.out)} as i32)`;
     case 'float': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<f64>().unwrap()` : `(${wrap(a.out)} as f64)`;
-    case 'str': return `${wrap(a.out)}.to_string()`;
+    case 'str': if (typeOf(a) === 'double') { if (ctx.needs) ctx.needs.add('fmtnum'); return `fmt_num(${a.out})`; } return `${wrap(a.out)}.to_string()`; // 3.0 statt 3
     // Texte: Zeichen zählen wie der Interpreter (len() zählt UTF-8-Bytes, Plan 5.10)
     default: return typeOf(a) === 'string' ? `(${wrap(a.out)}.chars().count() as i32)` : `(${wrap(a.out)}.len() as i32)`;
   }
@@ -373,7 +373,60 @@ const SFN = {
   todegrees: { '*': (a, ctx, lang) => { mathNeed(ctx, lang); return `${W(a[0].out)} * 180 / ${PI_OF[lang]}`; } },
   min: minMaxFn('min'),
   max: minMaxFn('max'),
-  split: { python: (a) => `${W(a[0].out)}.split(${a[1].out})`, java: (a) => `${W(a[0].out)}.split(java.util.regex.Pattern.quote(${a[1].out}))`, csharp: (a) => `${W(a[0].out)}.Split(${a[1].out})`, javascript: (a) => `${W(a[0].out)}.split(${a[1].out})`, kotlin: (a) => `${W(a[0].out)}.split(${a[1].out}).toTypedArray()`, rust: (a) => `${W(a[0].out)}.split(${rsStr(a[1])}).map(String::from).collect::<Vec<String>>()` },
+  // split: leere Teile bleiben erhalten wie im Interpreter (Java verwirft sie sonst am Ende); C/C++ über Hilfsfunktionen
+  split: {
+    python: (a) => `${W(a[0].out)}.split(${a[1].out})`,
+    java: (a) => `${W(a[0].out)}.split(java.util.regex.Pattern.quote(${a[1].out}), -1)`,
+    csharp: (a) => `${W(a[0].out)}.Split(${a[1].out})`,
+    javascript: (a) => `${W(a[0].out)}.split(${a[1].out})`,
+    kotlin: (a) => `${W(a[0].out)}.split(${a[1].out}).toTypedArray()`,
+    rust: (a) => `${W(a[0].out)}.split(${rsStr(a[1])}).map(String::from).collect::<Vec<String>>()`,
+    cpp: (a, ctx) => { need(ctx, 'split'); need(ctx, 'vector'); need(ctx, 'string'); return `u_split(${a[0].out}, ${a[1].out})`; },
+    c: (a, ctx) => { need(ctx, 'split'); need(ctx, 'lenignore'); return `str_split(${a[0].out}, ${a[1].out}, &_len_ignore)`; },
+  },
+  // odd, randint, sum (Plan 6.3)
+  odd: { '*': (a, ctx, lang) => `(${W(a[0].out)} % 2 ${lang === 'javascript' ? '!==' : '!='} 0)` },
+  randint: {
+    python: (a, ctx) => { need(ctx, 'random'); return `random.randint(${a[0].out}, ${a[1].out})`; },
+    java: (a) => `(${a[0].out} + (int) (Math.random() * (${a[1].out} - ${W(a[0].out)} + 1)))`,
+    csharp: (a) => `new Random().Next(${a[0].out}, ${a[1].out} + 1)`,
+    javascript: (a) => `(${a[0].out} + Math.floor(Math.random() * (${a[1].out} - ${W(a[0].out)} + 1)))`,
+    kotlin: (a) => `(${a[0].out}..${a[1].out}).random()`,
+    rust: (a, ctx) => { need(ctx, 'random'); return `(${a[0].out} + (random() * ((${a[1].out} - ${W(a[0].out)} + 1) as f64)) as i32)`; },
+    cpp: (a, ctx) => { need(ctx, 'stdlib'); return `(${a[0].out} + rand() % (${a[1].out} - ${W(a[0].out)} + 1))`; },
+    c: (a, ctx) => { need(ctx, 'stdlib'); return `(${a[0].out} + rand() % (${a[1].out} - ${W(a[0].out)} + 1))`; },
+  },
+  sum: {
+    python: (a) => `sum(${a[0].out})`,
+    java: (a) => `java.util.Arrays.stream(${a[0].out}).sum()`,
+    csharp: (a) => `System.Linq.Enumerable.Sum(${a[0].out})`,
+    javascript: (a) => `${W(a[0].out)}.reduce((x, y) => x + y, 0)`,
+    kotlin: (a) => `${W(a[0].out)}.sum()`,
+    rust: (a, ctx) => `${W(a[0].out)}.iter().sum::<${normType(ctx && ctx.exprType ? ctx.exprType(a[0].src) : '') === 'double[]' ? 'f64' : 'i32'}>()`,
+    cpp: (a, ctx) => { need(ctx, 'numeric'); return `accumulate(${a[0].out}.begin(), ${a[0].out}.end(), ${normType(ctx && ctx.exprType ? ctx.exprType(a[0].src) : '') === 'double[]' ? '0.0' : '0'})`; },
+    c: (a, ctx) => { const len = ctx && ctx.cArrLen ? ctx.cArrLen(a[0].src) : null; if (!len) return null; need(ctx, 'sumarr'); return `${normType(ctx.exprType(a[0].src)) === 'double[]' ? 'sum_double' : 'sum_int'}(${a[0].out}, ${len})`; },
+  },
+  // signum: Kommazahl -1.0, 0.0 oder 1.0 wie im Interpreter (Plan 6.1)
+  signum: {
+    python: (a) => `float((${a[0].out} > 0) - (${a[0].out} < 0))`,
+    java: (a) => `Math.signum((double) ${W(a[0].out)})`,
+    csharp: (a) => `(double) Math.Sign(${a[0].out})`,
+    javascript: (a) => `Math.sign(${a[0].out})`,
+    kotlin: (a) => `Math.signum((${a[0].out}).toDouble())`,
+    rust: (a) => `{ let v = (${a[0].out}) as f64; if v > 0.0 { 1.0 } else if v < 0.0 { -1.0 } else { 0.0 } }`,
+    cpp: (a) => `(${W(a[0].out)} > 0 ? 1.0 : ${W(a[0].out)} < 0 ? -1.0 : 0.0)`,
+    c: (a) => `(${W(a[0].out)} > 0 ? 1.0 : ${W(a[0].out)} < 0 ? -1.0 : 0.0)`,
+  },
+  isarray: typeCheckFn((t) => !!(t && t.endsWith('[]'))),
+  isstring: typeCheckFn((t) => t === 'string' || t === 'char'),
+  isnumber: typeCheckFn((t) => t === 'int' || t === 'double'),
+  isbool: typeCheckFn((t) => t === 'boolean'),
+  // isChar: ein Zeichen – bei einem Text erst zur Laufzeit (Länge 1)
+  ischar: typeCheckFn((t) => t === 'char', (t, out, lang, ctx) => (t !== 'string' ? null : {
+    python: `(len(${out}) == 1)`, java: `(${W(out)}.length() == 1)`, csharp: `(${W(out)}.Length == 1)`, javascript: `(${W(out)}.length === 1)`,
+    kotlin: `(${W(out)}.length == 1)`, rust: `(${W(out)}.chars().count() == 1)`,
+    cpp: (need(ctx, 'utf8'), `(u_len(${out}) == 1)`), c: (need(ctx, 'utf8'), `(utf8_len(${out}) == 1)`),
+  }[lang])),
   // strcmp: -1, 0 oder 1, ordinal wie im Interpreter (Plan 5.5; compareTo lieferte die Differenz, C#/JS verglichen kulturabhängig)
   strcmp: {
     python: (a) => `((${a[0].out} > ${a[1].out}) - (${a[0].out} < ${a[1].out}))`,
@@ -427,6 +480,22 @@ function minMaxFn(kind) {
     cpp: (a, ctx) => fold(unify(a, ctx, 'cpp'), (x, y) => `${kind}(${x}, ${y})`),
     c: (a) => fold(a.map((x) => x.out), (x, y) => `(${W(x)} ${cmp} ${W(y)} ? ${W(x)} : ${W(y)})`),
   };
+}
+
+/**
+ * isArray/isString/isNumber/isBool/isChar (Plan 6.1): In typisierten Sprachen steht das Ergebnis beim Übersetzen fest
+ * (Typ des Arguments) – als Literal true/false; runtime(t, out, lang, ctx) kann eine Laufzeitprüfung liefern.
+ */
+function typeCheckFn(test, runtime) {
+  const lit = (v, lang, ctx) => { if (lang === 'c') need(ctx, 'stdbool'); return lang === 'python' ? (v ? 'True' : 'False') : (v ? 'true' : 'false'); };
+  const fn = (a, ctx, lang) => {
+    let t = null;
+    try { t = normType(ctx && ctx.exprType ? ctx.exprType(a[0].src) : inferType(a[0].src)); } catch (e) { t = null; }
+    if (t === 'char' || (!t && /^'.'$/.test(String(a[0].src).trim()))) t = 'char';
+    const r = runtime ? runtime(t, a[0].out, lang, ctx) : null;
+    return r || lit(test(t), lang, ctx);
+  };
+  return { '*': fn };
 }
 
 /** Turtleizer -> Python-Modul turtle (Structorizer: 0° = oben, y nach unten) */
@@ -822,7 +891,22 @@ function splitXor(toks) {
   return out;
 }
 
+/**
+ * Weitere Namen des Interpreters für vorhandene Funktionen (Plan 6.3): upper -> uppercase, ln -> log,
+ * intToStr -> str, strToInt -> int … Eigene Unterprogramme gleichen Namens haben Vorrang.
+ */
+const FN_ALIAS = { upper: 'uppercase', lower: 'lowercase', ln: 'log', power: 'pow', real: 'float', tostring: 'str', inttostr: 'str',
+  floattostr: 'str', strtoint: 'int', strtofloat: 'float' };
+function applyFnAliases(toks, ctx) {
+  return toks.map((t, i) => {
+    if (t.t !== 'id' || !toks[i + 1] || toks[i + 1].v !== '(' || (toks[i - 1] && toks[i - 1].v === '.')) return t;
+    const a = FN_ALIAS[t.v.toLowerCase()];
+    return a && !(ctx && ctx.funcs && ctx.funcs.has(t.v)) ? { ...t, v: a } : t;
+  });
+}
+
 function mapToks(toks, lang, ctx) {
+  toks = applyFnAliases(toks, ctx);
   if (XOR_SPLIT.has(lang)) toks = splitXor(toks);
   if (STRCMP_LANGS.has(lang) || lang === 'kotlin') toks = charsToStrings(toks, ctx);
   if (INTDIV_LANGS.has(lang) || (ctx && ctx.checkDiv && CHECKDIV_LANGS.has(lang))) toks = intDivision(toks, lang, ctx);
@@ -1006,6 +1090,23 @@ function mapToks(toks, lang, ctx) {
         const arg = joinTokens(mapToks(toks.slice(i + 2, close < 0 ? toks.length : close), lang, ctx));
         const simple = /^[\p{L}\p{N}_.]+$/u.test(arg);
         const a = simple ? arg : '(' + arg + ')';
+        // Typ des Arguments: Text wird geparst (strToInt, int("42")), Kommazahlen als Text wie im Interpreter (Plan 6.3)
+        let at = null;
+        try { const src = joinTokens(toks.slice(i + 2, close < 0 ? toks.length : close)); at = normType(ctx.exprType ? ctx.exprType(src) : inferType(src)); } catch (e) { at = null; }
+        const isInt = l === 'int' || l === 'trunc';
+        if ((isInt || l === 'float') && at === 'string') {
+          if (lang === 'c' && ctx.needs) ctx.needs.add('stdlib');
+          const P2 = isInt
+            ? { java: `Integer.parseInt(${a}.trim())`, csharp: `int.Parse(${arg})`, c: `atoi(${arg})`, cpp: `stoi(${arg})`, javascript: `parseInt(${arg}, 10)`, python: `int(${arg})` }
+            : { java: `Double.parseDouble(${a}.trim())`, csharp: `double.Parse(${arg}, System.Globalization.CultureInfo.InvariantCulture)`, c: `strtod(${arg}, NULL)`, cpp: `stod(${arg})`, javascript: `parseFloat(${arg})`, python: `float(${arg})` };
+          if (P2[lang]) { out.push({ t: 'id', v: P2[lang], ws: t.ws }); i = close < 0 ? toks.length : close; continue; }
+        }
+        if (l === 'str' && (at === 'double' || (lang === 'c' && at === 'int'))) {
+          if (ctx.needs) ctx.needs.add(lang === 'c' && at === 'int' ? 'strcat' : (lang === 'c' || lang === 'cpp') ? 'fmtdouble' : 'fmtnum');
+          if (lang === 'c' && ctx.needs) ctx.needs.add('string');
+          const F = lang === 'c' && at === 'int' ? `str_int(${arg})` : { java: `fmt(${arg})`, csharp: `Fmt(${arg})`, c: `fmt_double(${arg})`, cpp: `fmt_double(${arg})`, javascript: `fmtNum(${arg})`, python: `fmt_num(${arg})` }[lang];
+          if (F) { out.push({ t: 'id', v: F, ws: t.ws }); i = close < 0 ? toks.length : close; continue; }
+        }
         const CAST = {
           int: { java: `(int) ${a}`, c: `(int) ${a}`, cpp: `(int) ${a}`, csharp: `(int) ${a}`, javascript: `Math.trunc(${arg})`, python: `int(${arg})` },
           float: { java: `(double) ${a}`, c: `(double) ${a}`, cpp: `(double) ${a}`, csharp: `(double) ${a}`, javascript: `Number(${arg})`, python: `float(${arg})` },
@@ -1251,13 +1352,19 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
     if (t.t === 'str') bump('string');
     else if (t.t === 'num') bump(/[.eE]/.test(t.v) && !/^0[xX]/.test(t.v) ? 'double' : 'int');
     else if (t.t === 'id') {
-      const l = t.v.toLowerCase();
+      const l0 = t.v.toLowerCase();
+      const l = (toks[i + 1] && toks[i + 1].v === '(' && !(funcs && funcs.has(t.v)) && FN_ALIAS[l0]) || l0; // weitere Namen (Plan 6.3)
       if (toks[i + 1] && toks[i + 1].v === '(') {
         const close = matchClose(toks, i + 1);
         if (funcs.has(t.v) && funcs.get(t.v).returnType) bump(normType(funcs.get(t.v).returnType));
         else if (l === 'random' && toks[i + 2] && toks[i + 2].v !== ')') bump('int'); // random(n): ganze Zahl
         else if (['sqrt', 'pow', 'random', 'float', 'double', 'floor', 'ceil', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'toradians', 'todegrees', 'signum'].includes(l)) bump('double');
         else if (l === 'abs') bump(inferType(joinTokens(toks.slice(i + 2, close)), varTypes, funcs) === 'double' ? 'double' : 'int'); // abs hat den Typ des Arguments
+        else if (l === 'split') { res = 'string[]'; }
+        else if (l === 'odd') { if (toks.length === close + 1 && i === 0) return 'boolean'; unknown = true; }
+        else if (l === 'randint') bump('int');
+        else if (l === 'sum') { const at = inferType(joinTokens(toks.slice(i + 2, close)), varTypes, funcs); bump(at && at.endsWith('[]') ? at.slice(0, -2) : 'int'); }
+        else if (['isarray', 'isstring', 'isnumber', 'isbool', 'ischar'].includes(l)) { if (toks.length === close + 1 && i === 0) return 'boolean'; unknown = true; }
         else if (l === 'min' || l === 'max') { // breitester Typ der Argumente
           const ats = splitTop(toks.slice(i + 2, close), ',').map((x) => inferType(joinTokens(x), varTypes, funcs));
           bump(ats.includes('double') ? 'double' : ats.every((x) => x === 'int') ? 'int' : null);

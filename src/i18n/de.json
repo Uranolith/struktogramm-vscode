@@ -179,6 +179,7 @@
  "gen.cArrDup": "Kopie eines Arrays mit eigenem Speicher (Länge n, Elementgröße sz)",
  "gen.random01": "Zufallszahl 0 … unter 1 (wie random() im Struktogramm)",
  "gen.utf8": "Texte in Zeichen (UTF-8) zählen wie im Struktogramm, nicht in Bytes",
+ "gen.split": "Text an einem Trennzeichen zerlegen (leere Teile bleiben erhalten)",
  "gen.cppFinallyGuard": "finally für C++: führt eine Funktion aus, wenn der Block verlassen wird",
  "gen.csCulture": "Kommazahlen mit Punkt schreiben und lesen (wie im Struktogramm), unabhängig von der Ländereinstellung",
  "gen.disabled": "(deaktiviert) {0}",

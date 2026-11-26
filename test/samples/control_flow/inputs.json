@@ -1,8 +1,5 @@
 {
   "_note": "Testfälle für node test/tasktest.js – Kontrollfluss: Sprünge (leave, continue, exit), leere Blöcke, Rückgabewege, Schleifenvariablen. Je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).",
-  "_known": {
-    "07_bool_logic.nsd": { "javascript": "5.7" }
-  },
   "01_leave_in_case.nsd": [[]],
   "02_continue_step.nsd": [[]],
   "03_nested_leave.nsd": [[]],
