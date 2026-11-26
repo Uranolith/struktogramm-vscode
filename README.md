@@ -121,9 +121,11 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
 - **Sprache**: Deutsch oder Englisch (Einstellung `struktogramm.language`, Standard: wie die VS-Code-Oberfläche) –
   gilt für Editor, Werkzeuge, Ausführung, Prüfungen und Kommentare im erzeugten Code und wirkt sofort. Die Texte der
   VS-Code-Einstellungen und Befehlsnamen folgen immer der VS-Code-Oberfläche.
-- **Einstellungen** (*Einstellungen → Erweiterungen → Struktograf*) in fünf Abschnitten: **Allgemein** (Sprache, Ort
-  der Werkzeuge und der Ausführung), **Darstellung** (Farbschema, Hervorhebung, Operatoren, Zweig-Beschriftungen),
-  **Prüfungen** (Prüfungen und Hinweisgruppen), **Code erzeugen und einlesen**, **Structorizer**.
+- **Einstellungen** – am schnellsten über die Befehlspalette (Strg+Umschalt+P) mit *Struktograf: Settings*
+  (bzw. *Struktograf: Einstellungen*); das öffnet die Einstellungen von VS Code gefiltert auf Struktograf. Sie stehen
+  in fünf Abschnitten: **Allgemein** (Sprache, Ort der Werkzeuge und der Ausführung), **Darstellung** (Farbschema,
+  Hervorhebung, Operatoren, Anzeige der Zuweisung, Zweig-Beschriftungen), **Prüfungen** (Prüfungen und
+  Hinweisgruppen), **Code erzeugen und einlesen**, **Structorizer**.
 - **Export** als SVG, PNG, JSON, XML, KI-kompakter Pseudocode und einzelne Structorizer-Dateien (siehe [Export](#export)).
 - **Structorizer-kompatibel**: liest und schreibt `.nsd` (XML) in Structorizer-Schreibweise. Eine Datei mit
   einem Diagramm öffnet der Structorizer direkt. Dateien mit mehreren Diagrammen (z.B. nach einem
@@ -135,6 +137,9 @@ Die Diagramme verwenden die Schreibweise des Original-Structorizers: Zuweisung `
 Eine `.nsd`-Datei mit einem Diagramm lässt sich daher unverändert im Structorizer öffnen.
 
 Zuweisungen schreibt man mit `:=` oder mit dem Pfeil `<-` – beide sind gültig und bleiben, wie sie geschrieben sind.
+Wie sie *angezeigt* werden, legt die Einstellung `struktogramm.assignmentOperator` fest: wie geschrieben (Standard),
+immer `:=` oder immer `<-` (mit *Operatoren hübsch darstellen* als `←`). Das betrifft nur die Anzeige und den Export
+als Bild, nicht die Datei.
 `=` ist im Struktogramm immer der Vergleich – auch im Interpreter und im erzeugten Code: `x = 5` weist nichts zu
 (erzeugt wird `x == 5`), `var x: int = 5` und `for i = 1 to 10` sind ungültig. Die Prüfung meldet solche Zeilen als
 Fehler mit der richtigen Schreibweise; umgestellt wird nichts. Beim Speichern umgestellt werden nur `==` zu `=` und

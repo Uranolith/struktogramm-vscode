@@ -9,6 +9,12 @@ gekennzeichnet – sie ist noch experimentell.
 > Struktogramm lässt sich kein Code erzeugen, bis die Zeile mit `:=` oder `<-` geschrieben ist. Dateien, die seit
 > Version 0.7.0 gespeichert wurden, enthalten bereits `:=` und sind nicht betroffen.
 
+- **Befehl „Struktograf: Settings“** (bzw. „Struktograf: Einstellungen“) in der Befehlspalette: öffnet die
+  Einstellungen von VS Code, gefiltert auf Struktograf.
+- **Anzeige der Zuweisung wählbar:** Einstellung `struktogramm.assignmentOperator` (Abschnitt Darstellung) – wie
+  geschrieben (Standard), immer `:=` oder immer `<-` (mit *Operatoren hübsch darstellen* als `←`). Gilt für
+  Anweisungen, Deklarationen und Zählschleifen im Editor, in der Vorschau und beim Export als Bild; die Datei bleibt
+  unverändert.
 - **Eingaben wie in normalem Code:** Der Interpreter wandelt ein Komma nicht mehr in einen Punkt um. `3,5` für eine
   Kommazahl meldet „‚3,5‘ ist keine gültige Zahl – meintest du 3.5?“; ohne Typ bleibt `3,5` Text. Nur vollständige
   Zahlen gelten (`3a` ist keine Zahl, `3.5` keine ganze Zahl) – auch bei `float()`, `double()`, `int()`,
