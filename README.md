@@ -338,6 +338,11 @@ Parallelverarbeitung im erzeugten Code:
   - Testfälle je Ordner in `inputs.json`: je Struktogramm eine Liste von Eingabefolgen (eine Zeile je `INPUT`);
     `"_tasktest": false` schließt einen Ordner aus.
   - Das Excel-Protokoll braucht Python mit `openpyxl` (`pip install openpyxl`).
+- **Veröffentlichen** – ohne gespeichertes Zugangstoken über *OIDC Trusted Publishing*: Wird auf GitHub ein Release mit
+  der `.vsix` veröffentlicht, lädt der Workflow `.github/workflows/publish.yml` genau diese Datei hoch
+  (`vsce publish --oidc`). Für ein bestehendes Release lässt er sich auch von Hand starten (*Actions → Marketplace
+  veröffentlichen → Run workflow*, Tag z. B. `v1.0.2`). Voraussetzung ist im Marketplace unter *Trusted Publishing*
+  eine Regel für dieses Repository, den Workflow `publish.yml` und die Umgebung `marketplace`.
 - **Sprachtest** – `node test/langtest.js datei.nsd --input 3 python rust`: ein einzelnes Struktogramm mit einer
   Eingabe in alle (oder die genannten) Sprachen übersetzen, ausführen und mit dem Interpreter vergleichen; ohne
   Angabe `test/samples/gesamttest.nsd`. Sprachen ohne installierten Compiler werden übersprungen.

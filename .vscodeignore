@@ -4,3 +4,4 @@ test/**
 build-vsix.py
 docs/**
 .gitignore
+.github/**

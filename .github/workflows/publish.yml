@@ -1,0 +1,46 @@
+# Veröffentlicht die .vsix eines GitHub-Releases im VS Code Marketplace – per OIDC Trusted Publishing,
+# ohne gespeichertes Zugangstoken (PAT).
+#
+# Voraussetzung im Marketplace (https://marketplace.visualstudio.com/manage → Publisher „Uranolith“ →
+# Trusted Publishing): eine Regel für Repository Uranolith/struktogramm-vscode, Workflow publish.yml,
+# Umgebung „marketplace“.
+#
+# Start: automatisch beim Veröffentlichen eines GitHub-Releases (die .vsix muss am Release hängen) oder von Hand
+# über „Run workflow“ mit dem Tag eines bestehenden Releases (z. B. v1.0.2).
+name: Marketplace veröffentlichen
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag des Releases, dessen .vsix veröffentlicht wird (z. B. v1.0.2)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write # OIDC-Token für den Marketplace
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: .vsix aus dem Release laden
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.vsix'
+          ls -l *.vsix
+          test "$(ls *.vsix | wc -l)" -eq 1
+
+      - name: Im Marketplace veröffentlichen (OIDC)
+        run: npx --yes @vscode/vsce@4.1.1 publish --oidc --packagePath *.vsix
