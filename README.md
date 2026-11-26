@@ -312,20 +312,44 @@ warnt. Kommazahlen gibt der erzeugte Code wie der Interpreter aus (kürzeste exa
 unter 0.000001 bzw. ab 1e21: `1e-7`); in Sprachen, deren eigene Ausgabe davon abweicht, über eine kleine
 Hilfsfunktion am Anfang des Programms.
 Bei Kotlin und Rust werden Klassen, `impl`-Blöcke, Lambdas/Closures und Ownership vereinfacht; im erzeugten
-Rust-Code werden Zeichenketten und Arrays bei Funktionsaufrufen mit `.clone()` übergeben.
+Rust-Code werden Arrays als Referenz übergeben (`&mut`, wenn das Unterprogramm sie verändert, sonst `&`),
+Zeichenketten als Kopie (`.clone()`).
+
+Damit Interpreter und erzeugter Code dasselbe ausgeben, gilt:
+- **Datentypen bestimmt der Anwender.** Ein angegebener Typ (`var x: long`) wird übernommen; ohne Angabe sind
+  Ganzzahlen `int`. Ein Überlauf (Werte über 2147483647) ist Sache des Programms – wird eine `int`-Variable mit einer
+  Multiplikation berechnet, weist ein Kommentar im Code auf den größeren Typ hin. Bei so großen Werten kann der
+  Interpreter (rechnet exakt bis 2^53) anders rechnen als `int`-Code.
+- **Der Interpreter folgt der Typableitung des Generators.** Ein Unterprogramm, das mit Ganzzahl und Kommazahl
+  aufgerufen wird (`halb(7)`, `halb(3.0)`), rechnet überall mit Kommazahl. Eine Eingabe wird in den abgeleiteten Typ
+  umgewandelt: `2.5` für eine Ganzzahl-Variable wird zu `2`, `5` für eine Kommazahl-Variable zu `5.0`, Text wie `abc`
+  ist ein Fehler (in `try` abfangbar).
+- **Namen**, die in der Zielsprache reserviert sind oder die der erzeugte Code selbst benutzt (`class`, `new`, in
+  Python `len`, `str` …), bekommen einen Unterstrich (`class_`).
+- **Laufzeitfehler in `try`**: Division durch 0 ist in allen Sprachen abfangbar. Ein Index außerhalb eines Arrays
+  ist es in C, C++ und JavaScript nicht. Der Text der Fehlermeldung im `catch` unterscheidet sich je Sprache.
+- **C**: Texte liegen in eigenem Speicher (ohne Längengrenze, wird nicht freigegeben); Längen und Positionen zählen
+  Zeichen (UTF-8). Arrays tragen ihre Länge mit (`int name_len`), eine Funktion mit Array-Ergebnis gibt sie über
+  `int* _len` zurück. **C++** verwendet für Arrays `std::vector`.
+- Methoden wie `s.length()`, `s.substring(0, 2)` oder `s.toUpperCase()` werden auf die Struktogramm-Funktionen
+  abgebildet. Arrays, die wachsen (`push`, `append`, `pop`), und die Datei-API werden nicht übersetzt.
 
 Parallelverarbeitung im erzeugten Code:
 - **Rust** lässt nicht zu, dass ein Zweig eine Variable ändert, die ein anderer Zweig verwendet – der Compiler
   meldet dann einen Fehler (das wäre ein Datenwettlauf).
-- **JavaScript** kennt keine Threads mit gemeinsamen Variablen, die Zweige laufen nacheinander. Für `INPUT`
-  braucht der erzeugte Code das Paket `prompt-sync` (`npm install prompt-sync`), das in einem Terminal laufen muss.
+- **JavaScript** kennt keine Threads mit gemeinsamen Variablen, die Zweige laufen nacheinander. `INPUT` liest über
+  eine kleine eigene Funktion zeilenweise aus dem Terminal (UTF-8, ohne Zusatzpaket).
 - **C** braucht `-fopenmp`, sonst laufen die Zweige nacheinander.
 
 ## Entwicklung
 - **Aufgabentest** – `npm test`, `test\tasktest.cmd` oder in VS Code *Terminal → Task ausführen… → Aufgabentest*:
   übersetzt alle Struktogramme in den Themenordnern unter `test/samples` in alle Zielsprachen, baut und startet sie
   mit den echten Compilern, vergleicht die Ausgaben mit dem eingebauten Interpreter und schreibt das Ergebnis
-  (O = erfolgreich, X = nicht erfolgreich, – = Compiler fehlt) nach `test/out/tasktest.xlsx`. Der erzeugte Code liegt
+  (O = erfolgreich, X = nicht erfolgreich, K = bekannter Fehler, B = bekannter Fehler behoben, – = Compiler fehlt)
+  nach `test/out/tasktest.xlsx`. Bricht der Interpreter mit einem Laufzeitfehler ab, gilt ein Testfall als erfolgreich,
+  wenn auch das Programm mit einem Fehler endet und bis dahin dasselbe ausgibt. Vorher prüft `test/builtins.js`, ob
+  jede Funktion und Methode des Interpreters in jede Sprache übersetzt wird (`npm run test:builtins` zeigt alle
+  Lücken). Plan, Entscheidungen und Stand: `docs/CODEGEN-PLAN.md`. Der erzeugte Code liegt
   danach in `test/samples/codefiles` (wird bei jedem Lauf neu erzeugt). Einzelne Sprachen oder Ordner:
   `node test/tasktest.js java edge_cases`.
   - Die Kommentare im erzeugten Code stehen in der Sprache der Erweiterung: Einstellung `struktogramm.language` aus
@@ -335,8 +359,12 @@ Parallelverarbeitung im erzeugten Code:
     Typwechsel, Umwandlungen, Kommazahl-Grenzen …); alle laufen in allen acht Sprachen.
   - `test/samples/checks`: Beispiele für die Prüfungen im Editor (absichtlich fehlerhaft, vom Aufgabentest
     übersprungen).
+  - Weitere Themenordner (`control_flow`, `try_catch`, `arrays`, `functions`, `types`, `expressions`, `builtins`,
+    `identifiers`, `records`) prüfen gezielt einzelne Bereiche der Codeerzeugung.
   - Testfälle je Ordner in `inputs.json`: je Struktogramm eine Liste von Eingabefolgen (eine Zeile je `INPUT`);
-    `"_tasktest": false` schließt einen Ordner aus.
+    `"_tasktest": false` schließt einen Ordner aus. Bekannte Fehler stehen unter `"_known"`
+    (`{ "datei.nsd": { "c": "4.2", "*": "6.1" } }` – Sprache oder `*` und der Schritt im Plan, der sie behebt).
+  - Auf GitHub läuft der Aufgabentest bei jedem Push und Pull Request je Sprache (`.github/workflows/test.yml`).
   - Das Excel-Protokoll braucht Python mit `openpyxl` (`pip install openpyxl`).
 - **Veröffentlichen** – ohne gespeichertes Zugangstoken über *OIDC Trusted Publishing*: Wird auf GitHub ein Release mit
   der `.vsix` veröffentlicht, lädt der Workflow `.github/workflows/publish.yml` genau diese Datei hoch

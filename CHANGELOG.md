@@ -1,5 +1,27 @@
 # Änderungen
 
+## Unveröffentlicht
+Der erzeugte Code wurde mit den echten Compilern aller acht Sprachen gegen den Interpreter geprüft (66 neue
+Test-Struktogramme) und an vielen Stellen korrigiert. Plan und Entscheidungen: `docs/CODEGEN-PLAN.md`.
+- **Kontrollfluss:** `leave` in einer Fallauswahl verlässt die Schleife (vorher Endlosschleife in C, C++, C#, JS);
+  `continue` in `repeat … until` prüft die Bedingung (Python, Rust); zwei Schleifen mit derselben Zählvariable
+  übersetzen in C, C++, Java und C#; die Zählvariable hat nach der Schleife den Wert des letzten Durchlaufs.
+- **`try`/`finally`:** `return`, `leave` und `continue` aus einem `try` in C (vorher Absturz), C++ und Rust;
+  `finally` läuft bei jedem Ausgang; Division durch 0 in `try` ist in allen Sprachen abfangbar.
+- **Typen:** Parametertypen aus allen Aufrufen; Arrays und Records als Parameter und Ergebnis; angegebene Typen
+  (`var x: long`) werden übernommen, bei `int` mit Multiplikation weist ein Kommentar auf den größeren Typ hin.
+- **Interpreter:** wandelt Argumente und Eingaben in den abgeleiteten Typ um – `halb(7)` rechnet wie im Code mit
+  Kommazahl, wenn `halb` auch mit Kommazahlen aufgerufen wird; `2.5` als Eingabe für eine Ganzzahl wird zu `2`,
+  Text ist ein Fehler. `sum` über Kommazahlen ist eine Kommazahl.
+- **Arrays:** C trägt die Länge mit (vorher maß `sizeof` bei Parametern nur den Zeiger), C++ verwendet `std::vector`,
+  Rust übergibt Referenzen (Änderungen kommen beim Aufrufer an), `new int[n]` und `copyArray` in allen Sprachen.
+- **Texte:** Zeichen statt Bytes (C, C++, Rust); C ohne Längengrenze für Eingaben; Umlaute in Eingaben in C# und
+  JavaScript (JavaScript liest jetzt ohne das Paket `prompt-sync`).
+- **Ausdrücke und Befehle:** `a + 1 + "!"`, `min`/`max` mit mehreren Argumenten, `strcmp`, `xor`, `random()`,
+  `signum`, `isArray` & Co., `split`, `odd`, `randint`, `sum`, weitere Namen (`upper`, `intToStr`, `strToInt` …)
+  und Methoden wie `s.length()`, `s.substring(…)`.
+- **Namen**, die in der Zielsprache reserviert sind (`class`, `new`, in Python `len`, `str` …), werden umbenannt.
+
 ## 1.0.3
 - **Testlauf der automatischen Veröffentlichung:** Keine Änderungen an der Erweiterung – inhaltlich gleich 1.0.2.
   Diese Version wird erstmals über den GitHub-Workflow `publish.yml` per OIDC Trusted Publishing im Marketplace

@@ -3,5 +3,6 @@
   "01_incdec.nsd": [[]],
   "02_signum.nsd": [[]],
   "03_isx.nsd": [[]],
-  "04_aliases.nsd": [[]]
+  "04_aliases.nsd": [[]],
+  "05_methods.nsd": [[]]
 }

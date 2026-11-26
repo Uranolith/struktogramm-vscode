@@ -7,5 +7,6 @@
   "05_catch_runtime.nsd": [[]],
   "06_finally_paths.nsd": [[]],
   "07_try_nested_jumps.nsd": [[]],
-  "08_div_in_function.nsd": [[]]
+  "08_div_in_function.nsd": [[]],
+  "09_index_error.nsd": [[]]
 }

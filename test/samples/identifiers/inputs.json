@@ -1,9 +1,5 @@
 {
   "_note": "Testfälle für node test/tasktest.js – Bezeichner: Schlüsselwörter der Zielsprachen und Namen, die der erzeugte Code selbst benutzt (len, str, int …). Je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).",
-  "_known": {
-    "01_keywords.nsd": { "*": "7.1" },
-    "02_builtin_names.nsd": { "python": "7.2", "java": "7.1", "c": "7.1", "cpp": "7.1", "csharp": "7.1" }
-  },
   "01_keywords.nsd": [[]],
   "02_builtin_names.nsd": [[]]
 }

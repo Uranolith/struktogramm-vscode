@@ -905,8 +905,55 @@ function applyFnAliases(toks, ctx) {
   });
 }
 
+/**
+ * Methoden des Interpreters auf Texten und Arrays (Plan 6.5): s.length(), s.substring(0, 2), s.toUpperCase() …
+ * werden vor der Übersetzung auf die gleichwertigen Struktogramm-Funktionen abgebildet, die in allen Sprachen übersetzt
+ * sind. Empfänger: eine Variable oder ein Text-Literal. Methoden, die ein Array wachsen lassen (push, pop), bleiben.
+ */
+// Zahl-Literale gleich ausrechnen (s.substring(0, 5) -> copy(s, 1, 5)), sonst als Ausdruck
+const isIntLitS = (x) => /^-?\d+$/.test(String(x).trim());
+const plus1 = (x) => (isIntLitS(x) ? String(Number(x) + 1) : `(${x}) + 1`);
+const minus = (a, b) => (isIntLitS(a) && isIntLitS(b) ? String(Number(a) - Number(b)) : `(${a}) - (${b})`);
+const METHOD_MAP = {
+  length: (r, a, isArr) => `length(${r})`, size: (r) => `length(${r})`,
+  touppercase: (r) => `uppercase(${r})`, upper: (r) => `uppercase(${r})`,
+  tolowercase: (r) => `lowercase(${r})`, lower: (r) => `lowercase(${r})`,
+  trim: (r) => `trim(${r})`, strip: (r) => `trim(${r})`,
+  substring: (r, a) => (a.length === 2 ? `copy(${r}, ${plus1(a[0])}, ${minus(a[1], a[0])})` : `copy(${r}, ${plus1(a[0])}, length(${r}))`),
+  charat: (r, a) => `copy(${r}, ${plus1(a[0])}, 1)`,
+  indexof: (r, a, isArr) => (isArr ? null : `(pos(${a[0]}, ${r}) - 1)`),
+  contains: (r, a, isArr) => (isArr ? null : `(pos(${a[0]}, ${r}) > 0)`),
+  equals: (r, a) => `(${r} = ${a[0]})`,
+  startswith: (r, a) => `(copy(${r}, 1, length(${a[0]})) = ${a[0]})`,
+  endswith: (r, a) => `(length(${r}) >= length(${a[0]}) and copy(${r}, length(${r}) - length(${a[0]}) + 1, length(${a[0]})) = ${a[0]})`,
+  get: (r, a, isArr) => (isArr ? `${r}[${a[0]}]` : null),
+};
+function rewriteMethods(toks, ctx) {
+  if (!toks.some((t) => t.v === '.')) return toks;
+  const out = [];
+  for (let i = 0; i < toks.length; i++) {
+    const r = toks[i], dot = toks[i + 1], m = toks[i + 2], open = toks[i + 3];
+    const isRecv = r && (r.t === 'str' || (r.t === 'id' && ctx && ctx.typeOf && ctx.typeOf(r.v))) && !(toks[i - 1] && toks[i - 1].v === '.');
+    const fn = m && m.t === 'id' && METHOD_MAP[m.v.toLowerCase()];
+    if (!isRecv || !dot || dot.v !== '.' || !fn || !open || open.v !== '(') { out.push(r); continue; }
+    const close = matchClose(toks, i + 3);
+    if (close < 0) { out.push(r); continue; }
+    const args = splitTop(toks.slice(i + 4, close), ',').filter((x) => x.length).map(joinTokens);
+    let rt = null;
+    try { rt = normType(r.t === 'str' ? 'string' : ctx.typeOf(r.v)); } catch (e) { rt = null; }
+    const src = fn(r.t === 'str' ? r.v : r.v, args, !!(rt && rt.endsWith('[]')));
+    if (!src) { out.push(r); continue; }
+    const repl = ptoks(src);
+    if (repl.length) repl[0] = { ...repl[0], ws: r.ws };
+    out.push(...repl);
+    i = close;
+  }
+  return out;
+}
+
 function mapToks(toks, lang, ctx) {
   toks = applyFnAliases(toks, ctx);
+  toks = rewriteMethods(toks, ctx);
   if (XOR_SPLIT.has(lang)) toks = splitXor(toks);
   if (STRCMP_LANGS.has(lang) || lang === 'kotlin') toks = charsToStrings(toks, ctx);
   if (INTDIV_LANGS.has(lang) || (ctx && ctx.checkDiv && CHECKDIV_LANGS.has(lang))) toks = intDivision(toks, lang, ctx);
@@ -919,6 +966,20 @@ function mapToks(toks, lang, ctx) {
     const t = toks[i];
     const l = lc(t);
     const nt = { ...t };
+    // Index außerhalb eines Arrays innerhalb von try abfangbar machen (Plan 2.8): C++ .at(), C/JS mit Prüffunktion
+    {
+      const pv = out[out.length - 1];
+      const at = pv && pv.t === 'id' && ctx && ctx.cur && ctx.cur.types ? normType(ctx.cur.types.get(pv.v)) : null;
+      if (ctx && ctx.checkDiv && (CHECKDIV_LANGS.has(lang) || lang === 'python') && t.t === 'op' && t.v === '[' && at && at.endsWith('[]') && !(out[out.length - 2] && out[out.length - 2].v === '.')) {
+        const close = matchClose(toks, i);
+        const idx = joinTokens(mapToks(toks.slice(i + 1, close < 0 ? toks.length : close), lang, ctx));
+        let v = null;
+        if (lang === 'cpp') v = `${pv.v}.at(${idx})`;
+        else if (lang === 'javascript' || lang === 'python') { if (ctx.needs) ctx.needs.add('checkidx'); v = `${pv.v}[_ix(${pv.v}, ${idx})]`; } // Python: -1 wäre sonst das letzte Element
+        else if (lang === 'c' && ctx.cArrLen) { const len = ctx.cArrLen(pv.v); if (len) { if (ctx.needs) ctx.needs.add('checkidx'); v = `${pv.v}[_idx(${idx}, ${len})]`; } }
+        if (v) { out.pop(); out.push({ ...pv, v }); i = close < 0 ? toks.length : close; continue; }
+      }
+    }
     // Index in einen Text (s[i]): wie im Interpreter ein Text aus einem Zeichen – Java kennt s[i] nicht, Rust indiziert
     // Bytes, C/C++/C#/Kotlin lieferten ein Zeichen statt eines Texts
     const prev = out[out.length - 1];
@@ -1301,6 +1362,13 @@ function normType(t) {
 
 /** Ausdruckstyp abschätzen (int/double/string/boolean/char oder null) */
 function inferType(expr, varTypes = new Map(), funcs = new Map()) {
+  // ganz geklammert: Typ des Inneren ((a > 0) ist ein Wahrheitswert)
+  { const tw = ptoks(expr); if (tw.length > 2 && isWrapped(tw, '(')) return inferType(joinTokens(tw.slice(1, -1)), varTypes, funcs); }
+  // Methoden (s.length()) wie bei der Übersetzung auf Funktionen abbilden, dann den Typ bestimmen (Plan 6.5)
+  if (/\.\s*[\p{L}_]+\s*\(/u.test(String(expr))) {
+    const rw = joinTokens(rewriteMethods(ptoks(expr), { typeOf: (n) => varTypes.get(n) }));
+    if (rw !== joinTokens(ptoks(expr))) return inferType(rw, varTypes, funcs);
+  }
   const toks = ptoks(expr);
   if (!toks.length) return null;
   if (toks.length === 1 && toks[0].t === 'str') return (toks[0].v.length === 3 && toks[0].v[0] === "'") ? 'char' : 'string';

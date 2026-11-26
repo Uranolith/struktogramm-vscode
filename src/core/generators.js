@@ -2176,6 +2176,13 @@ class CGen extends BaseGen {
     if (N.has('arrdup')) { N.add('string'); N.add('stdlib'); out.push(this.comment(tr('gen.cArrDup')), 'void* _arr_dup(const void* a, int n, size_t sz) {', '    void* r = malloc(n * sz + 1);', '    memcpy(r, a, n * sz);', '    return r;', '}'); }
     if (N.has('strarray')) { N.add('stdlib'); out.push('char** _str_array(int n) {', '    char** r = malloc((n + 1) * sizeof(char*));', '    for (int i = 0; i < n; i++) r[i] = (char*) "";', '    return r;', '}'); }
     if (N.has('lenignore')) out.push('static int _len_ignore;');
+    // Index außerhalb eines Arrays innerhalb von try: abfangbarer Fehler (Plan 2.8)
+    if (N.has('checkidx')) {
+      N.add('cthrow');
+      const [pre, mid, post] = tr('exec.indexArray', '@@1@@', '@@2@@').split(/@@[12]@@/); // Meldung des Interpreters
+      out.push(this.comment(tr('gen.checkIdx')), 'static char _idx_msg[160];',
+        `int _idx(int i, int n) { if (i < 0 || i >= n) { snprintf(_idx_msg, sizeof _idx_msg, ${JSON.stringify(pre + '%d' + mid + '%d' + post)}, i, n); _throw(_idx_msg); } return i; }`);
+    }
     // Division und Rest innerhalb von try: bei 0 abfangbarer Fehler wie im Interpreter
     if (N.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `int _idiv(int a, int b) { if (b == 0) _throw(${JSON.stringify(tr('exec.divZero'))}); return a / b; }`);
     if (N.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `int _imod(int a, int b) { if (b == 0) _throw(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; }`);
@@ -2459,6 +2466,7 @@ class CGen extends BaseGen {
       if (this.needs.has('readnum')) out.push(this.comment(tr('gen.readNum')), `const _num = (s) => { const v = String(s ?? "").trim(); if (!/^[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?$/.test(v)) throw new Error(${jsMsg('exec.notNumber')}); return parseFloat(v); };`);
       if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), 'const fmtNum = (x) => (Number.isInteger(x) ? x.toFixed(1) : String(x));');
       // Division und Rest innerhalb von try: bei 0 abfangbarer Fehler wie im Interpreter (sonst Infinity bzw. NaN)
+      if (this.needs.has('checkidx')) { const [pre, mid, post] = tr('exec.indexArray', '@@1@@', '@@2@@').split(/@@[12]@@/); out.push(this.comment(tr('gen.checkIdx')), `const _ix = (a, i) => { if (i < 0 || i >= a.length) throw new Error(\`${pre}\${i}${mid}\${a.length}${post}\`); return i; };`); }
       if (this.needs.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `const _idiv = (a, b) => { if (b === 0) throw new Error(${JSON.stringify(tr('exec.divZero'))}); return Math.trunc(a / b); };`);
       if (this.needs.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `const _imod = (a, b) => { if (b === 0) throw new Error(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; };`);
       out.push('', ...td);
@@ -2575,7 +2583,7 @@ class PyGen extends BaseGen {
 
   tryEl(el, ind) {
     const I = this.I, v = this.catchVar(el);
-    const out = [ind + 'try:', ...this.block(el.qTry, ind + I), ind + 'except Exception as _e:', ind + I + `${v} = str(_e)`, ...this.seq(el.qCatch, ind + I)];
+    const out = [ind + 'try:', ...this.checked(() => this.block(el.qTry, ind + I)), ind + 'except Exception as _e:', ind + I + `${v} = str(_e)`, ...this.seq(el.qCatch, ind + I)];
     if (el.qFinally.length) out.push(ind + 'finally:', ...this.block(el.qFinally, ind + I));
     return out;
   }
@@ -2728,6 +2736,7 @@ class PyGen extends BaseGen {
       this.cur = this.analyze(r, sig);
       this.curIsMain = false;
       this.curRoot = r;
+      this.checkDiv = this.checkedRoutines().has(sig.name) ? 1 : 0; // aus einem try-Teil aufgerufen: Index prüfen
       const ps = sig.params.map((p) => { const t = this.pyType(p.type); return t ? `${p.name}: ${t}` : p.name; });
       const rt = this.pyType(sig.returnType);
       const lines = [`def ${sig.name}(${ps.join(', ')})${rt ? ' -> ' + rt : ''}:`];
@@ -2741,6 +2750,7 @@ class PyGen extends BaseGen {
       this.cur = this.analyze(r, { params: [] });
       this.curIsMain = true;
       this.curRoot = r;
+      this.checkDiv = 0;
       const lines = [];
       lines.push(this.comment(tr('gen.pyMain', r.text.join(' '))));
       (r.comment || []).filter((s) => s.trim()).forEach((s) => lines.push(this.comment(s)));
@@ -2759,6 +2769,11 @@ class PyGen extends BaseGen {
     if (leaves.length) out.push(...leaves.map((l) => `class _Leave${l}(BaseException):
 ${this.I}pass`), '', '');
     if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('python'), '', '');
+    if (this.needs.has('checkidx')) {
+      // Index außerhalb des Arrays innerhalb von try: Fehler wie im Interpreter (Python nähme -1 als letztes Element)
+      const [pre, mid, post] = tr('exec.indexArray', '@@1@@', '@@2@@').split(/@@[12]@@/);
+      out.push(this.comment(tr('gen.checkIdx')), 'def _ix(a, i):', '    if i < 0 or i >= len(a):', `        raise IndexError(f${JSON.stringify(pre + '{i}' + mid + '{len(a)}' + post)})`, '    return i', '', '');
+    }
     out.push(...td);
     parts.forEach((p) => out.push(...p, '', ''));
     mainParts.forEach((p, i) => { if (i) out.push(''); out.push(...p); });
@@ -3669,11 +3684,93 @@ function expandIncludes(doc) {
  * @param {keyof TARGETS} lang
  * @param {{className?:string}} opts
  */
+/**
+ * Namen, die in der Zielsprache reserviert sind (Plan 7.1) oder die der erzeugte Code selbst benutzt (Plan 7.2:
+ * Funktionen der Sprache und Hilfsfunktionen des Generators). Eigene Namen werden davor umbenannt (class -> class_).
+ */
+const C_KW = 'auto break case char const continue default do double else enum extern float for goto if inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void volatile while bool true false main';
+const RESERVED = {
+  python: 'False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield ' +
+    'len str int float bool print input list dict set tuple range abs min max round sum ord chr math random sys threading turtle fmt_num',
+  java: 'abstract assert boolean break byte case catch char class const continue default do double else enum extends final finally float for goto if implements import instanceof int interface long native new package private protected public return short static strictfp super switch synchronized this throw throws transient try void volatile while var yield record true false null ' +
+    'String Math System Integer Double Boolean Character Object fmt scanner main',
+  csharp: 'abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while var ' +
+    'Console Math Fmt Main System',
+  c: C_KW + ' printf scanf malloc calloc free strlen strcpy strcmp strcat exit abs sqrt pow floor ceil sin cos tan exp log round NULL ' +
+    'read_line read_int read_double str_cat str_int str_chr str_dup str_copy str_pos str_insert str_delete str_upper str_lower str_trim str_split fmt_double utf8_len utf8_off random01 _throw',
+  cpp: C_KW + ' class new delete this namespace template typename using public private protected virtual friend operator try catch throw nullptr string vector cout cin endl std max min swap count ' +
+    'read_line read_int read_double fmt_double u_len u_off u_copy u_pos u_insert u_delete u_split random01',
+  javascript: 'break case catch class const continue debugger default delete do else export extends false finally for function if import in instanceof new null return super switch this throw true try typeof var void while with yield let static await enum implements interface package private protected public arguments eval undefined NaN Infinity ' +
+    'console Math process require prompt fmtNum Number String',
+  kotlin: 'as break class continue do else false for fun if in interface is null object package return super this throw true try typealias typeof val var when while ' +
+    'println print readln maxOf minOf fmt Math',
+  rust: 'as break const continue crate else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while async await dyn abstract become box do final macro override priv typeof unsized virtual yield try ' +
+    'main read_line fmt_num random try_block Flow String Vec',
+};
+const RESERVED_SETS = Object.fromEntries(Object.entries(RESERVED).map(([k, v]) => [k, new Set(v.split(/\s+/))]));
+
+/** Selbst vergebene Namen eines Dokuments: Variablen, Parameter, Unterprogramme, Record-Typen und -Felder, Aufzählungswerte */
+function userNames(doc) {
+  const names = new Set();
+  for (const r of doc.roots) {
+    const sig = P.parseSignature(r.text);
+    if (r.rootType !== 'program') { names.add(sig.name); sig.params.forEach((p) => names.add(p.name)); }
+    walk(r.children, (el) => {
+      if (el.type === 'for') { const f = P.parseForText(linesOf(el).join(' ')); if (f && f.var) names.add(f.var); }
+      if (el.type === 'try') { const v = String((el.text || [])[0] || '').trim(); if (SIMPLE_IDENT.test(v)) names.add(v); }
+      if (!['instruction', 'call', 'jump'].includes(el.type)) return;
+      for (const l of linesOf(el)) {
+        const c = P.classifyLine(l);
+        if (c.kind === 'assign') c.target.split(',').forEach((t) => { const m = /^\s*([\p{L}_][\p{L}\p{N}_]*)/u.exec(t); if (m) names.add(m[1]); });
+        else if (c.kind === 'input') c.vars.forEach((v) => { const m = /^\s*([\p{L}_][\p{L}\p{N}_]*)/u.exec(v); if (m) names.add(m[1]); });
+        else if (c.kind === 'decl') c.decls.forEach((d) => names.add(d.name));
+        else if (c.kind === 'typedef') {
+          names.add(c.name);
+          (c.fields || []).forEach((f) => names.add(f.name));
+          (c.items || []).forEach((it) => names.add(it.name));
+        }
+      }
+    });
+  }
+  return names;
+}
+
+/**
+ * Eigene Namen, die in der Zielsprache reserviert sind, vor der Übersetzung umbenennen (class -> class_, len -> len_)
+ * – in allen Texten des Dokuments (Signaturen, Anweisungen, Bedingungen, Schleifenköpfe). Plan 7.1/7.2.
+ */
+function renameReserved(doc, lang) {
+  const res = RESERVED_SETS[lang];
+  if (!res) return doc;
+  const names = userNames(doc);
+  const map = new Map();
+  for (const n of names) {
+    if (!res.has(n)) continue;
+    let m = n + '_';
+    while (names.has(m) || res.has(m)) m += '_';
+    map.set(n, m);
+  }
+  if (!map.size) return doc;
+  const fix = (line) => {
+    const toks = P.ptoks(String(line));
+    if (!toks.some((t) => t.t === 'id' && map.has(t.v))) return line;
+    return joinTokens(toks.map((t) => (t.t === 'id' && map.has(t.v) ? { ...t, v: map.get(t.v) } : t)));
+  };
+  const { clone } = require('./model');
+  const d = clone(doc);
+  for (const r of d.roots) {
+    r.text = (r.text || []).map(fix);
+    walk(r.children, (el) => { if (Array.isArray(el.text)) el.text = el.text.map(fix); });
+  }
+  return d;
+}
+
 function generateCode(doc, lang, opts = {}) {
   if (!TARGETS[lang]) throw new Error('Unbekannte Zielsprache: ' + lang);
   if (!doc.roots.length) return '';
   doc = expandIncludes(doc);
   if (!doc.roots.length) return '';
+  doc = renameReserved(doc, lang);
   const G = { python: PyGen, kotlin: KtGen, rust: RsGen }[lang] || CGen;
   const g = new G(doc, lang, opts);
   const code = g.run();

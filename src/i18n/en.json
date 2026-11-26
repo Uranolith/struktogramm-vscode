@@ -180,6 +180,7 @@
  "gen.random01": "random number 0 … below 1 (like random() in the structogram)",
  "gen.utf8": "count text in characters (UTF-8) as in the structogram, not in bytes",
  "gen.split": "split a text at a separator (empty parts are kept)",
+ "gen.checkIdx": "index inside try: outside the array raises a catchable error as in the structogram",
  "gen.cppFinallyGuard": "finally for C++: runs a function when the block is left",
  "gen.csCulture": "Write and read decimal numbers with a point (as in the structogram), regardless of the regional settings",
  "gen.disabled": "(disabled) {0}",

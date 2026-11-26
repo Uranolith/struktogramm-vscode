@@ -143,7 +143,9 @@ den Abschnitt „Grenzen“ des README.
   werden Ganzzahl-`/`, `div` und `mod` in C, C++ und JS zu `_idiv(a, b)`/`_imod(a, b)`. Diese werfen bei 0
   einen abfangbaren Fehler mit dem Text des Interpreters. Tests: `try_catch/05_catch_runtime`,
   `08_div_in_function`. Offen: C-Hilfsfunktionen sind `int` – mit 3.6 (64 Bit) auf `long long` umstellen.
-- [ ] **2.8 Laufzeitfehler innerhalb von `try`: Index außerhalb** (M, nach 4.2)
+- [x] **2.8 Laufzeitfehler innerhalb von `try`: Index außerhalb** (M, nach 4.2)
+  *Erledigt:* Im `try`-Teil und in von dort aufgerufenen Unterprogrammen: C++ `a.at(i)`, C `a[_idx(i, len)]`, JS und
+  Python `a[_ix(a, i)]` (Python nähme `-1` sonst als letztes Element). Test `try_catch/09_index_error`.
   Ein Index außerhalb von Array oder Text ist im Interpreter ein Fehler. C/C++ lesen dann beliebigen Speicher, JS
   liefert `undefined`, Python akzeptiert negative Indizes. Prüf-Hilfsfunktion `_at(a, i)` wie bei 2.7; in C erst
   möglich, wenn Array-Parameter ihre Länge mitbringen (4.2).
@@ -306,6 +308,10 @@ den Abschnitt „Grenzen“ des README.
   `substring`, `indexOf`, `contains`, `startsWith`/`endsWith`, `strip`, `randint`, `size`, `sum` – heute in allen
   Sprachen roh übernommen. Entweder übersetzen oder in 0.5 als „nicht übersetzbar“ führen.
 - [ ] **6.5 Methoden auf Texten und Arrays** (M)
+  *Großteils erledigt:* `rewriteMethods` bildet `length`/`size`, `substring`, `charAt`, `indexOf`, `contains`,
+  `equals`, `startsWith`/`endsWith`, `toUpperCase`/`upper`, `toLowerCase`/`lower`, `trim`/`strip` und `get` vor der
+  Übersetzung auf Struktogramm-Funktionen ab (auch in der Typableitung). Test `builtins/05_methods`. Offen: Arrays,
+  die wachsen (`push`/`append`/`add`, `pop`) und `contains`/`indexOf` auf Arrays.
   Der Interpreter kennt `s.length()`, `s.substring(…)`, `s.toUpperCase()`, `a.append(x)`, `a.pop()` … (`method()` in
   `executor.js`). Der Generator gibt sie unverändert aus: In C, C++ und C# ist das immer falsch, in den anderen
   Sprachen je nach Methode. Gefunden mit `test/builtins.js`.
@@ -315,11 +321,16 @@ den Abschnitt „Grenzen“ des README.
 
 ## Phase 7 – Bezeichner
 
-- [ ] **7.1 Schlüsselwörter umbenennen** (M)
+- [x] **7.1 Schlüsselwörter umbenennen** (M)
+  *Erledigt:* `renameReserved` benennt vor der Übersetzung eigene Namen (Variablen, Parameter, Unterprogramme,
+  Schleifen- und Fehlervariablen, Record-Typen/-Felder, Aufzählungswerte) um, die in der Zielsprache reserviert
+  sind (`class` → `class_`), in allen Texten des Dokuments.
   Je Sprache eine Liste reservierter Wörter (aus den Sprachspezifikationen) und eine einheitliche Umbenennung,
   z. B. `class` → `class_`. Gilt für Variablen, Parameter, Funktionsnamen und Record-Felder, mit Prüfung auf
   Kollisionen nach der Umbenennung. Test: `s05_keywords`.
-- [ ] **7.2 Namen, die der Generator selbst benutzt** (S)
+- [x] **7.2 Namen, die der Generator selbst benutzt** (S)
+  *Erledigt* mit derselben Liste (`RESERVED` je Sprache: Python `len`/`str`/`int`/…, Hilfsfunktionen wie
+  `read_line`, `fmt`, `prompt`, `fmt_num`).
   Python: Eine Variable `len`, `str`, `int`, `float`, `print`, `input`, `math`, `random`, `sys`, `threading`
   oder `fmt_num` überdeckt Funktionen, die der erzeugte Code braucht. Gleiches gilt für Hilfsfunktionen in
   C/C++ (`str_cat`, `read_line`, `fmt_double` …), Rust (`read_line`, `fmt_num`) und für `_i`, `_e`, `_t1`,
@@ -345,10 +356,12 @@ den Abschnitt „Grenzen“ des README.
 - [ ] **9.1 Meldungen im Editor** (M)
   Die Warnungen des Generators (`this.warnings` und 1.6) erscheinen beim Erzeugen im Problems-Panel bzw. als
   Hinweis, mit Verweis auf das Element im Struktogramm.
-- [ ] **9.2 README** (S)
+- [x] **9.2 README** (S)
+  *Erledigt:* Abschnitt *Grenzen* mit den Entscheidungen, *Entwicklung* mit K/B, `_known`, `test/builtins.js`, CI.
   Abschnitt „Grenzen der Codeerzeugung“ mit den Entscheidungen aus Phase 1; den Satz „werden diese Befehle in
   die Zielsprache übersetzt“ an den echten Stand anpassen.
-- [ ] **9.3 CHANGELOG und Version** (S)
+- [x] **9.3 CHANGELOG und Version** (S)
+  *Erledigt:* Abschnitt *Unveröffentlicht*; die Versionsnummer beim Veröffentlichen festlegen.
 
 ---
 
@@ -375,3 +388,4 @@ den Abschnitt „Grenzen“ des README.
 | 26.11.2026 | 3.6 | Eingabe: Kommazahl für Ganzzahl abschneiden. 1.1 neu entschieden: Typ ist Sache des Anwenders, Hinweis-Kommentar statt automatischem 64 Bit (64-Bit-Umbau verworfen) |
 | 26.11.2026 | Phase 4 | Arrays: Rust als Referenz (`&mut`/`&`), C++ `std::vector`, C mit Länge (`name_len`, `_len`), `copyArray` in C/C#, Elemente aus Text-Arrays in Rust |
 | 26.11.2026 | Phase 5, 6.1, 6.3 | Ausdrücke, Texte (UTF-8, auch Eingabe in C#/JS), Befehlssatz; Gesamtlauf: 770 erfolgreich, 0 neue Fehler. Bekannte Fehler nur noch bei Bezeichnern (Phase 7) |
+| 26.11.2026 | Phase 7, 6.5, 2.8, 9.2, 9.3 | Bezeichner umbenennen, Methoden, Indexprüfung in `try`, README/CHANGELOG. Gesamtlauf: **alle 856 erfolgreich** (107 Struktogramme × 8 Sprachen, keine bekannten Fehler mehr) |
