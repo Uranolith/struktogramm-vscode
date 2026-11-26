@@ -79,7 +79,6 @@ const NATIVE_METHODS = {
  * Stand 26.11.2026 (Bestandsaufnahme); wird mit den Schritten in docs/CODEGEN-PLAN.md kleiner.
  */
 const KNOWN = {
-  copyarray: { c: '6.1' },
   copyrecord: { '*': '6.1' },
   floattostr: { '*': '6.3' },
   inttostr: { '*': '6.3' },
