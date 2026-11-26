@@ -187,7 +187,7 @@
  "gen.pyMain": "Main program: {0}",
  "gen.rsRandom": "/// Simple random number between 0 and 1 (without external crates)",
  "gen.rsReadLine": "/// Read a line from the keyboard (without line break)",
- "gen.fmtDouble": "Print a decimal number as in the structogram: always with a decimal place (80.0), otherwise as short as possible but complete",
+ "gen.fmtDouble": "Print a decimal number as in the structogram: with a decimal place (80.0), as short as possible but complete, very small and very large numbers with an exponent (1e-7)",
  "gen.rsTry": "/// try/catch emulated: runs f and returns the message of a panic! (throw) as Err",
  "gen.todoLoop": "TODO: please translate the loop \"{0}\" by hand",
  "gen.unknownEl": "Unknown element: {0}",

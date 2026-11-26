@@ -9,6 +9,168 @@ const { joinTokens, findTop, matchClose, OPEN, CLOSE } = require('./tokenizer');
 
 const DYNAMIC_LANGS = new Set(['python', 'javascript']); // Variablen ohne festen Typ
 
+/**
+ * Hilfsfunktion je Sprache: Kommazahl wie der Interpreter ausgeben (Regel von JavaScript): kürzeste exakte
+ * Darstellung, ganze Werte mit .0 (80.0), Exponent erst unter 0.000001 bzw. ab 1e21 (1e-7, 1.5e-7, 1e+21).
+ * Aus der kürzesten Darstellung der Sprache werden Ziffern und Dezimalexponent gelesen und neu zusammengesetzt.
+ */
+function fmtHelper(lang) {
+  switch (lang) {
+    case 'c': return [
+      'const char* fmt_double(double x) {',
+      '    static char buf[8][352];',
+      '    static int k = 0;',
+      '    char* r = buf[k++ % 8];',
+      '    if (x != x) return "NaN";',
+      '    if (x - x != 0) return x > 0 ? "Infinity" : "-Infinity";',
+      '    if (x == 0) return "0.0";',
+      '    double a = x < 0 ? -x : x;',
+      '    char m[40];',
+      '    for (int p = 0; p < 17; p++) { snprintf(m, sizeof m, "%.*e", p, a); if (strtod(m, NULL) == a) break; }',
+      '    char d[24]; int nd = 0; char* e = strchr(m, \'e\');',
+      '    for (char* c = m; c < e; c++) if (*c != \'.\') d[nd++] = *c;',
+      '    while (nd > 1 && d[nd - 1] == \'0\') nd--;',
+      '    d[nd] = 0;',
+      '    int n = atoi(e + 1) + 1; /* Wert = 0.d mal 10 hoch n */',
+      '    char* o = r;',
+      '    if (x < 0) *o++ = \'-\';',
+      '    if (nd <= n && n <= 21) { memcpy(o, d, nd); o += nd; for (int i = nd; i < n; i++) *o++ = \'0\'; strcpy(o, ".0"); }',
+      '    else if (0 < n && n <= 21) { memcpy(o, d, n); o += n; *o++ = \'.\'; strcpy(o, d + n); }',
+      '    else if (-6 < n && n <= 0) { *o++ = \'0\'; *o++ = \'.\'; for (int i = 0; i < -n; i++) *o++ = \'0\'; strcpy(o, d); }',
+      '    else { *o++ = d[0]; if (nd > 1) { *o++ = \'.\'; memcpy(o, d + 1, nd - 1); o += nd - 1; } sprintf(o, "e%c%d", n - 1 >= 0 ? \'+\' : \'-\', abs(n - 1)); }',
+      '    return r;',
+      '}'];
+    case 'cpp': return [
+      'string fmt_double(double x) {',
+      '    if (x != x) return "NaN";',
+      '    if (x - x != 0) return x > 0 ? "Infinity" : "-Infinity";',
+      '    if (x == 0) return "0.0";',
+      '    double a = x < 0 ? -x : x;',
+      '    char m[40];',
+      '    for (int p = 0; p < 17; p++) { snprintf(m, sizeof m, "%.*e", p, a); if (strtod(m, nullptr) == a) break; }',
+      '    string s = m, d;',
+      '    size_t e = s.find(\'e\');',
+      '    for (size_t i = 0; i < e; i++) if (s[i] != \'.\') d += s[i];',
+      '    while (d.size() > 1 && d.back() == \'0\') d.pop_back();',
+      '    int k = (int) d.size(), n = stoi(s.substr(e + 1)) + 1; // Wert = 0.d mal 10 hoch n',
+      '    string r = x < 0 ? "-" : "";',
+      '    if (k <= n && n <= 21) return r + d + string(n - k, \'0\') + ".0";',
+      '    if (0 < n && n <= 21) return r + d.substr(0, n) + "." + d.substr(n);',
+      '    if (-6 < n && n <= 0) return r + "0." + string(-n, \'0\') + d;',
+      '    return r + d.substr(0, 1) + (k > 1 ? "." + d.substr(1) : string()) + "e" + (n - 1 >= 0 ? "+" : "-") + to_string(abs(n - 1));',
+      '}'];
+    case 'csharp': return [
+      'static string Fmt(double x)',
+      '{',
+      '    if (double.IsNaN(x)) return "NaN";',
+      '    if (double.IsInfinity(x)) return x > 0 ? "Infinity" : "-Infinity";',
+      '    if (x == 0) return "0.0";',
+      '    string s = Math.Abs(x).ToString("R", CultureInfo.InvariantCulture);',
+      '    int ei = s.IndexOf(\'E\');',
+      '    string m = ei < 0 ? s : s.Substring(0, ei);',
+      '    int dot = m.IndexOf(\'.\');',
+      '    string d = m.Replace(".", "");',
+      '    int n = (dot < 0 ? m.Length : dot) + (ei < 0 ? 0 : int.Parse(s.Substring(ei + 1), CultureInfo.InvariantCulture));',
+      '    while (d.Length > 1 && d[0] == \'0\') { d = d.Substring(1); n--; }',
+      '    d = d.TrimEnd(\'0\');',
+      '    int k = d.Length;',
+      '    string r = x < 0 ? "-" : "";',
+      '    if (k <= n && n <= 21) return r + d + new string(\'0\', n - k) + ".0";',
+      '    if (0 < n && n <= 21) return r + d.Substring(0, n) + "." + d.Substring(n);',
+      '    if (-6 < n && n <= 0) return r + "0." + new string(\'0\', -n) + d;',
+      '    return r + d.Substring(0, 1) + (k > 1 ? "." + d.Substring(1) : "") + "e" + (n - 1 >= 0 ? "+" : "-") + Math.Abs(n - 1);',
+      '}'];
+    case 'java': return [
+      'static String fmt(double x) {',
+      '    if (Double.isNaN(x)) return "NaN";',
+      '    if (Double.isInfinite(x)) return x > 0 ? "Infinity" : "-Infinity";',
+      '    if (x == 0) return "0.0";',
+      '    String s = Double.toString(Math.abs(x));',
+      '    int ei = s.indexOf(\'E\');',
+      '    String m = ei < 0 ? s : s.substring(0, ei);',
+      '    int dot = m.indexOf(\'.\');',
+      '    String d = m.replace(".", "");',
+      '    int n = (dot < 0 ? m.length() : dot) + (ei < 0 ? 0 : Integer.parseInt(s.substring(ei + 1)));',
+      '    while (d.length() > 1 && d.charAt(0) == \'0\') { d = d.substring(1); n--; }',
+      '    d = d.replaceAll("0+$", "");',
+      '    int k = d.length();',
+      '    String r = x < 0 ? "-" : "";',
+      '    if (k <= n && n <= 21) return r + d + "0".repeat(n - k) + ".0";',
+      '    if (0 < n && n <= 21) return r + d.substring(0, n) + "." + d.substring(n);',
+      '    if (-6 < n && n <= 0) return r + "0." + "0".repeat(-n) + d;',
+      '    return r + d.charAt(0) + (k > 1 ? "." + d.substring(1) : "") + "e" + (n - 1 >= 0 ? "+" : "-") + Math.abs(n - 1);',
+      '}'];
+    case 'kotlin': return [
+      'fun fmt(x: Double): String {',
+      '    if (x.isNaN()) return "NaN"',
+      '    if (x.isInfinite()) return if (x > 0) "Infinity" else "-Infinity"',
+      '    if (x == 0.0) return "0.0"',
+      '    val s = Math.abs(x).toString()',
+      '    val ei = s.indexOf(\'E\')',
+      '    val m = if (ei < 0) s else s.substring(0, ei)',
+      '    val dot = m.indexOf(\'.\')',
+      '    var d = m.replace(".", "")',
+      '    var n = (if (dot < 0) m.length else dot) + (if (ei < 0) 0 else s.substring(ei + 1).toInt())',
+      '    while (d.length > 1 && d[0] == \'0\') { d = d.substring(1); n-- }',
+      '    d = d.trimEnd(\'0\')',
+      '    val k = d.length',
+      '    val r = if (x < 0) "-" else ""',
+      '    return when {',
+      '        n in k..21 -> r + d + "0".repeat(n - k) + ".0"',
+      '        n in 1..21 -> r + d.substring(0, n) + "." + d.substring(n)',
+      '        n in -5..0 -> r + "0." + "0".repeat(-n) + d',
+      '        else -> r + d[0] + (if (k > 1) "." + d.substring(1) else "") + "e" + (if (n - 1 >= 0) "+" else "-") + Math.abs(n - 1)',
+      '    }',
+      '}'];
+    case 'rust': return [
+      'fn fmt_num(x: f64) -> String {',
+      '    if x.is_nan() { return "NaN".to_string(); }',
+      '    if x.is_infinite() { return if x > 0.0 { "Infinity".to_string() } else { "-Infinity".to_string() }; }',
+      '    if x == 0.0 { return "0.0".to_string(); }',
+      '    let s = format!("{:e}", x.abs());',
+      '    let (m, e) = s.split_once(\'e\').unwrap();',
+      '    let mut d: String = m.chars().filter(|c| *c != \'.\').collect();',
+      '    let mut n = m.find(\'.\').unwrap_or(m.len()) as i32 + e.parse::<i32>().unwrap();',
+      '    while d.len() > 1 && d.starts_with(\'0\') { d.remove(0); n -= 1; }',
+      '    let d = d.trim_end_matches(\'0\').to_string();',
+      '    let k = d.len() as i32;',
+      '    let r = if x < 0.0 { "-" } else { "" };',
+      '    if k <= n && n <= 21 { return format!("{}{}{}.0", r, d, "0".repeat((n - k) as usize)); }',
+      '    if 0 < n && n <= 21 { return format!("{}{}.{}", r, &d[..n as usize], &d[n as usize..]); }',
+      '    if -6 < n && n <= 0 { return format!("{}0.{}{}", r, "0".repeat((-n) as usize), d); }',
+      '    let frac = if k > 1 { format!(".{}", &d[1..]) } else { String::new() };',
+      '    format!("{}{}{}e{}{}", r, &d[..1], frac, if n - 1 >= 0 { "+" } else { "-" }, (n - 1).abs())',
+      '}'];
+    case 'python': return [
+      'def fmt_num(x):',
+      '    if x != x:',
+      '        return "NaN"',
+      '    if x in (float("inf"), float("-inf")):',
+      '        return "Infinity" if x > 0 else "-Infinity"',
+      '    if x == 0:',
+      '        return "0.0"',
+      '    m, _, e = repr(abs(float(x))).partition("e")',
+      '    dot = m.find(".")',
+      '    d = m.replace(".", "")',
+      '    n = (dot if dot >= 0 else len(m)) + int(e or 0)',
+      '    while len(d) > 1 and d[0] == "0":',
+      '        d = d[1:]',
+      '        n -= 1',
+      '    d = d.rstrip("0")',
+      '    k = len(d)',
+      '    r = "-" if x < 0 else ""',
+      '    if k <= n <= 21:',
+      '        return r + d + "0" * (n - k) + ".0"',
+      '    if 0 < n <= 21:',
+      '        return r + d[:n] + "." + d[n:]',
+      '    if -6 < n <= 0:',
+      '        return r + "0." + "0" * -n + d',
+      '    return r + d[0] + ("." + d[1:] if k > 1 else "") + "e" + ("+" if n - 1 >= 0 else "-") + str(abs(n - 1))'];
+    default: return [];
+  }
+}
+
+
 const TARGETS = {
   python: { label: 'Python', ext: 'py', languageId: 'python' },
   java: { label: 'Java', ext: 'java', languageId: 'java' },
@@ -153,15 +315,25 @@ class BaseGen {
 
   concat(text) {
     const L = this.lang;
-    if (!['python', 'javascript', 'csharp', 'cpp', 'c'].includes(L)) return null;
+    if (!['python', 'javascript', 'csharp', 'cpp', 'c', 'java'].includes(L)) return null;
     const terms = this.concatTerms(text);
     if (!terms) return null;
+    if (L === 'java') {
+      // Java verkettet selbst; nur Kommazahlen wie im Interpreter schreiben (sonst 1.0E-7)
+      if (!terms.some((t) => t.ty === 'double')) return null;
+      const litOfJ = (t) => P.literalInner(P.ptoks(t.src)[0].v);
+      this.needs.add('fmtnum');
+      const js = terms.map((t) => (t.lit ? '"' + litOfJ(t).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : t.ty === 'double' ? `fmt(${t.code})` : this.needsParens(t.src) ? `(${t.code})` : t.code));
+      if (!terms[0].lit && terms[0].ty !== 'string') js.unshift('""');
+      return js.join(' + ');
+    }
     const mixed = terms.some((t) => t.ty !== 'string');
     if (!mixed && L !== 'c' && L !== 'cpp') return null; // nur Texte: die Sprache verkettet selbst
     const litOf = (t) => P.literalInner(P.ptoks(t.src)[0].v);
     const q = (str) => '"' + str.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
     if (L === 'python') {
-      return 'f"' + terms.map((t) => (t.lit ? litOf(t).replace(/\{/g, '{{').replace(/\}/g, '}}').replace(/"/g, '\\"') : `{${t.code.replace(/"/g, "'")}}`)).join('') + '"';
+      const code = (t) => (t.ty === 'double' ? (this.needs.add('fmtnum'), `fmt_num(${t.code})`) : t.code);
+      return 'f"' + terms.map((t) => (t.lit ? litOf(t).replace(/\{/g, '{{').replace(/\}/g, '}}').replace(/"/g, '\\"') : `{${code(t).replace(/"/g, "'")}}`)).join('') + '"';
     }
     if (L === 'javascript') {
       return '`' + terms.map((t) => {
@@ -1318,8 +1490,8 @@ class CGen extends BaseGen {
     if (!parts.length) return `${fn}();`;
     const s = parts.map((p) => {
       if (p.lit != null) return '"' + p.lit + '"';
-      // C# schreibt 80.0 als 80: Kommazahlen wie im Interpreter mit Nachkommastelle
-      if (L === 'csharp' && this.isDouble(p.expr)) { this.needs.add('fmtnum'); return `Fmt(${this.x(p.expr)})`; }
+      // Kommazahlen wie im Interpreter (C# schreibt 80.0 als 80, Java 1.0E-7 und 1.23E7)
+      if ((L === 'csharp' || L === 'java') && this.isDouble(p.expr)) { this.needs.add('fmtnum'); return `${L === 'java' ? 'fmt' : 'Fmt'}(${this.x(p.expr)})`; }
       if (L === 'csharp' && this.isBool(p.expr)) return `(${W(this.x(p.expr))} ? "true" : "false")`;
       return parts.length > 1 && this.needsParens(p.expr) ? '(' + this.x(p.expr) + ')' : this.x(p.expr);
     });
@@ -1510,9 +1682,7 @@ class CGen extends BaseGen {
     }
     if (this.needs.has('fmtdouble')) {
       this.needs.add('stdlib');
-      out.push(this.comment(tr('gen.fmtDouble')), 'string fmt_double(double x) {', '    char s[352];',
-        '    for (int d = 1; d <= 20; d++) {', '        snprintf(s, sizeof s, "%.*f", d, x);', '        if (strtod(s, nullptr) == x) return s;', '    }',
-        '    snprintf(s, sizeof s, "%.17g", x);', '    return s;', '}', '');
+      out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('cpp'), '');
     }
     if (this.needs.has('strupper')) out.push('string str_upper(string s) { for (auto& c : s) c = toupper((unsigned char) c); return s; }');
     if (this.needs.has('strlower')) out.push('string str_lower(string s) { for (auto& c : s) c = tolower((unsigned char) c); return s; }');
@@ -1541,9 +1711,8 @@ class CGen extends BaseGen {
     }
     if (N.has('fmtdouble')) {
       N.add('stdlib');
-      out.push(this.comment(tr('gen.fmtDouble')), 'const char* fmt_double(double x) {', '    static char buf[8][352];', '    static int k = 0;',
-        '    char* s = buf[k++ % 8];', '    for (int d = 1; d <= 20; d++) {', '        snprintf(s, sizeof buf[0], "%.*f", d, x);',
-        '        if (strtod(s, NULL) == x) return s;', '    }', '    snprintf(s, sizeof buf[0], "%.17g", x);', '    return s;', '}', '');
+      N.add('string');
+      out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('c'), '');
     }
     const range = '    size_t ls = strlen(s); size_t k = i < 1 ? 0 : (size_t) (i - 1) > ls ? ls : (size_t) (i - 1);';
     if (N.has('cthrow')) {
@@ -1750,6 +1919,7 @@ class CGen extends BaseGen {
       if (this.needs.has('scanner')) out.push('import java.util.Scanner;', '');
       out.push(title, `public class ${cls} {`);
       if (this.needs.has('scanner')) out.push(this.I + 'static Scanner scanner = new Scanner(System.in);', '');
+      if (this.needs.has('fmtnum')) out.push(this.I + this.comment(tr('gen.fmtDouble')), ...fmtHelper('java').map((l) => this.I + l), '');
       out.push(...td);
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
       out.push('}');
@@ -1775,9 +1945,7 @@ class CGen extends BaseGen {
       out.push(...td);
       if (fmtNum) {
         const I = this.I;
-        out.push(I + this.comment(tr('gen.fmtDouble')), I + 'static string Fmt(double x)', I + '{',
-          I + I + 'string s = x.ToString("R", CultureInfo.InvariantCulture);',
-          I + I + "return s.IndexOfAny(new[] { '.', 'E', 'N', 'I' }) < 0 ? s + \".0\" : s;", I + '}', '');
+        out.push(I + this.comment(tr('gen.fmtDouble')), ...fmtHelper('csharp').map((l) => I + l), '');
       }
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines.map((l) => l.replace(/^(\s*)(.*) \{$/, (m0, a, b) => (/^(static|public)/.test(b.trim()) ? `${a}${b}\n${a}{` : m0)))); });
       out.push('}');
@@ -1873,7 +2041,8 @@ class PyGen extends BaseGen {
   outputStmt(items) {
     const parts = this.outParts(items);
     if (!parts.length) return 'print()';
-    const py = (e) => (this.isBool(e) ? `str(${this.x(e)}).lower()` : this.x(e)); // True -> true wie im Interpreter
+    // True -> true und Kommazahlen wie im Interpreter (Python schreibt 1e-07)
+    const py = (e) => (this.isBool(e) ? `str(${this.x(e)}).lower()` : this.isDouble(e) ? (this.needs.add('fmtnum'), `fmt_num(${this.x(e)})`) : this.x(e));
     if (parts.length === 1) return `print(${parts[0].lit != null ? '"' + parts[0].lit + '"' : py(parts[0].expr)})`;
     const exprs = parts.filter((p) => p.expr).map((p) => this.x(p.expr));
     const q = exprs.some((e) => e.includes('"')) ? "'" : '"';
@@ -2017,6 +2186,8 @@ class PyGen extends BaseGen {
         const tx = joinTokens(t);
         const tt = P.inferType(tx, this.cur.types, this.cur.fnTypes);
         const r = super.x(tx);
+        if (P.normType(tt) === 'double') { this.needs.add('fmtnum'); return `fmt_num(${r})`; }
+        if (P.normType(tt) === 'boolean') return `str(${r}).lower()`;
         return tt === 'string' || tt === 'char' ? r : `str(${r})`;
       }).join(' + ');
     }
@@ -2064,6 +2235,7 @@ class PyGen extends BaseGen {
     const leaves = [...this.needs].filter((n) => n.startsWith('leave:')).map((n) => n.slice(6));
     if (leaves.length) out.push(...leaves.map((l) => `class _Leave${l}(Exception):
 ${this.I}pass`), '', '');
+    if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('python'), '', '');
     out.push(...td);
     parts.forEach((p) => out.push(...p, '', ''));
     mainParts.forEach((p, i) => { if (i) out.push(''); out.push(...p); });
@@ -2144,6 +2316,7 @@ class KtGen extends CGen {
     parts.forEach((p, k) => {
       if (p.lit != null) { s += this.lit(p.lit); return; }
       const e = super.x(p.expr);
+      if (this.isDouble(p.expr)) { this.needs.add('fmtnum'); s += '${fmt(' + e + ')}'; return; }
       const next = parts[k + 1];
       const nextStartsIdent = next && next.lit != null && /^[\p{L}\p{N}_]/u.test(next.lit);
       s += IDENT_ONLY.test(e) && !nextStartsIdent ? '$' + e : '${' + e + '}';
@@ -2230,7 +2403,11 @@ class KtGen extends CGen {
       case 'output': {
         const parts = this.outParts(c.items);
         if (!parts.length) return [ind + 'println()'];
-        if (parts.length === 1 && parts[0].expr != null) return [ind + `println(${this.x(parts[0].expr)})`];
+        if (parts.length === 1 && parts[0].expr != null) {
+          // Kommazahlen wie im Interpreter (Kotlin schreibt 1.0E-7)
+          if (this.isDouble(parts[0].expr)) { this.needs.add('fmtnum'); return [ind + `println(fmt(${this.x(parts[0].expr)}))`]; }
+          return [ind + `println(${this.x(parts[0].expr)})`];
+        }
         return [ind + `println(${this.tmpl(parts)})`];
       }
       case 'return':
@@ -2374,6 +2551,7 @@ class KtGen extends CGen {
     if (this.needs.has('thread')) out.push('import kotlin.concurrent.thread');
     if (this.needs.has('exit')) out.push('import kotlin.system.exitProcess');
     out.push('', ...this.typeDefs());
+    if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('kotlin'), '');
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
     return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
   }
@@ -2414,8 +2592,9 @@ class RsGen extends BaseGen {
       else {
         // Records und Listen haben keine Display-Ausgabe -> Debug-Format
         const t = P.normType(this.exprType(p.expr));
-        // Kommazahlen: {:?} schreibt 80.0 (wie der Interpreter), {} nur 80
-        f += t && (this.recordTypes.has(t) || t.endsWith('[]') || t === 'double') ? '{:?}' : '{}';
+        // Kommazahlen wie im Interpreter über fmt_num ({:?} schreibt 1e-5 und 1e16 anders)
+        if (t === 'double') { this.needs.add('fmtnum'); f += '{}'; args.push(`fmt_num(${this.x(p.expr)})`); continue; }
+        f += t && (this.recordTypes.has(t) || t.endsWith('[]')) ? '{:?}' : '{}';
         args.push(this.x(p.expr)); // this.x: Verkettung im Ausgabeteil wird zu format!
       }
     }
@@ -2739,6 +2918,7 @@ class RsGen extends BaseGen {
     }
     if (this.enumConsts.length || this.recordTypes.size) out.push('');
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
+    if (this.needs.has('fmtnum')) out.push('', this.comment(tr('gen.fmtDouble')), ...fmtHelper('rust'));
     if (this.needs.has('input')) {
       out.push('', tr('gen.rsReadLine'), 'fn read_line() -> String {',
         '    use std::io::Write;', '    std::io::stdout().flush().unwrap();', '    let mut s = String::new();',
