@@ -9,6 +9,9 @@ gekennzeichnet – sie ist noch experimentell.
 > Struktogramm lässt sich kein Code erzeugen, bis die Zeile mit `:=` oder `<-` geschrieben ist. Dateien, die seit
 > Version 0.7.0 gespeichert wurden, enthalten bereits `:=` und sind nicht betroffen.
 
+- **Neuer Hinweis: Deklaration nur in einem Zweig** (Good Practice) – `var a: double` im Fall „Q“, `a` auch im Fall
+  „Y“: Dort ist `a` nicht deklariert. Wird `a` nur in den Zweigen gebraucht, lautet der Vorschlag, es auch in diesem
+  Zweig zu deklarieren; wird es auch danach gebraucht, die Deklaration vor die Fallauswahl zu ziehen.
 - **Befehl „Struktograf: Settings“** (bzw. „Struktograf: Einstellungen“) in der Befehlspalette: öffnet die
   Einstellungen von VS Code, gefiltert auf Struktograf.
 - **Anzeige der Zuweisung wählbar:** Einstellung `struktogramm.assignmentOperator` (Abschnitt Darstellung) – wie

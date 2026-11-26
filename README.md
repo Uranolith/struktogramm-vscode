@@ -101,7 +101,9 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   - Hinweise in vier Gruppen, je einzeln abschaltbar (`struktogramm.hints.*`, Standard: alle an); die Gruppe steht
     im Hover-Fenster und als Quelle in *Probleme*:
     - **Good Practice** – Variable, Konstante, Parameter oder Rückgabewert ohne Typ (auch `var s := "Hallo"` →
-      `var s: string := "Hallo"`), Unterprogramm ohne Rückgabe ohne `: void`, Eingabe ohne Aufforderungstext
+      `var s: string := "Hallo"`), Unterprogramm ohne Rückgabe ohne `: void`, Eingabe ohne Aufforderungstext,
+      Variable nur in einem Zweig deklariert, aber in einem anderen bzw. danach verwendet (Vorschlag: auch in diesem
+      Zweig deklarieren bzw. vor der Fallauswahl/Verzweigung/Schleife)
     - **Konventionen** – Fallauswahl über eine Bedingung, Bedingungen als Fallmarken, mehrere Anweisungen in einem
       Block, leerer Schleifenrumpf, leerer Block, Struktogramm ohne Namen. Das sind übliche Konventionen aus Lehre
       und Praxis: Die DIN 66261 legt nur die Sinnbilder fest, keine Regeln für ihren Gebrauch.
