@@ -1,6 +1,9 @@
 # Änderungen
 
 ## Unveröffentlicht
+- **Hinweis „ohne Typ“ an jeder ersten Zuweisung je Weg:** Bekommt eine Variable ohne Typ in mehreren Fällen einer
+  Fallauswahl (oder Zweigen einer Verzweigung) ihren ersten Wert, erscheint der Hinweis in jedem dieser Fälle – bisher
+  nur an der ersten Stelle im Struktogramm. Spätere Zuweisungen im selben Block bekommen ihn nicht noch einmal.
 - **Robuster beim Schließen von Ansichten:** Alle Nachrichten an Struktogramm-Editor, Vorschau und Seitenleisten-
   Ansichten laufen über eine abgesicherte Funktion. Wird eine Ansicht geschlossen, während die Erweiterung noch an sie
   sendet (laufendes Programm, Debugger, Haltepunkte, Einstellungsänderung), entsteht kein Fehler „Webview is

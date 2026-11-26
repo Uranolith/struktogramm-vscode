@@ -158,7 +158,12 @@ function lintDoc(doc) {
     const uses = new Map();     // Name -> alle Pfade, an denen sie gelesen oder gesetzt wird
     const useAt = (name, path) => { if (!name) return; if (!uses.has(name)) uses.set(name, []); uses.get(name).push(path); };
     const declSites = [];       // var a: double – {name, path, line, type}
-    const setVar = (name, path) => { useAt(name, path); if (name && !assigned.has(name)) assigned.set(name, path); };
+    const sets = new Map();     // Name -> alle Pfade, an denen sie einen Wert bekommt
+    const setVar = (name, path) => {
+      useAt(name, path);
+      if (name) { if (!sets.has(name)) sets.set(name, []); sets.get(name).push(path); }
+      if (name && !assigned.has(name)) assigned.set(name, path);
+    };
     const readVar = (name, path) => { useAt(name, path); if (!reads.has(name)) reads.set(name, []); reads.get(name).push(path); };
     const typeOfValue = (expr) => {
       const t = P.normType(P.inferType(expr));
@@ -328,15 +333,8 @@ function lintDoc(doc) {
       if (reads.has(name) || loopVars.has(name) || (sig && name === sig.name) || lc(name) === 'result') continue;
       add(path, 'hint', 'unused', tr('lint.unused', name));
     }
-    // Good Practice: Variablen, Parameter und Rückgabewerte mit Typ
-    const typeName = (tp) => { const n = P.normType(tp); return n && n !== 'null' ? n : null; };
-    for (const [name, path] of assigned) {
-      if (typed.has(name) || consts.has(name) || loopVars.has(name) || known.has(name) || (sig && name === sig.name) || lc(name) === 'result') continue;
-      const guess = typeName(inf.types.get(name));
-      add(path, 'hint', 'untyped', guess ? tr('lint.untyped', name, guess) : tr('lint.untypedNoGuess', name));
-    }
-    // Deklaration nur in einem Zweig (var a: double im Fall „Q“), a auch im Fall „Y“: dort ist a nicht deklariert.
-    // Eine Deklaration gilt ab ihrer Stelle in ihrem Block und in allen darin geschachtelten Blöcken.
+    // Gilt etwas an Stelle d auch an Stelle p? Ja, wenn p im selben Block danach steht oder in einem darin
+    // geschachtelten Block (Deklarationen und erste Zuweisungen gelten ab ihrer Stelle in ihrem Block)
     const parentOf = (p) => p.slice(0, p.lastIndexOf('/'));
     const covers = (d, p) => {
       if (p === d.path) return true;
@@ -344,6 +342,17 @@ function lintDoc(doc) {
       if (!p.startsWith(seq + '/')) return false;
       return parseInt(p.slice(seq.length + 1), 10) > parseInt(d.path.slice(seq.length + 1), 10);
     };
+    // Good Practice: Variablen, Parameter und Rückgabewerte mit Typ – an jeder Stelle, an der die Variable auf ihrem
+    // Weg zum ersten Mal einen Wert bekommt (Fall 2 und Fall 3 einer Fallauswahl je einmal), nicht nur an der ersten
+    const typeName = (tp) => { const n = P.normType(tp); return n && n !== 'null' ? n : null; };
+    for (const [name] of assigned) {
+      if (typed.has(name) || consts.has(name) || loopVars.has(name) || known.has(name) || (sig && name === sig.name) || lc(name) === 'result') continue;
+      const guess = typeName(inf.types.get(name));
+      const msg = guess ? tr('lint.untyped', name, guess) : tr('lint.untypedNoGuess', name);
+      const at = [...new Set(sets.get(name) || [])];
+      for (const p of at) if (!at.some((q) => q !== p && covers({ path: q }, p))) add(p, 'hint', 'untyped', msg);
+    }
+    // Deklaration nur in einem Zweig (var a: double im Fall „Q“), a auch im Fall „Y“: dort ist a nicht deklariert.
     const reported = new Set();
     const ancestors = (path) => [...elAt.keys()].filter((q) => path.startsWith(q + '/')).sort((x, y) => y.length - x.length);
     for (const [name, paths] of uses) {
