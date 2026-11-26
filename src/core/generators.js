@@ -1447,7 +1447,7 @@ class CGen extends BaseGen {
       return ex;
     }
     const arrRaw = /^(.*?)\s*\[\s*\]$/.exec(String(t || ''));
-    if (arrRaw && this.exactType(arrRaw[1])) return this.typeName(arrRaw[1]) + '[]';
+    if (arrRaw && this.exactType(arrRaw[1])) return this.arrayType(this.typeName(arrRaw[1]));
     let n = P.normType(t) || null;
     if (!n) {
       if (this.lang === 'java' || this.lang === 'csharp') return fallback === 'var' ? 'var' : TYPE_MAP[this.lang][fallback] || fallback;
@@ -1456,11 +1456,18 @@ class CGen extends BaseGen {
     }
     if (n.endsWith('[]')) {
       const base = this.typeName(n.slice(0, -2), fallback);
-      return base + '[]';
+      return this.arrayType(base);
     }
     if (n === 'boolean' && this.lang === 'c') this.needs.add('stdbool');
     if (n === 'string' && this.lang === 'cpp') this.needs.add('string');
     return (TYPE_MAP[this.lang] && TYPE_MAP[this.lang][n]) || n;
+  }
+
+  /** Array-Typ aus dem Elementtyp: C++ std::vector (kennt seine Länge, Kopie mit =), sonst T[] */
+  arrayType(base) {
+    if (this.lang !== 'cpp') return base + '[]';
+    this.needs.add('vector');
+    return `vector<${base}>`;
   }
 
   /** Deklaration (mit/ohne Initialisierung) */
@@ -1480,7 +1487,8 @@ class CGen extends BaseGen {
     const arr = /^(.*?)(\[.*\])$/.exec(name);
     if (arr) { nm = arr[1]; }
     if (tn.endsWith('[]') && (L === 'c' || L === 'cpp')) { tn = tn.slice(0, -2); nm = nm + (arr ? arr[2] : '[]'); }
-    else if (arr && (L === 'c' || L === 'cpp')) nm = name;
+    else if (arr && L === 'cpp') return `${this.arrayType(tn)} ${arr[1]}(${arr[2].slice(1, -1)});`; // a[5] -> vector<int> a(5)
+    else if (arr && L === 'c') nm = name;
     else if (arr && (L === 'java' || L === 'csharp')) { tn = tn + '[]'; if (init == null) init = `new ${this.typeName(type)}${arr[2]}`; }
     if (L === 'c' && P.normType(type) === 'string' && this.cur && this.cur.charArrays.has(name)) { tn = 'char'; nm = name + '[256]'; this.needs.add('string'); if (init != null) return P.isStringLiteral(String(init)) ? `${tn} ${nm} = ${init};` : `${tn} ${nm}; strcpy(${name}, ${init});`; }
     let v = init;
@@ -2170,7 +2178,7 @@ class CGen extends BaseGen {
     const body = this.seq(root.children, bodyInd);
     const ret = isMain ? null : this.retType(sig);
     const rt = ret ? this.typeName(ret) : 'void';
-    const params = isMain ? [] : sig.params.map((p) => (L === 'javascript' ? p.name : `${this.typeName(p.type || p.inferredType || 'int')} ${p.name}`.replace(/^(.+?)\[\] (\w+)$/, L === 'c' || L === 'cpp' ? '$1 $2[]' : '$1[] $2')));
+    const params = isMain ? [] : sig.params.map((p) => (L === 'javascript' ? p.name : `${this.typeName(p.type || p.inferredType || 'int')}${L === 'cpp' && /^vector</.test(this.typeName(p.type || p.inferredType || 'int')) ? '&' : ''} ${p.name}`.replace(/^(.+?)\[\] (\w+)$/, L === 'c' || L === 'cpp' ? '$1 $2[]' : '$1[] $2')));
     const doc = (root.comment || []).filter((s) => s.trim()).map((s) => this.comment(s));
     const pre = L === 'java' || L === 'csharp' ? I : '';
     doc.forEach((d) => head.push(pre + d));
@@ -2294,6 +2302,7 @@ class CGen extends BaseGen {
         if (this.needs.has('stdlib')) inc.push('#include <cstdlib>');
         if (this.needs.has('stdexcept')) inc.push('#include <stdexcept>');
         if (this.needs.has('cppfinally')) inc.push('#include <functional>');
+        if (this.needs.has('vector')) inc.push('#include <vector>');
         if (this.needs.has('thread')) inc.push('#include <thread>');
         inc.push('', 'using namespace std;');
       }

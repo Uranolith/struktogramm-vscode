@@ -223,7 +223,10 @@ den Abschnitt „Grenzen“ des README.
   *Erledigt:* Lesen eines Elements aus einem Text- oder Record-Array mit `.clone()`, als Zuweisungsziel ohne.
   `return arr[0]` mit `arr: Vec<String>` übersetzt nicht („cannot move out of index“) – `.clone()` anhängen, wenn ein
   Element eines Arrays mit Nicht-Copy-Typ als Wert benutzt wird. Test: `arrays/03_string_array`.
-- [ ] **4.6 C++ einheitlich auf `std::vector`** (L, optional)
+- [x] **4.6 C++ einheitlich auf `std::vector`** (L, optional)
+  *Erledigt:* Arrays sind `vector<T>`, Parameter `vector<T>&` (Referenz wie im Interpreter), `a[5]` wird
+  `vector<int> a(5)`, `new int[n]` wird `vector<int>(n)`, `length` wird `.size()`. Damit für C++ auch 4.1, 4.2 und
+  4.4 erledigt (`copyArray` kopiert den Vector).
   Löst 4.2, 4.4 und `begin/end` auf Parametern in einem Zug; der Code ist für Lernende auch idiomatischer.
 
 ## Phase 5 – Ausdrücke und Textverkettung

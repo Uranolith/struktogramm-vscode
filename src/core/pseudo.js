@@ -434,6 +434,7 @@ const NEW_ARRAY = {
   python: (t, n) => `[${{ double: '0.0', string: '""', boolean: 'False', char: '" "' }[t] || '0'}] * ${/^\w+$/.test(n) ? n : `(${n})`}`,
   javascript: (t, n) => `new Array(${n}).fill(${{ string: '""', boolean: 'false', char: '" "' }[t] || '0'})`,
   java: (t, n) => (t === 'string' ? `java.util.Collections.nCopies(${n}, "").toArray(new String[0])` : `new ${{ boolean: 'boolean', double: 'double', char: 'char' }[t] || 'int'}[${n}]`),
+  cpp: (t, n) => `vector<${{ boolean: 'bool', double: 'double', char: 'char', string: 'string' }[t] || 'int'}>(${n})`,
   csharp: (t, n) => (t === 'string' ? `System.Linq.Enumerable.Repeat("", ${n}).ToArray()` : `new ${{ boolean: 'bool', double: 'double', char: 'char' }[t] || 'int'}[${n}]`),
 };
 
@@ -825,6 +826,7 @@ function mapToks(toks, lang, ctx) {
       } else if ((MODERN.has(lang) || NEW_ARRAY[lang]) && l === 'new' && toks[i + 1] && toks[i + 1].t === 'id' && toks[i + 2] && toks[i + 2].v === '[') {
         const c = matchClose(toks, i + 2);
         const size = joinTokens(mapToks(toks.slice(i + 3, c < 0 ? toks.length : c), lang, ctx));
+        if (lang === 'cpp' && ctx.needs) ctx.needs.add('vector');
         out.push({ t: 'id', v: MODERN.has(lang) ? modernNewArray(toks[i + 1].v, size, lang) : NEW_ARRAY[lang](normType(toks[i + 1].v), size), ws: t.ws });
         i = c < 0 ? toks.length : c;
         continue;
@@ -926,7 +928,7 @@ function mapToks(toks, lang, ctx) {
           const sz = `(int) (sizeof(${arg}) / sizeof(${arg}[0]))`;
           if (lang === 'c' && !isArr && ctx.needs) ctx.needs.add('string');
           const repl = { java: isArr ? `${arg}.length` : `${arg}.length()`, javascript: `${arg}.length`, csharp: `${arg}.Length`, python: `len(${arg})`,
-            cpp: isArr ? sz : `(int) ${arg}.size()`, c: isArr ? sz : `(int) strlen(${arg})` }[lang];
+            cpp: `(int) ${arg}.size()`, c: isArr ? sz : `(int) strlen(${arg})` }[lang]; // C++: Arrays sind std::vector
           if (repl) { out.push({ t: 'id', v: repl, ws: t.ws }); i = close; continue; }
         }
       }
