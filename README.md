@@ -90,7 +90,9 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   - **Hinweise** (gelb, „i“, jeweils mit Begründung) – Good Practice und Konventionen: Variable, Parameter oder
     Rückgabewert ohne Typ (mit Vorschlag, z. B. `var summe: int`), Eingabe ohne Aufforderungstext, Kommazahlen mit `=`
     verglichen, Fallauswahl über eine Bedingung, mehrere Anweisungen in einem Block, mögliche Endlosschleife, Wert wird
-    nie verwendet, nicht erreichbare Elemente, Variable mal Text, mal Zahl.
+    nie verwendet, nicht erreichbare Elemente, Variable mal Text, mal Zahl. Ein Hinweis erscheint an jeder Stelle, an
+    der er zutrifft: „ohne Typ“ etwa an jeder Stelle, an der eine Variable auf ihrem Weg zum ersten Mal einen Wert
+    bekommt (in jedem Fall einer Fallauswahl), aber nicht an späteren Zuweisungen im selben Block.
   - In *Probleme* trägt jede Meldung den Link **Element zeigen**: Er holt das Struktogramm nach vorn (bzw. öffnet es)
     und markiert das Element. Ein Klick auf die Zeile selbst öffnet nur das Struktogramm – die Fundstelle gibt
     VS Code an eigene Editoren nicht weiter.
