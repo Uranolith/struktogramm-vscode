@@ -2,9 +2,8 @@
 
 Struktogramm-Editor im Stil von **Structorizer**, direkt in VS Code.
 
-> **Preview.** Die Extension ist im
-> [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Uranolith.struktogramm)
-> veröffentlicht, befindet sich aber noch in aktiver Entwicklung.
+Im [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Uranolith.struktogramm) veröffentlicht.
+Seit Version 1.0 sind Schreibweise und Funktionsumfang stabil; die Änderungen stehen im [CHANGELOG](CHANGELOG.md).
 
 ## Installation
 Voraussetzung: VS Code 1.80 oder neuer. Java 11+ wird nur für die optionalen Original-Structorizer-Funktionen gebraucht.
@@ -296,7 +295,9 @@ Textverkettung mit `+` wird je Sprache umgewandelt (Python f-String, C++ `to_str
 Hilfsfunktionen mit neuem Speicher je Verkettung). Wird eine Variable von der Ganzzahl zur Kommazahl, speichert der
 Code sie als Kommazahl und wandelt sie um, solange sie eine Ganzzahl ist. Ist eine Variable mal Text, mal Zahl, lässt
 sich das in typisierten Sprachen nicht nachbilden: Die Stelle wird im Code mit ACHTUNG markiert, und *Code erzeugen*
-warnt. Sehr kleine oder große Kommazahlen (`1e-7`) schreibt jede Sprache in ihrer eigenen Exponent-Schreibweise.
+warnt. Kommazahlen gibt der erzeugte Code wie der Interpreter aus (kürzeste exakte Form, `80.0`, Exponent erst
+unter 0.000001 bzw. ab 1e21: `1e-7`); in Sprachen, deren eigene Ausgabe davon abweicht, über eine kleine
+Hilfsfunktion am Anfang des Programms.
 Bei Kotlin und Rust werden Klassen, `impl`-Blöcke, Lambdas/Closures und Ownership vereinfacht; im erzeugten
 Rust-Code werden Zeichenketten und Arrays bei Funktionsaufrufen mit `.clone()` übergeben.
 
@@ -318,7 +319,7 @@ Parallelverarbeitung im erzeugten Code:
     den Arbeitsbereich- bzw. Benutzereinstellungen von VS Code, bei *Automatisch* die Sprache der VS-Code-Oberfläche.
     Die verwendete Sprache steht am Anfang der Ausgabe; vorgeben mit `--sprache de` bzw. `--sprache en`.
   - `test/samples/edge_cases`: Grenzfälle der Code-Erzeugung (Textverkettung, große Zahlen, Runden, Schleifen,
-    Typwechsel, Umwandlungen …); offen ist nur Fall 13 (Exponent-Schreibweise sehr kleiner Kommazahlen je Sprache).
+    Typwechsel, Umwandlungen, Kommazahl-Grenzen …); alle laufen in allen acht Sprachen.
   - `test/samples/checks`: Beispiele für die Prüfungen im Editor (absichtlich fehlerhaft, vom Aufgabentest
     übersprungen).
   - Testfälle je Ordner in `inputs.json`: je Struktogramm eine Liste von Eingabefolgen (eine Zeile je `INPUT`);

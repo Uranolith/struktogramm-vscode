@@ -1,6 +1,16 @@
 # Änderungen
 
-## Unveröffentlicht
+## 1.0.0
+Erste stabile Version: Schreibweise, Prüfungen und Code-Erzeugung sind festgelegt.
+
+> **Bitte beachten – `=` ist jetzt immer der Vergleich.** Bisher wurde eine Zuweisung mit `=` (`x = 5`) beim Speichern
+> stillschweigend zu `x := 5`. Jetzt meldet die Prüfung sie als Fehler, der Interpreter weist nichts zu, und aus dem
+> Struktogramm lässt sich kein Code erzeugen, bis die Zeile mit `:=` oder `<-` geschrieben ist. Dateien, die seit
+> Version 0.7.0 gespeichert wurden, enthalten bereits `:=` und sind nicht betroffen.
+
+- **Kommazahlen in allen Sprachen wie im Interpreter:** kürzeste exakte Form, `80.0`, Exponent erst unter 0.000001
+  bzw. ab 1e21 (`1e-7`, `1e+21`) – auch in Textverkettungen. Java, Kotlin, Python und Rust bekommen dafür eine kleine
+  Hilfsfunktion (bisher z. B. Java `1.23456785E7`, Python `1e-05`); C, C++ und C# eine überarbeitete.
 - **Aufgabentest:** Kommentare im erzeugten Code in der Sprache der Erweiterung (`struktogramm.language`, bei
   *Automatisch* die VS-Code-Oberfläche); die Sprache steht am Anfang der Ausgabe, vorgeben mit `--sprache de|en`.
 - **Code nur aus fehlerfreien Struktogrammen:** *Code erzeugen* ist gesperrt, solange die Struktogramm-Datei einen
@@ -26,8 +36,8 @@
   `var s: string := "Hallo"` bzw. `const PI: double := 3.14`.
 - **Sprachauswahl:** Einstellung `struktogramm.language` (Automatisch / Deutsch / Englisch), wirkt sofort auf Editor,
   Werkzeuge, Ausführung, Prüfungen und Kommentare im erzeugten Code.
-- **Code-Erzeugung – allgemeine Korrekturen** (Grenzfälle im Aufgabentest von 79 auf 6 Fehlschläge – übrig nur
-  die Exponent-Schreibweise sehr kleiner Kommazahlen in Fall 13):
+- **Code-Erzeugung – allgemeine Korrekturen** (Grenzfälle im Aufgabentest von 79 Fehlschlägen auf keinen – alle
+  Spezialfälle laufen in allen acht Sprachen):
   - Textverkettung mit Zahlen in allen Sprachen (`"x = " + x`): Python f-String, JavaScript Template, C# und C++
     mit Umwandlung, C mit Hilfsfunktionen; eine Verkettung macht eine Zahl nicht mehr zu Text.
   - Typen aus Funktionsargumenten: Parameter eigener Unterprogramme, `int`/`trunc`/`round`-Argumente als Kommazahl.
