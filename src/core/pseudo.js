@@ -764,6 +764,13 @@ function mapToks(toks, lang, ctx) {
       const close = matchClose(toks, i);
       const r = joinTokens(mapToks(toks.slice(i + 1, close < 0 ? toks.length : close), lang, ctx));
       out.push({ ...t, ws: false }, { t: 'id', v: /^\d+$/.test(r) ? r : (SIMPLE_CHAIN.test(r) ? `${r} as usize` : `(${r}) as usize`), ws: false }, { t: 'op', v: ']', ws: false });
+      // Element eines Arrays aus Texten oder Records: Rust kann es nicht aus dem Index herausbewegen -> Kopie (Plan 4.7)
+      const arrName = out[out.length - 4];
+      if (arrName && arrName.t === 'id' && ctx.typeOf) {
+        const at = normType(ctx.typeOf(arrName.v));
+        const et = at && at.endsWith('[]') ? at.slice(0, -2) : null;
+        if (et === 'string' || (et && ctx.recordTypes && ctx.recordTypes.has(et))) out.push({ t: 'op', v: '.clone()', ws: false });
+      }
       i = close < 0 ? toks.length : close;
       continue;
     }
@@ -837,6 +844,8 @@ function mapToks(toks, lang, ctx) {
             if (lang === 'rust' && pt === 'string' && isStringLiteral(x.src)) return `String::from(${x.out})`;
             if (lang === 'rust' && x.toks.length === 1 && x.toks[0].t === 'id' && ctx.typeOf) {
               const vt = normType(ctx.typeOf(x.toks[0].v));
+              // Arrays als Referenz (wie im Interpreter, Plan 4.3), Texte als Kopie
+              if (vt && vt.endsWith('[]') && ctx.rsArrayArg) return ctx.rsArrayArg(t.v, k, x.out);
               if (vt === 'string' || (vt && vt.endsWith('[]'))) return x.out + '.clone()';
             }
             return x.out;

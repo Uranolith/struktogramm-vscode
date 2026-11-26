@@ -3075,7 +3075,8 @@ class RsGen extends BaseGen {
           this.cur.declared.add(n);
           return [ind + this.letLine(n, t, this.val(t, c.expr))];
         }
-        return [ind + `${this.x(n)} = ${this.val(t, c.expr)};`];
+        // Ziel ohne .clone() (Element eines Text-/Record-Arrays wird beim Lesen kopiert, beim Schreiben nicht)
+        return [ind + `${this.x(n).replace(/\.clone\(\)/g, '')} = ${this.val(t, c.expr)};`];
       }
       case 'input': {
         const out = [];
@@ -3217,6 +3218,50 @@ class RsGen extends BaseGen {
     return out;
   }
 
+  /**
+   * Array-Parameter, die ein Unterprogramm verändert (Element zuweisen, einlesen oder an einen verändernden Parameter
+   * weitergeben): Name -> Menge der Parameter-Indizes. Über alle Routinen, bis sich nichts mehr ändert.
+   */
+  rsMutParams() {
+    if (this._rsMut) return this._rsMut;
+    const mut = new Map();
+    const subs = this.doc.roots.filter((r) => r.rootType !== 'program');
+    for (const r of subs) mut.set(this.sigs.get(r).name, new Set());
+    const isArr = (p) => /\[\]$/.test(String(p.type || p.inferredType || ''));
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const r of subs) {
+        const sig = this.sigs.get(r), m = mut.get(sig.name);
+        const idx = new Map(sig.params.map((p, k) => [p.name, k]).filter(([n, k]) => isArr(sig.params[k])));
+        const mark = (name) => { const k = idx.get(name); if (k != null && !m.has(k)) { m.add(k); changed = true; } };
+        walk(r.children, (el) => {
+          if (el.disabled) return false;
+          for (const l of linesOf(el)) {
+            const c = P.classifyLine(l);
+            if (c.kind === 'assign') c.target.split(',').forEach((t) => { const mm = /^\s*([\p{L}_][\p{L}\p{N}_]*)\s*\[/u.exec(t); if (mm) mark(mm[1]); });
+            if (c.kind === 'input') c.vars.forEach((v) => { const mm = /^\s*([\p{L}_][\p{L}\p{N}_]*)\s*\[/u.exec(v); if (mm) mark(mm[1]); });
+            const toks = P.ptoks(l);
+            toks.forEach((t, i) => {
+              if (t.t !== 'id' || !mut.has(t.v) || !toks[i + 1] || toks[i + 1].v !== '(') return;
+              const close = matchClose(toks, i + 1);
+              require('./tokenizer').splitTop(toks.slice(i + 2, close < 0 ? toks.length : close), ',').forEach((a, k) => {
+                if (a.length === 1 && a[0].t === 'id' && mut.get(t.v).has(k)) mark(a[0].v);
+              });
+            });
+          }
+        });
+      }
+    }
+    return (this._rsMut = mut);
+  }
+
+  /** Rust: Array-Argument für Parameter k von fname – &mut a / &a für lokale Arrays, Array-Parameter unverändert */
+  rsArrayArg(fname, k, name) {
+    const isParam = this.curSig && this.curSig.params.some((p) => p.name === name);
+    if (isParam && !this.curIsMain) return name;
+    return (this.rsMutParams().get(fname) || new Set()).has(k) ? `&mut ${name}` : `&${name}`;
+  }
+
   /** TRY: Rust hat keine Ausnahmen – throw ist panic!, abgefangen mit catch_unwind (Hilfsfunktion try_block) */
   tryEl(el, ind) {
     const I = this.I, I2 = I + I, v = this.catchVar(el);
@@ -3315,7 +3360,13 @@ class RsGen extends BaseGen {
     for (const n of info.hoist) info.declared.add(n);
     const body = this.seq(root.children, I);
     const ret = isMain ? null : this.retType(sig);
-    const params = isMain ? [] : sig.params.map((p) => `${assigned.has(p.name) ? 'mut ' : ''}${p.name}: ${this.typeName(p.type || p.inferredType || 'int')}`);
+    // Arrays als Referenz wie im Interpreter (Plan 4.3): &mut Vec, wenn das Unterprogramm das Array verändert, sonst &Vec
+    const mutArr = this.rsMutParams().get(sig.name) || new Set();
+    const params = isMain ? [] : sig.params.map((p, k) => {
+      const tn = this.typeName(p.type || p.inferredType || 'int');
+      if (/^Vec</.test(tn)) return `${p.name}: ${mutArr.has(k) ? '&mut ' : '&'}${tn}`;
+      return `${assigned.has(p.name) ? 'mut ' : ''}${p.name}: ${tn}`;
+    });
     const doc = (root.comment || []).filter((s) => s.trim()).map((s) => '/// ' + s);
     const head = isMain ? 'fn main() {' : `fn ${sig.name}(${params.join(', ')})${ret ? ' -> ' + this.typeName(ret) : ''} {`;
     // Endet die Funktion mit try, sieht der Compiler nicht, dass jeder Weg mit return endet: Standardwert als Abschluss

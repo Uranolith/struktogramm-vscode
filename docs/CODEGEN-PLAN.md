@@ -208,7 +208,10 @@ den Abschnitt „Grenzen“ des README.
   `sizeof(f)/sizeof(f[0])` auf einem Parameter misst den Zeiger: still falsche Ergebnisse. Lösung: zusätzlicher
   Parameter `int f_len` bei jeder Funktion mit Array-Parameter und `length(f)` → `f_len`. Alternative:
   `struct { int* data; int len; }`. Test: `s37_array_param_len`.
-- [ ] **4.3 Rust: Arrays als Referenz** (M)
+- [x] **4.3 Rust: Arrays als Referenz** (M)
+  *Erledigt:* `&mut Vec<T>`, wenn das Unterprogramm das Array verändert (Element zuweisen, einlesen, an einen
+  verändernden Parameter weitergeben – Fixpunkt über alle Routinen, `rsMutParams`), sonst `&Vec<T>`; Aufruf mit
+  `&mut a`/`&a`, Array-Parameter werden unverändert weitergereicht.
   Umsetzung von 1.3: `&mut Vec<T>` bzw. `&[T]`, je nachdem ob das Unterprogramm schreibt. Test:
   `s37_array_param_len`.
 - [ ] **4.4 `copyArray`** (S)
@@ -216,7 +219,8 @@ den Abschnitt „Grenzen“ des README.
   `vector`). C fehlt ganz, C# fehlt `using System.Linq`. Test: `d03_copyarray`.
 - [ ] **4.5 Text-Arrays in C** (S)
   Parameter `char*[] arr` ist ungültig, richtig ist `char* arr[]`. Test: `s29_string_array`.
-- [ ] **4.7 Rust: Elemente aus Text-Arrays** (S)
+- [x] **4.7 Rust: Elemente aus Text-Arrays** (S)
+  *Erledigt:* Lesen eines Elements aus einem Text- oder Record-Array mit `.clone()`, als Zuweisungsziel ohne.
   `return arr[0]` mit `arr: Vec<String>` übersetzt nicht („cannot move out of index“) – `.clone()` anhängen, wenn ein
   Element eines Arrays mit Nicht-Copy-Typ als Wert benutzt wird. Test: `arrays/03_string_array`.
 - [ ] **4.6 C++ einheitlich auf `std::vector`** (L, optional)
