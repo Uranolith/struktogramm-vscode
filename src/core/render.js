@@ -191,6 +191,29 @@ function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/**
+ * Erstes Zuweisungszeichen (:= oder <-) einer Zuweisung, Deklaration oder Zählschleife als op anzeigen.
+ * Vergleiche, Texte und andere Zeilen bleiben unverändert; beide Zeichen sind gleich lang.
+ */
+function assignAs(line, op, type) {
+  const P = require('./pseudo');
+  if (type !== 'for') {
+    const c = P.classifyLine(line);
+    if (c.kind !== 'assign' && c.kind !== 'decl') return line;
+  }
+  let toks;
+  try { toks = require('./tokenizer').tokenize(line, 'pseudo'); } catch (e) { return line; }
+  let depth = 0;
+  for (const t of toks) {
+    if (t.t === 'op' && (t.v === '(' || t.v === '[' || t.v === '{')) depth++;
+    else if (t.t === 'op' && (t.v === ')' || t.v === ']' || t.v === '}')) depth--;
+    else if (depth === 0 && t.t === 'op' && (t.v === ':=' || t.v === '<-')) {
+      return t.v === op ? line : line.slice(0, t.start) + op + line.slice(t.end);
+    }
+  }
+  return line;
+}
+
 class Renderer {
   constructor(opts = {}) {
     this.opts = { trueLabel: require('../i18n').t('core.trueLabel'), falseLabel: require('../i18n').t('core.falseLabel'), pretty: true, highlight: true, theme: 'light', ...opts };
@@ -199,8 +222,11 @@ class Renderer {
     this.cache = new Map();
   }
 
-  disp(lines) {
-    const arr = (lines && lines.length ? lines : ['']).map((l) => String(l));
+  disp(lines, type) {
+    let arr = (lines && lines.length ? lines : ['']).map((l) => String(l));
+    // Zuweisung einheitlich anzeigen (Einstellung struktogramm.assignmentOperator) – nur die Anzeige, nicht die Datei
+    const op = this.opts.assign;
+    if ((op === ':=' || op === '<-') && ['instruction', 'call', 'jump', 'for'].includes(type)) arr = arr.map((l) => assignAs(l, op, type));
     if (!this.opts.pretty) return arr;
     return arr.map((l) => {
       // Operatoren außerhalb von Strings verschönern
@@ -247,7 +273,7 @@ class Renderer {
   size(el) {
     if (this.cache.has(el)) return this.cache.get(el);
     let s;
-    const lines = this.disp(el.text);
+    const lines = this.disp(el.text, el.type);
     switch (el.type) {
       case 'instruction': s = { w: this.textW(lines), h: this.textH(lines) }; break;
       case 'call': s = { w: this.textW(lines) + 2 * CALL_INSET, h: this.textH(lines) }; break;
@@ -372,7 +398,7 @@ class Renderer {
   draw(el, x, y, w, path, out, hh) {
     const s = this.size(el);
     const h = hh > s.h ? hh : s.h;
-    const lines = this.disp(el.text);
+    const lines = this.disp(el.text, el.type);
     out.push(this.open(el, path));
     const tcls = el.disabled ? 'muted' : '';
     switch (el.type) {

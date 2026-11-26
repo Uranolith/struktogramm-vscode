@@ -77,6 +77,7 @@ function settings() {
     trueLabel: c.get('trueLabel') || t('core.trueLabel'),
     falseLabel: c.get('falseLabel') || t('core.falseLabel'),
     pretty: c.get('prettyOperators', true),
+    assign: c.get('assignmentOperator', 'asWritten'),
     highlight: c.get('highlightKeywords', true),
   };
 }

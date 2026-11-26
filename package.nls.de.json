@@ -86,5 +86,9 @@
   "config.group.display": "Darstellung",
   "config.group.checks": "Prüfungen",
   "config.group.code": "Code erzeugen und einlesen",
-  "config.group.structorizer": "Structorizer"
+  "config.group.structorizer": "Structorizer",
+  "config.assignmentOperator": "Wie Zuweisungen im Struktogramm angezeigt werden: *wie geschrieben*, immer als `:=` oder immer als `<-` (mit *Operatoren hübsch darstellen* als `←`). Ändert nur die Anzeige (auch beim Export als Bild), nicht die Datei; beide Schreibweisen sind gültig.",
+  "config.assignmentOperator.enum0": "Wie geschrieben",
+  "config.assignmentOperator.enum1": "Immer := (x := 5)",
+  "config.assignmentOperator.enum2": "Immer <- (x <- 5, bzw. x ← 5)"
 }
