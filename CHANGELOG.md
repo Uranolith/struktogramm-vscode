@@ -1,13 +1,23 @@
 # Änderungen
 
 ## 1.0.0
-Erste stabile Version: Schreibweise, Prüfungen und Code-Erzeugung sind festgelegt.
+Schreibweise, Prüfungen und Code-Erzeugung sind festgelegt. Die Extension bleibt als **Preview**
+gekennzeichnet – sie ist noch experimentell.
 
 > **Bitte beachten – `=` ist jetzt immer der Vergleich.** Bisher wurde eine Zuweisung mit `=` (`x = 5`) beim Speichern
 > stillschweigend zu `x := 5`. Jetzt meldet die Prüfung sie als Fehler, der Interpreter weist nichts zu, und aus dem
 > Struktogramm lässt sich kein Code erzeugen, bis die Zeile mit `:=` oder `<-` geschrieben ist. Dateien, die seit
 > Version 0.7.0 gespeichert wurden, enthalten bereits `:=` und sind nicht betroffen.
 
+- **Eingaben wie in normalem Code:** Der Interpreter wandelt ein Komma nicht mehr in einen Punkt um. `3,5` für eine
+  Kommazahl meldet „‚3,5‘ ist keine gültige Zahl – meintest du 3.5?“; ohne Typ bleibt `3,5` Text. Nur vollständige
+  Zahlen gelten (`3a` ist keine Zahl, `3.5` keine ganze Zahl) – auch bei `float()`, `double()`, `int()`,
+  `strtoint` und `strtofloat`.
+- **Behoben:** Eine ungültige Eingabe für eine `double`- oder `int`-Variable (z. B. Buchstaben) zeigte statt der
+  Meldung den internen Fehler „Cannot access 'tr' before initialization“.
+- **Behoben:** Eine Deklaration in einer Verzweigung, Fallauswahl oder Schleife (`var a: double` im ersten Zweig, `a`
+  auch im zweiten) galt im erzeugten Code nur in diesem Block. Sie steht jetzt am Anfang der Routine wie im
+  Interpreter; an der Stelle bleibt die Zuweisung des Anfangswerts.
 - **Kommazahlen in allen Sprachen wie im Interpreter:** kürzeste exakte Form, `80.0`, Exponent erst unter 0.000001
   bzw. ab 1e21 (`1e-7`, `1e+21`) – auch in Textverkettungen. Java, Kotlin, Python und Rust bekommen dafür eine kleine
   Hilfsfunktion (bisher z. B. Java `1.23456785E7`, Python `1e-05`); C, C++ und C# eine überarbeitete.

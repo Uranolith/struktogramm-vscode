@@ -2,8 +2,10 @@
 
 Struktogramm-Editor im Stil von **Structorizer**, direkt in VS Code.
 
-Im [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Uranolith.struktogramm) veröffentlicht.
-Seit Version 1.0 sind Schreibweise und Funktionsumfang stabil; die Änderungen stehen im [CHANGELOG](CHANGELOG.md).
+> **Preview.** Die Extension ist im
+> [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Uranolith.struktogramm)
+> veröffentlicht, ist aber noch experimentell und in aktiver Entwicklung. Die Änderungen stehen im
+> [CHANGELOG](CHANGELOG.md).
 
 ## Installation
 Voraussetzung: VS Code 1.80 oder neuer. Java 11+ wird nur für die optionalen Original-Structorizer-Funktionen gebraucht.
@@ -51,7 +53,8 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   Element ist markiert und bleibt im Bild, Fehler werden am Element rot markiert. Unterprogramme und Rekursion
   werden unterstützt; funktioniert auch in der Live-Vorschau von Quelltext.
   - **Konsole** mit Ein- und Ausgabe (bei `INPUT` steht der Cursor direkt im Eingabefeld), daneben die
-    Turtleizer-Zeichnung.
+    Turtleizer-Zeichnung. Eingaben werden wie in normalem Code gelesen: Kommazahlen mit Punkt (`3.5`); `3,5` für eine
+    Kommazahl meldet „keine gültige Zahl – meintest du 3.5?“, und nur vollständige Zahlen gelten (`3a` ist keine Zahl).
   - Reiter **Variablen**: laufende Aufrufe und darunter alle abgeschlossenen Aufrufe mit Endzustand und
     Rückgabewert; mehrfache Aufrufe sind nummeriert (`summe #1`, `summe #2` …).
   - Reiter **Aufrufe**: Aufrufstapel und Aufrufverlauf als Baum mit Argumenten und Rückgabewerten; ein Klick

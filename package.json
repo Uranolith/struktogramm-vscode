@@ -4,6 +4,7 @@
   "description": "%description%",
   "version": "1.0.0",
   "publisher": "Uranolith",
+  "preview": true,
   "icon": "media/icon.png",
   "galleryBanner": {
     "color": "#173a8c",
