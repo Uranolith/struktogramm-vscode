@@ -226,6 +226,15 @@ function widenType(a, b) {
   return a;
 }
 
+/**
+ * Schleifenende „n - 1“: Taugt n als eigenes Ende (i < n bzw. until n)? Nicht leer (Literal -1) und nicht auf einen
+ * Operator endend („a * -1“ wäre sonst „a *“). Ein Faktor vor dem Minus (2 * n - 1) bindet stärker – das ist korrekt.
+ */
+function endBase(s) {
+  const t = String(s || '').trim();
+  return !!t && !/[+\-*/%(,]$/.test(t) && !/\b(div|mod|and|or|not)$/i.test(t);
+}
+
 function linesOf(el) {
   return (el.text || []).map((l) => String(l)).filter((l) => l.trim());
 }
@@ -1926,7 +1935,9 @@ class CGen extends BaseGen {
       const abs = neg ? step.slice(1).replace(/^\((.*)\)$/, '$1') : step;
       let cmp = neg ? '>=' : '<=';
       let end = f.end;
-      const m = /^(.*?)\s*([+-])\s*1$/.exec(end);
+      // n - 1 -> i < n; nicht für das Literal -1 selbst und nicht nach einem Operator (sonst „i < ;“, Fund des Zufallstests)
+      const m0 = /^(.*?)\s*([+-])\s*1$/.exec(end);
+      const m = m0 && endBase(m0[1]) ? m0 : null;
       if (m && !neg && m[2] === '-' && !/[<>=]/.test(m[1])) { cmp = '<'; end = m[1]; }
       else if (m && neg && m[2] === '+' && !/[<>=]/.test(m[1])) { cmp = '>'; end = m[1]; }
       else if (/^-?\d+$/.test(end) && !neg) { /* bleibt */ }
@@ -3063,7 +3074,7 @@ class KtGen extends CGen {
     let range;
     if (!neg) {
       const m = /^(.*?)\s*-\s*1$/.exec(f.end);
-      range = m && !/[<>=]/.test(m[1]) ? `${start} until ${this.x(m[1])}` : `${start}..${this.x(f.end)}`;
+      range = m && endBase(m[1]) && !/[<>=]/.test(m[1]) ? `${start} until ${this.x(m[1])}` : `${start}..${this.x(f.end)}`;
       if (step !== '1') range += ` step ${this.x(step)}`;
     } else {
       range = `${start} downTo ${this.x(f.end)}` + (abs !== '1' ? ` step ${this.x(abs)}` : '');
@@ -3440,7 +3451,7 @@ class RsGen extends BaseGen {
     let range;
     if (!neg) {
       const m = /^(.*?)\s*-\s*1$/.exec(f.end);
-      range = m && !/[<>=]/.test(m[1]) ? `${start}..${this.x(m[1])}` : `${start}..=${this.x(f.end)}`;
+      range = m && endBase(m[1]) && !/[<>=]/.test(m[1]) ? `${start}..${this.x(m[1])}` : `${start}..=${this.x(f.end)}`;
       if (step !== '1') range = `(${range}).step_by(${usize(this.x(step))})`;
     } else {
       range = `(${this.x(f.end)}..=${start}).rev()` + (abs !== '1' ? `.step_by(${usize(this.x(abs))})` : '');

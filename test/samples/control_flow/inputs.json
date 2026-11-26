@@ -9,5 +9,6 @@
   "07_bool_logic.nsd": [[]],
   "08_loop_vars.nsd": [[3], [1]],
   "09_disabled.nsd": [[]],
-  "10_same_loop_var.nsd": [[15], [4]]
+  "10_same_loop_var.nsd": [[15], [4]],
+  "11_for_bounds.nsd": [[]]
 }
