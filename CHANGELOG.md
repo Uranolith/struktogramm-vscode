@@ -1,6 +1,6 @@
 # Änderungen
 
-## Unveröffentlicht
+## 1.0.2
 - **Hinweis „ohne Typ“ an jeder ersten Zuweisung je Weg:** Bekommt eine Variable ohne Typ in mehreren Fällen einer
   Fallauswahl (oder Zweigen einer Verzweigung) ihren ersten Wert, erscheint der Hinweis in jedem dieser Fälle – bisher
   nur an der ersten Stelle im Struktogramm. Spätere Zuweisungen im selben Block bekommen ihn nicht noch einmal.
