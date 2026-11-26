@@ -74,7 +74,7 @@
   "config.checks.enum0": "Fehler und Hinweise anzeigen",
   "config.checks.enum1": "Nur Fehler anzeigen",
   "config.checks.enum2": "Keine Prüfungen",
-  "config.hints.bestPractice": "Hinweise **Good Practice** (gelb) anzeigen: Variable, Konstante, Parameter oder Rückgabewert ohne Typ, Unterprogramm ohne Rückgabe ohne `: void`, Eingabe ohne Aufforderungstext. Fehler werden immer angezeigt.",
+  "config.hints.bestPractice": "Hinweise **Good Practice** (gelb) anzeigen: Variable, Konstante, Parameter oder Rückgabewert ohne Typ, Unterprogramm ohne Rückgabe ohne `: void`, Eingabe ohne Aufforderungstext, Variable nur in einem anderen Zweig deklariert. Fehler werden immer angezeigt.",
   "config.hints.conventions": "Hinweise **Konventionen** (gelb) anzeigen: Fallauswahl über eine Bedingung, Bedingungen als Fallmarken, mehrere Anweisungen in einem Block, leerer Schleifenrumpf, leerer Block, Struktogramm ohne Namen. Übliche Konventionen aus Lehre und Praxis – die DIN 66261 legt nur die Sinnbilder fest, keine solchen Regeln.",
   "config.hints.confusion": "Hinweise **Missverständlich** (gelb) anzeigen – funktioniert, verleitet aber zu Irrtümern: „sonst“-Zweig mit einer Bedingung beschriftet, Variable mal Text mal Zahl, Kommazahlen mit `=` verglichen, Wert wird nie verwendet.",
   "config.hints.logic": "Hinweise **Mögliche Logikfehler** (gelb) anzeigen: Endlosschleife ohne Ausstieg, Schleifenbedingung ändert sich nie, nicht erreichbares Element.",

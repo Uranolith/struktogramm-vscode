@@ -36,7 +36,7 @@ const LOOPS = new Set(['for', 'while', 'repeat', 'forever']);
  */
 const CATEGORIES = ['bestPractice', 'conventions', 'confusion', 'logic'];
 const CATEGORY = {
-  untyped: 'bestPractice', untypedParam: 'bestPractice', untypedReturn: 'bestPractice', untypedVoid: 'bestPractice', noPrompt: 'bestPractice',
+  untyped: 'bestPractice', untypedParam: 'bestPractice', untypedReturn: 'bestPractice', untypedVoid: 'bestPractice', declScope: 'bestPractice', noPrompt: 'bestPractice',
   caseBool: 'conventions', caseCond: 'conventions', multiLine: 'conventions', emptyLoop: 'conventions', emptyBlock: 'conventions', noName: 'conventions',
   caseElseCond: 'confusion', typeMix: 'confusion', floatEq: 'confusion', unused: 'confusion',
   endless: 'logic', condUnchanged: 'logic', unreachable: 'logic',
@@ -155,8 +155,11 @@ function lintDoc(doc) {
     const known = new Set([...(sig ? sig.params.map((p) => p.name) : []), ...shared]);
     if (sig && sig.name && root.rootType !== 'program') known.add(sig.name); // Pascal-Stil: Funktionsname := Wert
     const loopVars = new Set();
-    const setVar = (name, path) => { if (name && !assigned.has(name)) assigned.set(name, path); };
-    const readVar = (name, path) => { if (!reads.has(name)) reads.set(name, []); reads.get(name).push(path); };
+    const uses = new Map();     // Name -> alle Pfade, an denen sie gelesen oder gesetzt wird
+    const useAt = (name, path) => { if (!name) return; if (!uses.has(name)) uses.set(name, []); uses.get(name).push(path); };
+    const declSites = [];       // var a: double – {name, path, line, type}
+    const setVar = (name, path) => { useAt(name, path); if (name && !assigned.has(name)) assigned.set(name, path); };
+    const readVar = (name, path) => { useAt(name, path); if (!reads.has(name)) reads.set(name, []); reads.get(name).push(path); };
     const typeOfValue = (expr) => {
       const t = P.normType(P.inferType(expr));
       return t === 'string' ? 'string' : t === 'int' || t === 'double' ? 'number' : null;
@@ -181,7 +184,9 @@ function lintDoc(doc) {
       return r;
     };
 
+    const elAt = new Map(); // Pfad -> Element (für den Gültigkeitsbereich von Deklarationen)
     walkSeq(root.children || [], `${rpath}/children`, (el, path, ctx, seq, i) => {
+      elAt.set(path, el);
       if (el.disabled) return false;
       const lines = linesOf(el);
       // nicht erreichbar: davor steht in derselben Folge exit/return/leave/throw
@@ -215,6 +220,7 @@ function lintDoc(doc) {
             case 'decl':
               c.decls.forEach((d) => {
                 known.add(d.name);
+                if (!c.isConst) declSites.push({ name: d.name, path, line: line.trim() });
                 if (c.type) typed.add(d.name);
                 else if (!d.suffix) untypedDecls.push({ name: d.name, path, line, init: d.init, isConst: c.isConst });
                 if (c.isConst) consts.add(d.name);
@@ -328,6 +334,39 @@ function lintDoc(doc) {
       if (typed.has(name) || consts.has(name) || loopVars.has(name) || known.has(name) || (sig && name === sig.name) || lc(name) === 'result') continue;
       const guess = typeName(inf.types.get(name));
       add(path, 'hint', 'untyped', guess ? tr('lint.untyped', name, guess) : tr('lint.untypedNoGuess', name));
+    }
+    // Deklaration nur in einem Zweig (var a: double im Fall „Q“), a auch im Fall „Y“: dort ist a nicht deklariert.
+    // Eine Deklaration gilt ab ihrer Stelle in ihrem Block und in allen darin geschachtelten Blöcken.
+    const parentOf = (p) => p.slice(0, p.lastIndexOf('/'));
+    const covers = (d, p) => {
+      if (p === d.path) return true;
+      const seq = parentOf(d.path);
+      if (!p.startsWith(seq + '/')) return false;
+      return parseInt(p.slice(seq.length + 1), 10) > parseInt(d.path.slice(seq.length + 1), 10);
+    };
+    const reported = new Set();
+    const ancestors = (path) => [...elAt.keys()].filter((q) => path.startsWith(q + '/')).sort((x, y) => y.length - x.length);
+    for (const [name, paths] of uses) {
+      const ds = declSites.filter((d) => d.name === name);
+      if (!ds.length || ds.some((d) => parentOf(d.path) === `${rpath}/children`)) continue; // keine bzw. oben deklariert
+      for (const p of paths) {
+        if (ds.some((d) => covers(d, p))) continue;
+        const d = ds[0];
+        // Element um die Deklaration, das auch die Verwendung betrifft: enthält sie (anderer Zweig) oder steht im selben Block
+        const anc = ancestors(d.path);
+        const E = anc.find((q) => p.startsWith(q + '/')) || anc.find((q) => p.startsWith(parentOf(q) + '/'));
+        if (!E) continue;
+        const inside = p.startsWith(E + '/');
+        const child = inside ? [...elAt.keys()].filter((q) => q.startsWith(E + '/') && (p === q || p.startsWith(q + '/'))).sort((x, y) => x.length - y.length)[0] : null;
+        const key = `${name}|${inside && child ? parentOf(child) : 'außen:' + E}`; // je Zweig nur einmal
+        if (reported.has(key)) continue;
+        reported.add(key);
+        const el = elAt.get(E);
+        const what = tr(`lint.elKind.${el.type}`, String((el.text || [])[0] || '').trim());
+        // auch außerhalb des Elements verwendet -> vor das Element; sonst reicht die Deklaration in jedem Zweig
+        const outside = paths.some((q) => q !== E && !q.startsWith(E + '/'));
+        add(p, 'hint', 'declScope', outside ? tr('lint.declScopeBefore', name, d.line, what) : tr('lint.declScopeBranch', name, d.line, what));
+      }
     }
     // var s := "Hallo" bzw. const PI := 3.14 ist deklariert, der Typ aber nur aus dem Wert erschlossen: Typ angeben
     for (const u of untypedDecls) {
