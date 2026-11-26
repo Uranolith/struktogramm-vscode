@@ -350,6 +350,9 @@ den Abschnitt „Grenzen“ des README.
   (`copy(s + "ab", 1, 3)` in C, `f("n" + a)` in Python). `div` fiel in den festen Tests nicht auf, weil `.nsd`-Dateien
   beim Speichern `div` zu `/` normalisieren – aus dem offenen Editor kommt es aber an. Test
   `expressions/13_concat_in_args`.
+  Ein Lauf über 150 Seeds (5000–5149) fand außerdem `for i := -1 to -1` → `i < ;` in C, C++, JavaScript, Kotlin
+  (`until`) und Rust (`..`): Die Vereinfachung „Ende `n - 1` → `i < n`“ hielt das Literal `-1` für „etwas minus 1“.
+  Test `control_flow/11_for_bounds`. Java, C# und Kotlin: 20 Seeds (9000–9019) ohne Befund.
   Ein Generator für zufällige, gültige Struktogramme beginnt mit einer kleinen Teilmenge und wächst schrittweise:
   - Zuweisungen, Ausgaben, `if`, `while`, `for`
   - danach `case`, `repeat`, `leave`/`continue`
