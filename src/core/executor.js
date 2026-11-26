@@ -10,6 +10,25 @@ const P = require('./pseudo');
 const { splitTop, joinTokens, matchClose } = require('./tokenizer');
 const { t: tr } = require('../i18n');
 
+/*
+ * Text -> Zahl wie in normalem Code: nur vollständige Zahlen mit Punkt („3a“ und „3,5“ sind keine Zahl).
+ * Bei einem Komma statt Punkt nennt die Meldung die gemeinte Zahl („meintest du 3.5?“) – umgewandelt wird nicht.
+ */
+const INT_RE = /^[+-]?\d+$/;
+const NUM_RE = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+function strictNumber(s, path) {
+  const v = String(s).trim();
+  if (NUM_RE.test(v)) return parseFloat(v);
+  const dot = v.replace(',', '.');
+  if (v.includes(',') && NUM_RE.test(dot)) throw new ExecError(tr('exec.commaNumber', s, dot), path);
+  throw new ExecError(tr('exec.notNumber', s), path);
+}
+function strictInt(s, path) {
+  const v = String(s).trim();
+  if (INT_RE.test(v)) return parseInt(v, 10);
+  throw new ExecError(tr('exec.notInt', s), path);
+}
+
 class ExecError extends Error {
   constructor(msg, path) { super(msg); this.path = path; }
 }
@@ -783,15 +802,16 @@ class Interpreter {
 
   convertInput(raw, t) {
     const s = raw == null ? '' : String(raw);
-    if (t === 'int') { const n = parseInt(s, 10); if (isNaN(n)) throw new ExecError(tr('exec.notInt', s)); return n; }
-    if (t === 'double') { const n = parseFloat(s.replace(',', '.')); if (isNaN(n)) throw new ExecError(tr('exec.notNumber', s)); return new Float(n); }
-    if (t === 'boolean') return /^(true|wahr|ja|1)$/i.test(s.trim());
+    // (nicht „tr“ nennen: das ist die Übersetzungsfunktion für die Fehlermeldungen)
+    const v = s.trim();
+    if (t === 'int') return strictInt(s);
+    if (t === 'double') return new Float(strictNumber(s));
+    if (t === 'boolean') return /^(true|wahr|ja|1)$/i.test(v);
     if (t === 'string' || t === 'char') return s;
-    // ohne Typ: wie Structorizer – Zahl, wenn es wie eine Zahl aussieht
-    const tr = s.trim();
-    if (/^[+-]?\d+$/.test(tr)) return parseInt(tr, 10);
-    if (/^[+-]?(\d+[.,]\d*|\d*[.,]\d+)([eE][+-]?\d+)?$/.test(tr)) return new Float(parseFloat(tr.replace(',', '.')));
-    if (/^(true|false)$/i.test(tr)) return tr.toLowerCase() === 'true';
+    // ohne Typ: wie Structorizer – Zahl, wenn es wie eine Zahl aussieht (3,5 mit Komma bleibt Text)
+    if (INT_RE.test(v)) return parseInt(v, 10);
+    if (/^[+-]?(\d+\.\d*|\d*\.\d+)([eE][+-]?\d+)?$/.test(v)) return new Float(parseFloat(v));
+    if (/^(true|false)$/i.test(v)) return v.toLowerCase() === 'true';
     return s;
   }
 
@@ -1050,17 +1070,15 @@ class Interpreter {
       case 'ceil': return f(Math.ceil(a[0]));
       case 'round': return Math.round(a[0]);
       case 'trunc': case 'int': {
-        if (typeof a[0] === 'string') { const n = parseInt(a[0], 10); if (isNaN(n)) throw new ExecError(tr('exec.notInt', a[0]), path); return n; }
+        if (typeof a[0] === 'string') return strictInt(a[0], path);
         return Math.trunc(a[0]);
       }
       case 'float': case 'double': case 'real': {
-        const n = typeof a[0] === 'string' ? parseFloat(a[0].replace(',', '.')) : a[0];
-        if (isNaN(n)) throw new ExecError(tr('exec.notNumber', a[0]), path);
-        return f(n);
+        return f(typeof a[0] === 'string' ? strictNumber(a[0], path) : a[0]);
       }
       case 'str': case 'tostring': case 'inttostr': case 'floattostr': return fmt(args[0]);
-      case 'strtoint': return parseInt(a[0], 10);
-      case 'strtofloat': return f(parseFloat(String(a[0]).replace(',', '.')));
+      case 'strtoint': return strictInt(String(a[0]), path);
+      case 'strtofloat': return f(strictNumber(String(a[0]), path));
       case 'chr': return String.fromCharCode(a[0]);
       case 'ord': return String(a[0]).charCodeAt(0);
       case 'length': case 'len': return (typeof a[0] === 'string' || Array.isArray(a[0])) ? a[0].length : 0;

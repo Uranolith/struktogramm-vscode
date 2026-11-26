@@ -70,6 +70,7 @@
  "exec.notArrayTarget": "“{0}”: not an array",
  "exec.notInt": "“{0}” is not an integer",
  "exec.notList": "“{0}” is not a list/array",
+ "exec.commaNumber": "“{0}” is not a valid number – did you mean {1}?",
  "exec.notNumber": "“{0}” is not a number",
  "exec.paramPrompt": "Parameter {0}:",
  "exec.procLine": "{0}() is a procedure and must stand alone on a line, e.g. inc(x)",

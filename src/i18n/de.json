@@ -70,6 +70,7 @@
  "exec.notArrayTarget": "„{0}“: kein Array",
  "exec.notInt": "„{0}“ ist keine ganze Zahl",
  "exec.notList": "„{0}“ ist keine Liste/kein Array",
+ "exec.commaNumber": "„{0}“ ist keine gültige Zahl – meintest du {1}?",
  "exec.notNumber": "„{0}“ ist keine Zahl",
  "exec.paramPrompt": "Parameter {0}:",
  "exec.procLine": "{0}() ist eine Prozedur und muss allein in einer Zeile stehen, z.B. inc(x)",
