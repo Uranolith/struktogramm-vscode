@@ -90,5 +90,6 @@
   "config.assignmentOperator": "How assignments are shown in the structogram: *as written*, always as `:=` or always as `<-` (shown as `←` with *pretty operators*). Changes only the display (also in image exports), not the file; both notations are valid.",
   "config.assignmentOperator.enum0": "As written",
   "config.assignmentOperator.enum1": "Always := (x := 5)",
-  "config.assignmentOperator.enum2": "Always <- (x <- 5, or x ← 5)"
+  "config.assignmentOperator.enum2": "Always <- (x <- 5, or x ← 5)",
+  "cmd.openSettings": "Settings"
 }

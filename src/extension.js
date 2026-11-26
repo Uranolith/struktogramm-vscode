@@ -833,6 +833,8 @@ function activate(context) {
     vscode.commands.registerCommand('struktogramm.fromCodeStructorizer', (uri) => fromCode(uri, 'structorizer')),
     vscode.commands.registerCommand('struktogramm.toCode', (uri) => toCode(uri, provider)),
     vscode.commands.registerCommand('struktogramm.newFile', (uri) => newFile(uri)),
+    // Struktograf: Einstellungen – die Einstellungen von VS Code, gefiltert auf diese Erweiterung
+    vscode.commands.registerCommand('struktogramm.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)),
     vscode.commands.registerCommand('struktogramm.preview', () => {
       const ed = vscode.window.activeTextEditor;
       if (!ed || !supportedLanguage(ed.document.languageId, ed.document.fileName)) { vscode.window.showWarningMessage(t('ext.previewLangs')); return; }

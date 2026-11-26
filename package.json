@@ -269,6 +269,12 @@
         "title": "%cmd.runNoDebug%",
         "category": "%category%",
         "icon": "$(play)"
+      },
+      {
+        "command": "struktogramm.openSettings",
+        "title": "%cmd.openSettings%",
+        "category": "%category%",
+        "icon": "$(gear)"
       }
     ],
     "icons": {
