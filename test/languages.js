@@ -17,6 +17,10 @@ if (process.platform === 'win32') {
 }
 // Ausgabe als UTF-8 wie in einem UTF-8-Terminal (sonst schreiben Python und Java in eine Pipe Windows-1252)
 const env = { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1', PYTHONIOENCODING: 'utf-8' };
+// Farben nur für das Protokoll des Testlaufs: Node färbte sonst in den getesteten Programmen jede Zahl bei
+// console.log ein (FORCE_COLOR in der CI)
+delete env.FORCE_COLOR;
+env.NO_COLOR = '1';
 const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
 env[pathKey] = [...extra, env[pathKey]].join(path.delimiter);
 
