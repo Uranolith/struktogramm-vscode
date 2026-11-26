@@ -459,6 +459,8 @@ async function toCodeFromModel(model, baseName, srcUri) {
     languageId = TARGETS[pick.id].languageId;
     const mix = warnings.filter((w) => w.kind === 'typeMix').map((w) => `„${w.name}“`);
     if (mix.length) vscode.window.showWarningMessage(t('ext.typeMix', mix.join(', '), TARGETS[pick.id].label));
+    const bad = warnings.filter((w) => w.kind === 'untranslatable').map((w) => w.name);
+    if (bad.length) vscode.window.showWarningMessage(t('ext.untranslatable', bad.join(', '), TARGETS[pick.id].label));
   }
   let doc;
   try { doc = await vscode.workspace.openTextDocument({ language: languageId, content: code }); }

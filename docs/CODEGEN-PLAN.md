@@ -353,7 +353,12 @@ den Abschnitt „Grenzen“ des README.
 
 ## Phase 9 – Abschluss
 
-- [ ] **9.1 Meldungen im Editor** (M)
+- [x] **9.1 Meldungen im Editor** (M)
+  *Erledigt:* Tabelle `UNTRANSLATABLE` im Generator (Dateifunktionen, `copyRecord`, `range`, Turtle-Befehle außer
+  Python, wachsende Arrays `push`/`append`/`add`/`pop`). Im Code steht „NICHT ÜBERSETZBAR: …“ vor der Zeile, beim
+  Erzeugen erscheint eine Meldung, und die Prüfung zeigt am Element einen Hinweis der neuen, abschaltbaren Gruppe
+  „Codeerzeugung“ (`struktogramm.hints.codegen`) mit den betroffenen Sprachen. Beispiel:
+  `test/samples/checks/untranslatable.nsd`.
   Die Warnungen des Generators (`this.warnings` und 1.6) erscheinen beim Erzeugen im Problems-Panel bzw. als
   Hinweis, mit Verweis auf das Element im Struktogramm.
 - [x] **9.2 README** (S)

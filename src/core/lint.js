@@ -12,7 +12,7 @@ const { assignWithEq } = require('./style');
 const P = require('./pseudo');
 const { parseExpr, Interpreter } = require('./executor');
 const { t: tr } = require('../i18n');
-const { inferTypes } = require('./generators');
+const { inferTypes, untranslatableIn, ALL_LANGS, TARGETS } = require('./generators');
 
 /* eingebaute Funktionen des Interpreters (aus dessen Fallunterscheidungen gelesen, bleibt so automatisch aktuell) */
 const BUILTINS = (() => {
@@ -32,14 +32,16 @@ const LOOPS = new Set(['for', 'while', 'repeat', 'forever']);
  *  conventions   übliche Konventionen für Struktogramme (die DIN 66261 legt nur die Sinnbilder fest, keine Regeln)
  *  confusion     funktioniert, verleitet aber zu Irrtümern
  *  logic         deutet auf einen Fehler im Ablauf hin
+ *  codegen       Befehl, den die Codeerzeugung in eine oder alle Zielsprachen nicht übersetzt
  * Fehler gehören zu keiner Gruppe und werden immer gemeldet.
  */
-const CATEGORIES = ['bestPractice', 'conventions', 'confusion', 'logic'];
+const CATEGORIES = ['bestPractice', 'conventions', 'confusion', 'logic', 'codegen'];
 const CATEGORY = {
   untyped: 'bestPractice', untypedParam: 'bestPractice', untypedReturn: 'bestPractice', untypedVoid: 'bestPractice', declScope: 'bestPractice', noPrompt: 'bestPractice',
   caseBool: 'conventions', caseCond: 'conventions', multiLine: 'conventions', emptyLoop: 'conventions', emptyBlock: 'conventions', noName: 'conventions',
   caseElseCond: 'confusion', typeMix: 'confusion', floatEq: 'confusion', unused: 'confusion',
   endless: 'logic', condUnchanged: 'logic', unreachable: 'logic',
+  untranslatable: 'codegen',
 };
 const lc = (s) => String(s || '').toLowerCase();
 const linesOf = (el) => (el.text || []).map((l) => String(l)).filter((l) => l.trim());
@@ -194,6 +196,18 @@ function lintDoc(doc) {
       elAt.set(path, el);
       if (el.disabled) return false;
       const lines = linesOf(el);
+      // Befehle, die die Codeerzeugung nicht übersetzt (Plan 9.1): je Befehl die betroffenen Sprachen
+      {
+        const miss = new Map();
+        const isArr = (n) => { const t = P.normType(inf.types.get(n)); return !!(t && t.endsWith('[]')); };
+        for (const l of lines) for (const lang of ALL_LANGS) {
+          for (const b of untranslatableIn(l, lang, (n) => subs.has(n), isArr)) miss.set(b, [...(miss.get(b) || []), lang]);
+        }
+        for (const [b, langs] of miss) {
+          const names = langs.length === ALL_LANGS.length ? tr('lint.allLangs') : [...new Set(langs)].map((x) => TARGETS[x].label.replace(/ \(.*\)$/, '')).join(', ');
+          add(path, 'hint', 'untranslatable', tr('lint.untranslatable', b, names));
+        }
+      }
       // nicht erreichbar: davor steht in derselben Folge exit/return/leave/throw
       const prev = seq[i - 1];
       if (prev && !prev.disabled && ['instruction', 'jump', 'call'].includes(prev.type)) {

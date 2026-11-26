@@ -691,6 +691,12 @@
             "default": true,
             "markdownDescription": "%config.hints.logic%",
             "order": 4
+          },
+          "struktogramm.hints.codegen": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.hints.codegen%",
+            "order": 5
           }
         }
       },

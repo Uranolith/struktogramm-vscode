@@ -1249,6 +1249,12 @@ class BaseGen {
           if (c.kind === 'typedef') continue; // Typdefinitionen stehen am Dateianfang (typeDefs)
           const multi = c.kind === 'leave' ? (c.count > 1 ? this.leaveN(c.count, ind) : leaveSwitch()) : null;
           const lines = viaTry(c, () => multi || this.flowStmt(c, ind, el, pl));
+          // Nicht übersetzbare Befehle: Kommentar vor der Zeile und Meldung beim Erzeugen (Plan 1.6/9.1)
+          const bad = untranslatableIn(pl, this.lang, (n) => this.funcs.has(n), (n) => { const t = P.normType(this.typeOf(n)); return !!(t && t.endsWith('[]')); });
+          if (bad.length) {
+            lines.unshift(ind + this.comment(tr('gen.untranslatable', bad.join(', '), TARGETS[this.lang].label)));
+            for (const b of bad) if (!this.warnings.some((w) => w.kind === 'untranslatable' && w.name === b)) this.warnings.push({ kind: 'untranslatable', name: b });
+          }
           const hint = this.overflowHint(c);
           if (hint && lines.length) lines[lines.length - 1] += ' ' + hint;
           out.push(...lines);
@@ -3685,6 +3691,55 @@ function expandIncludes(doc) {
  * @param {{className?:string}} opts
  */
 /**
+ * Befehle, die der Generator nicht übersetzt (Plan 1.6/9.1): Name (klein) -> Sprachen, in denen er übersetzt WIRD
+ * (leer = in keiner). Methoden mit vorangestelltem Punkt (.push). Im Code steht dann „NICHT ÜBERSETZBAR“, beim Erzeugen
+ * erscheint eine Meldung, und die Prüfung im Editor zeigt einen Hinweis am Element.
+ */
+const ALL_LANGS = ['python', 'java', 'c', 'cpp', 'csharp', 'javascript', 'kotlin', 'rust'];
+const UNTRANSLATABLE = (() => {
+  const m = {};
+  const files = ['fileopen', 'filecreate', 'fileappend', 'fileclose', 'fileeof', 'fileread', 'filereadchar', 'filereadint', 'filereaddouble', 'filereadline', 'filewrite', 'filewriteline'];
+  for (const f of files) m[f] = [];
+  m.copyrecord = [];
+  m.range = ['python'];
+  const turtle = ['forward', 'fd', 'backward', 'bk', 'left', 'rl', 'right', 'rr', 'gotoxy', 'gotox', 'gotoy', 'penup', 'up', 'pendown', 'down',
+    'hideturtle', 'showturtle', 'setpencolor', 'setbackground', 'clear', 'getx', 'gety', 'getorientation'];
+  for (const f of turtle) m[f] = ['python'];
+  // Methoden auf Arrays, die wachsen oder suchen (Python/JavaScript haben einige davon selbst)
+  m['.push'] = ['javascript'];
+  m['.append'] = ['python'];
+  m['.add'] = [];
+  m['.pop'] = ['python', 'javascript'];
+  return m;
+})();
+
+/** Nicht übersetzbare Befehle in einer Zeile für eine Sprache (ohne eigene Unterprogramme gleichen Namens) */
+function untranslatableIn(line, lang, isUserFn, isArrayVar) {
+  const toks = P.ptoks(String(line));
+  const found = [];
+  toks.forEach((t, i) => {
+    if (t.t !== 'id' || !toks[i + 1] || toks[i + 1].v !== '(') return;
+    const l = t.v.toLowerCase();
+    const method = toks[i - 1] && toks[i - 1].v === '.';
+    if (method) {
+      const recv = toks[i - 2];
+      const ok = UNTRANSLATABLE['.' + l];
+      if (ok && !ok.includes(lang) && recv && recv.t === 'id' && (!isArrayVar || isArrayVar(recv.v))) found.push(`.${t.v}()`);
+      return;
+    }
+    const ok = UNTRANSLATABLE[l];
+    if (ok && !ok.includes(lang) && !(isUserFn && isUserFn(t.v))) found.push(`${t.v}()`);
+  });
+  return found;
+}
+
+/** Sprachen, in die ein Befehl NICHT übersetzt wird (für die Prüfung im Editor) */
+function untranslatableLangs(name, method) {
+  const ok = UNTRANSLATABLE[(method ? '.' : '') + String(name).toLowerCase()];
+  return ok ? ALL_LANGS.filter((l) => !ok.includes(l)) : [];
+}
+
+/**
  * Namen, die in der Zielsprache reserviert sind (Plan 7.1) oder die der erzeugte Code selbst benutzt (Plan 7.2:
  * Funktionen der Sprache und Hilfsfunktionen des Generators). Eigene Namen werden davor umbenannt (class -> class_).
  */
@@ -3794,4 +3849,4 @@ function inferTypes(doc) {
   } catch (e) { return doc.roots.map(() => ({ types: new Map(), returnType: null })); }
 }
 
-module.exports = { generateCode, TARGETS, toClassName, inferTypes };
+module.exports = { generateCode, TARGETS, toClassName, inferTypes, untranslatableLangs, untranslatableIn, ALL_LANGS };

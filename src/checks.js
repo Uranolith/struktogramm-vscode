@@ -4,7 +4,7 @@
  * in der Ansicht „Probleme“. Fehler (rot) = funktioniert nicht, Hinweis (gelb, in „Probleme“ als Warnung) = weicht von
  * bewährter Praxis oder üblichen Konventionen ab.
  * Einstellung struktogramm.checks: all (Fehler und Hinweise), errors (nur Fehler), off.
- * Hinweise je Gruppe abschaltbar: struktogramm.hints.bestPractice / .conventions / .confusion / .logic (Fehler immer).
+ * Hinweise je Gruppe abschaltbar: struktogramm.hints.bestPractice / .conventions / .confusion / .logic / .codegen (Fehler immer).
  */
 const vscode = require('vscode');
 const { lintDoc, CATEGORIES } = require('./core/lint');
