@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<roots xmlns:nsd="https://structorizer.fisch.lu">
+	<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-26" changedby="" changed="2026-11-26" origin="Struktograf (VS Code)" text="&#34;Fehlertexte&#34;" comment="&#34;&#34;" color="ffffff" type="program" style="nice">
+		<children>
+			<instruction text="&#34;z := 0&#34;,&#34;arr := {1, 2, 3}&#34;,&#34;k := 5&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qTry>
+					<instruction text="&#34;OUTPUT 7 / z&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qTry>
+				<qCatch>
+					<instruction text="&#34;OUTPUT &#34;&#34;1: &#34;&#34;, e&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qCatch>
+				<qFinally>
+				</qFinally>
+			</try>
+			<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qTry>
+					<instruction text="&#34;OUTPUT 7 mod z&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qTry>
+				<qCatch>
+					<instruction text="&#34;OUTPUT &#34;&#34;2: &#34;&#34;, e&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qCatch>
+				<qFinally>
+				</qFinally>
+			</try>
+			<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qTry>
+					<instruction text="&#34;OUTPUT 7 / z&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qTry>
+				<qCatch>
+					<instruction text="&#34;OUTPUT &#34;&#34;3: &#34;&#34;, e&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qCatch>
+				<qFinally>
+				</qFinally>
+			</try>
+			<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qTry>
+					<instruction text="&#34;OUTPUT arr[k]&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qTry>
+				<qCatch>
+					<instruction text="&#34;OUTPUT &#34;&#34;4: &#34;&#34;, e&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qCatch>
+				<qFinally>
+				</qFinally>
+			</try>
+			<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qTry>
+					<instruction text="&#34;OUTPUT arr[-1]&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qTry>
+				<qCatch>
+					<instruction text="&#34;OUTPUT &#34;&#34;5: &#34;&#34;, e&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qCatch>
+				<qFinally>
+				</qFinally>
+			</try>
+			<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qTry>
+					<instruction text="&#34;INPUT n&#34;,&#34;OUTPUT n + 1&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qTry>
+				<qCatch>
+					<instruction text="&#34;OUTPUT &#34;&#34;6: &#34;&#34;, e&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qCatch>
+				<qFinally>
+				</qFinally>
+			</try>
+			<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qTry>
+					<instruction text="&#34;INPUT d&#34;,&#34;OUTPUT d * 1.5&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qTry>
+				<qCatch>
+					<instruction text="&#34;OUTPUT &#34;&#34;7: &#34;&#34;, e&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qCatch>
+				<qFinally>
+				</qFinally>
+			</try>
+			<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qTry>
+					<instruction text="&#34;OUTPUT teile(7, z)&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qTry>
+				<qCatch>
+					<instruction text="&#34;OUTPUT &#34;&#34;8: &#34;&#34;, e&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+				</qCatch>
+				<qFinally>
+				</qFinally>
+			</try>
+		</children>
+	</root>
+	<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-26" changedby="" changed="2026-11-26" origin="Struktograf (VS Code)" text="&#34;teile(a, b)&#34;" comment="&#34;&#34;" color="ffffff" type="sub" style="nice">
+		<children>
+			<jump text="&#34;return a / b&#34;" comment="&#34;&#34;" color="ffffff" disabled="0"></jump>
+		</children>
+	</root>
+</roots>

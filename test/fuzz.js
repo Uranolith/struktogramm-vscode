@@ -3,7 +3,7 @@
 // Ausgaben. Abweichungen werden als .nsd mit Seed nach test/out/fuzz/ geschrieben – so lassen sie sich nachstellen und
 // als fester Test nach test/samples übernehmen.
 //
-//   node test/fuzz.js [--n 50] [--seed 1] [--size 12] [--jobs 4] [sprache … | all]
+//   node test/fuzz.js [--n 50] [--seed 1] [--size 12] [--jobs 4] [--log protokoll.txt] [--plain] [sprache … | all]
 //   (Standard: 30 Struktogramme, Seed aus der Uhrzeit, die schnellen Sprachen python javascript c cpp rust;
 //   all = alle acht Sprachen)
 //
@@ -13,6 +13,9 @@
 // Schnell genug für viele Programme (Plan 8.2): Java, Kotlin und C# übersetzen alle Programme eines Laufs in EINEM
 // Compiler-Aufruf (eigener Klassenname bzw. eigenes Kotlin-package je Programm, C# über ein Startprogramm); die
 // übrigen Sprachen bauen und starten mehrere Programme gleichzeitig (--jobs).
+//
+// Im Terminal zeigt eine Live-Ansicht (test/live.js) den Fortschritt je Programm und Sprache; ohne Terminal oder mit
+// --plain erscheint das Protokoll Zeile für Zeile (mit --log zusätzlich in einer Datei).
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -21,6 +24,7 @@ const { mk } = require('../src/core/model');
 const { toNsd } = require('../src/core/nsdxml');
 const { generateCode, TARGETS } = require('../src/core/generators');
 const S = require('./languages');
+const { LiveView, liveWanted, vis } = require('./live');
 
 const args = process.argv.slice(2);
 const opt = (name, def) => { const i = args.indexOf('--' + name); return i >= 0 ? Number(args[i + 1]) : def; };
@@ -31,6 +35,12 @@ const JOBS = opt('jobs', Math.max(2, os.cpus().length));
 const langArgs = args.includes('all') ? Object.keys(TARGETS) : args.filter((a, i) => TARGETS[a] && !(args[i - 1] || '').startsWith('--'));
 const LANGS = (langArgs.length ? langArgs : ['python', 'javascript', 'c', 'cpp', 'rust']).filter((l) => S.has(S.RUN[l].tool));
 const OUT = path.join(__dirname, 'out', 'fuzz');
+const LOG = args.includes('--log') ? path.resolve(args[args.indexOf('--log') + 1]) : null;
+const LIVE = liveWanted(args);
+if (LOG) { fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, ''); }
+/** Protokollzeile: in die Datei (--log) und – ohne Live-Ansicht – in die Konsole */
+const log = (line) => { if (LOG) fs.appendFileSync(LOG, vis(line) + '\n'); if (!LIVE) console.log(line); };
+const label = (l) => TARGETS[l].label.replace(/ \(.*\)$/, '');
 
 /* ---------------- Zufall (mulberry32, wiederholbar über den Seed) ---------------- */
 function rng(seed) {
@@ -100,7 +110,7 @@ function program(seed) {
     const kinds = ['assign', 'assign', 'dbl', 'str', 'str', 'arr', 'out', 'out', 'file', 'rec'];
     if (d > 0) kinds.push('if', 'for', 'while', 'repeat', 'case', 'call', 'try');
     if (k.loop) kinds.push('leave', 'continue');
-    if (k.tryD) kinds.push('throw');
+    if (k.tryD) kinds.push('throw', 'rterr');
     switch (R.pick(kinds)) {
       case 'assign': return mk.instruction(`${R.pick(INTS)} := ${intVal(vars)}`);
       case 'dbl': return mk.instruction(`${R.pick(DBLS)} := ${dblExpr(vars)}`);
@@ -133,6 +143,11 @@ function program(seed) {
         const inner = { ...k, tryD: k.tryD + 1 };
         return mk.try(e, stmts(d - 1, vars, inner), [mk.instruction(`OUTPUT "gefangen ", ${e}`), ...(R.chance(0.3) ? stmts(d - 1, vars, k) : [])],
           R.chance(0.4) ? [mk.instruction(`OUTPUT "finally ${e}"`)] : []);
+      }
+      case 'rterr': { // Laufzeitfehler im try: Text des Interpreters im catch (Plan 2.9)
+        const v = R.pick(vars);
+        return mk.alternative(cond(vars), [mk.instruction(R.pick([`OUTPUT ${intExpr(1, vars)} div (${v} - ${v})`, `OUTPUT ${intExpr(1, vars)} mod (${v} - ${v})`,
+          `OUTPUT arr[${R.int(5, 9)}]`, `arr[${R.int(-3, -1)}] := 1`, `OUTPUT 7 / (${v} - ${v})`]))], []);
       }
       case 'throw': return mk.alternative(cond(vars), [mk.jump(`throw "${R.pick(['T', 'Fehler', 'Ü'])}" + ${R.pick(vars)}`)], []);
       case 'file': { // Text, Ganzzahl und Kommazahl schreiben und zurücklesen (Plan 6.2)
@@ -222,7 +237,10 @@ function errorsBySeed(out) {
 }
 
 (async () => {
-  console.log(`Zufallstest: ${COUNT} Struktogramme ab Seed ${SEED0}, Sprachen ${LANGS.join(' ')}, ${JOBS} gleichzeitig`);
+  log(`Zufallstest: ${COUNT} Struktogramme ab Seed ${SEED0}, Sprachen ${LANGS.join(' ')}, ${JOBS} gleichzeitig`);
+  const live = LIVE ? new LiveView({ title: `Zufallstest – ${COUNT} Struktogramme ab Seed ${SEED0}, ${JOBS} gleichzeitig`, unit: 'Prüfungen (Programm × Sprache)',
+    langs: LANGS.map((l) => ({ id: l, label: label(l) })), total: COUNT * LANGS.length }) : null;
+  if (live) live.setPhase('Struktogramme erzeugen und mit dem Interpreter ausführen …', LOG ? [`Protokoll: ${LOG}`] : []);
   const t0 = Date.now();
   const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'fuzz-'));
   // 1. Programme erzeugen, Referenz mit dem Interpreter
@@ -235,6 +253,15 @@ function errorsBySeed(out) {
     if (ref.error) { skipped++; continue; } // Interpreter-Fehler (z. B. Wert fehlt): kein sinnvoller Vergleich
     cases.push({ seed, doc, ref, bad: [] });
   }
+  if (live) live.setTotal(cases.length * LANGS.length);
+  /** ein Programm in einer Sprache fertig (Live-Ansicht) */
+  const reported = new Set();
+  const report = (c, lang) => {
+    if (!live || reported.has(c.seed + '|' + lang)) return;
+    reported.add(c.seed + '|' + lang);
+    const bad = c.bad.filter((b) => b.lang === lang);
+    live.itemDone(`Seed ${c.seed}`, { [lang]: bad.length ? 'X' : 'O' }, bad.map((b) => `${label(lang)}: ${b.msg.split('\n')[0].slice(0, 180)}`));
+  };
   const check = (c, lang, r) => {
     const d = r.timedOut ? 'Zeitüberschreitung' : S.diff(c.ref.output, r.stdout);
     if (d) c.bad.push({ lang, msg: d });
@@ -242,7 +269,11 @@ function errorsBySeed(out) {
 
   // 2. Sprachen mit eigenem Compiler-Aufruf je Programm: mehrere gleichzeitig
   const single = LANGS.filter((l) => !BATCHED[l]);
+  if (live && single.length) live.setPhase(`${single.map(label).join(', ')}: je Programm übersetzen und starten …`, live.info);
   await pool(cases.flatMap((c) => single.map((lang) => ({ c, lang }))), JOBS, async ({ c, lang }) => {
+    try { await runSingle(c, lang); } finally { report(c, lang); }
+  });
+  async function runSingle(c, lang) {
     const dir = path.join(WORK, lang, String(c.seed));
     S.prepare(dir, lang);
     let code;
@@ -251,7 +282,7 @@ function errorsBySeed(out) {
     const b = await S.build(lang, dir);
     if (b) { c.bad.push({ lang, msg: 'Übersetzen: ' + b.split('\n')[0] }); return; }
     check(c, lang, await S.run(lang, dir, [], 20000));
-  });
+  }
 
   // 3. Java, Kotlin, C#: alle Programme in einem Compiler-Aufruf, dann nacheinander starten
   for (const lang of LANGS.filter((l) => BATCHED[l])) {
@@ -259,9 +290,10 @@ function errorsBySeed(out) {
     const dir = path.join(WORK, lang);
     fs.mkdirSync(dir, { recursive: true });
     if (B.prepare) B.prepare(dir);
+    if (live) live.setPhase(`${label(lang)}: alle ${cases.length} Programme in einem Compiler-Aufruf übersetzen …`, live.info);
     let todo = [];
     for (const c of cases) {
-      try { fs.writeFileSync(path.join(dir, B.file(c.seed)), B.code(c.doc, c.seed)); todo.push(c); } catch (e) { c.bad.push({ lang, msg: 'Codeerzeugung: ' + e.message }); }
+      try { fs.writeFileSync(path.join(dir, B.file(c.seed)), B.code(c.doc, c.seed)); todo.push(c); } catch (e) { c.bad.push({ lang, msg: 'Codeerzeugung: ' + e.message }); report(c, lang); }
     }
     // Übersetzungsfehler: betroffene Programme herausnehmen und den Rest erneut übersetzen
     for (let attempt = 0; todo.length && attempt < 5; attempt++) {
@@ -272,28 +304,31 @@ function errorsBySeed(out) {
       const hit = todo.filter((c) => errs.has(c.seed));
       if (!hit.length) { // nicht zuzuordnen: alle als fehlgeschlagen melden
         const msg = ((r.stdout || '') + (r.stderr || '')).split('\n').find((l) => /error|fehler/i.test(l)) || 'Übersetzen fehlgeschlagen';
-        todo.forEach((c) => c.bad.push({ lang, msg: 'Übersetzen: ' + msg.trim() }));
+        todo.forEach((c) => { c.bad.push({ lang, msg: 'Übersetzen: ' + msg.trim() }); report(c, lang); });
         todo = [];
         break;
       }
       for (const c of hit) {
         c.bad.push({ lang, msg: 'Übersetzen: ' + errs.get(c.seed) });
+        report(c, lang);
         if (lang === 'csharp') fs.rmSync(path.join(dir, B.file(c.seed)), { force: true }); // C# übersetzt alle Dateien im Ordner
       }
       todo = todo.filter((c) => !errs.has(c.seed));
     }
+    if (live) live.setPhase(`${label(lang)}: Programme starten …`, live.info);
     await pool(todo, JOBS, async (c) => {
       // eigener Arbeitsordner je Programm: Die Dateifunktionen schreiben sonst gleichzeitig in dieselbe Datei
       const cwd = path.join(dir, 'run', String(c.seed));
       fs.mkdirSync(cwd, { recursive: true });
       const [cmd, a] = B.run(c.seed, dir);
       check(c, lang, await S.exec(cmd, a, { cwd, input: '\n', timeout: 20000 }));
+      report(c, lang);
     });
   }
 
   // 4. Bericht in Seed-Reihenfolge
   let fails = 0;
-  process.stdout.write(cases.map((c) => (c.bad.length ? 'X' : '.')).join('') + '\n');
+  log(cases.map((c) => (c.bad.length ? 'X' : '.')).join(''));
   for (const c of cases) {
     if (!c.bad.length) continue;
     fails++;
@@ -301,10 +336,12 @@ function errorsBySeed(out) {
     const file = path.join(OUT, `seed_${c.seed}.nsd`);
     fs.writeFileSync(file, toNsd(c.doc));
     fs.writeFileSync(file.replace(/\.nsd$/, '.txt'), c.bad.map((x) => `${x.lang}: ${x.msg}`).join('\n') + '\n');
-    console.log(`  Seed ${c.seed}: ${c.bad.map((x) => `${x.lang}: ${x.msg.slice(0, 160)}`).join('\n             ')}`);
+    log(`  Seed ${c.seed}: ${c.bad.map((x) => `${x.lang}: ${x.msg.slice(0, 160)}`).join('\n             ')}`);
   }
   fs.rmSync(WORK, { recursive: true, force: true });
-  console.log(`${cases.length} verglichen, ${fails} mit Abweichung${skipped ? `, ${skipped} übersprungen (Interpreter-Fehler)` : ''}` +
-    ` – ${Math.round((Date.now() - t0) / 1000)} s` + (fails ? ` – Dateien in ${OUT}` : ''));
+  const summary = `${cases.length} verglichen, ${fails} mit Abweichung${skipped ? `, ${skipped} übersprungen (Interpreter-Fehler)` : ''}` +
+    ` – ${Math.round((Date.now() - t0) / 1000)} s`;
+  log(summary + (fails ? ` – Dateien in ${OUT}` : ''));
+  if (live) live.finish(summary, !fails, ['', ...(fails ? [`Abweichungen als .nsd in ${OUT}`, `nachstellen: node test/fuzz.js --n 1 --seed <Seed> ${LANGS.length === 8 ? 'all' : LANGS.join(' ')}`] : []), ...(LOG ? [`Protokoll: ${LOG}`] : [])]);
   process.exitCode = fails ? 1 : 0;
 })();

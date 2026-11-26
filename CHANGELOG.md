@@ -25,6 +25,13 @@ Test-Struktogramme) und an vielen Stellen korrigiert. Plan und Entscheidungen: `
   Verhalten wie im Interpreter. `v := fileRead(h)` liest je nach Typ von `v` eine Zahl oder Text.
   `fileReadDouble` lehnt jetzt wie `INPUT` Text wie `2.5abc` ab, `fileReadChar` liefert auch Zeichen außerhalb der
   Basisebene (Emoji) ganz, und `fileWriteLine` schreibt unter Windows `\n` statt `\r\n`.
+- **Gleiche Fehlertexte im `catch`:** Division durch 0, Index außerhalb eines Arrays und Text statt Zahl bei `INPUT`
+  liefern im erzeugten Code aller Sprachen denselben Text wie im Interpreter (vorher z. B. Java „/ by zero“).
+  Bei einem Komma statt Punkt („1,5“) nennen auch C, C++ und JavaScript die gemeinte Zahl. Der Interpreter meldet
+  einen negativen Index beim Schreiben jetzt wie beim Lesen.
+- **Kommazahl durch 0:** `2.5 / 0` ergibt überall `Infinity`, `0.0 / 0` und `sqrt(-1)` `NaN` (Python brach vorher
+  ab). Der Interpreter liefert bei `sqrt(-1)` jetzt `NaN` statt eines Fehlers. Behoben: Ein Fehler in einer
+  eingebauten Funktion konnte den Interpreter mit „tr is not a function“ abbrechen; `sqrt(-1.0)` ergab in Rust `-1`.
 - **Zufallstest** (`npm run test:fuzz`): vergleicht zufällige Struktogramme in allen Sprachen mit dem Interpreter, auf
   GitHub jede Nacht. Bisher gefunden und behoben: `div` in JavaScript und Python, Textverkettung in Argumenten,
   `for i := -1 to …`, `abs` mit reinen Zahlen und mit Zählvariablen in Rust, `abs` in C ohne `stdlib.h`,

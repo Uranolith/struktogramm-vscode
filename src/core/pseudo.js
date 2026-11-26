@@ -241,8 +241,9 @@ function modernFn(l, args, lang, ctx) {
   const wrap = (s) => (SIMPLE_CHAIN.test(s) ? s : `(${s})`);
   const dbl = (arg) => {
     const s = arg.out;
-    if (/^-?\d+$/.test(s)) return kt ? s + '.0' : `${s}.0_f64`;
-    if (/^-?\d+\.\d+$/.test(s)) return kt ? s : `${s}_f64`;
+    // negatives Literal in Rust geklammert: -1.0_f64.sqrt() wäre -(1.0.sqrt())
+    if (/^-?\d+$/.test(s)) return kt ? s + '.0' : (s.startsWith('-') ? `(${s}.0_f64)` : `${s}.0_f64`);
+    if (/^-?\d+\.\d+$/.test(s)) return kt ? s : (s.startsWith('-') ? `(${s}_f64)` : `${s}_f64`);
     if (typeOf(arg) === 'double') return kt ? s : wrap(s);
     return kt ? `${wrap(s)}.toDouble()` : `(${wrap(s)} as f64)`;
   };
@@ -584,7 +585,12 @@ for (const [n, f] of Object.entries(TURTLE_PY)) {
 for (const fn of ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log']) {
   const cs = fn[0].toUpperCase() + fn.slice(1);
   SFN[fn] = {
-    python: (a, ctx) => { need(ctx, 'math'); return `math.${fn}(${a[0].out})`; },
+    python: (a, ctx) => {
+      need(ctx, 'math');
+      // log(0) = -Infinity, log(-1) = NaN wie in den anderen Sprachen – Python bräche ab (nur bei nicht fester Zahl > 0)
+      if (fn === 'log' && !(/^\d+(\.\d+)?$/.test(a[0].out.trim()) && Number(a[0].out) > 0)) { need(ctx, 'flog'); return `_log(${a[0].out})`; }
+      return `math.${fn}(${a[0].out})`;
+    },
     java: (a) => `Math.${fn}(${a[0].out})`, javascript: (a) => `Math.${fn}(${a[0].out})`, csharp: (a) => `Math.${cs}(${a[0].out})`,
     c: (a, ctx) => { need(ctx, 'math'); return `${fn}(${a[0].out})`; }, cpp: (a, ctx) => { need(ctx, 'math'); return `${fn}(${a[0].out})`; },
   };
@@ -856,7 +862,7 @@ function charsToStrings(toks, ctx) {
  */
 const INTDIV_LANGS = new Set(['python', 'javascript']);
 // Sprachen, in denen Division durch 0 keinen abfangbaren Fehler auslöst (C/C++: Absturz, JavaScript: Infinity/NaN)
-const CHECKDIV_LANGS = new Set(['c', 'cpp', 'javascript']);
+const CHECKDIV_LANGS = new Set(['python', 'java', 'c', 'cpp', 'csharp', 'javascript', 'kotlin', 'rust']); // alle (Plan 2.9)
 function intDivision(toks, lang, ctx) {
   // zuerst in Klammergruppen
   const res = [];
@@ -925,6 +931,15 @@ function intDivision(toks, lang, ctx) {
       if (((op.t === 'op' && op.v === '/' && !op.intDivDone && intOf(acc) && intOf(f)) || isDivKw(op)) && f.length) {
         const first = { ...acc[0], ws: false };
         acc = [{ t: 'id', v: 'int', ws: acc[0].ws }, tok('(', 'op', false), first, ...acc.slice(1), { t: 'op', v: '/', ws: true, intDivDone: true }, ...f, tok(')', 'op', false)];
+        return;
+      }
+      // Kommazahl durch 0 ergibt wie im Interpreter und in den anderen Sprachen Infinity bzw. NaN (Gleitkommanorm) –
+      // Python bräche ab. Nur nötig, wenn der Teiler keine feste Zahl ungleich 0 ist (x / 2.0 bleibt)
+      if (lang === 'python' && op.t === 'op' && op.v === '/' && !op.intDivDone && f.length && !(f.length === 1 && f[0].t === 'num' && Number(f[0].v) !== 0)) {
+        if (ctx.needs) { ctx.needs.add('fdiv'); ctx.needs.add('math'); }
+        const first = { ...acc[0], ws: false };
+        acc = [{ t: 'id', v: '_fdiv', ws: acc[0].ws }, tok('(', 'op', false), first, ...acc.slice(1), { t: 'op', v: ',', ws: false },
+          ...f.map((x, k) => (k === 0 ? { ...x, ws: true } : x)), tok(')', 'op', false)];
         return;
       }
       acc = [...acc, op, ...f];
@@ -1076,13 +1091,19 @@ function mapToks(toks, lang, ctx) {
     {
       const pv = out[out.length - 1];
       const at = pv && pv.t === 'id' && ctx && ctx.cur && ctx.cur.types ? normType(ctx.cur.types.get(pv.v)) : null;
-      if (ctx && ctx.checkDiv && (CHECKDIV_LANGS.has(lang) || lang === 'python') && t.t === 'op' && t.v === '[' && at && at.endsWith('[]') && !(out[out.length - 2] && out[out.length - 2].v === '.')) {
+      if (ctx && ctx.checkDiv && CHECKDIV_LANGS.has(lang) && t.t === 'op' && t.v === '[' && at && at.endsWith('[]') && !(out[out.length - 2] && out[out.length - 2].v === '.')) {
         const close = matchClose(toks, i);
         const idx = joinTokens(mapToks(toks.slice(i + 1, close < 0 ? toks.length : close), lang, ctx));
         let v = null;
-        if (lang === 'cpp') v = `${pv.v}.at(${idx})`;
-        else if (lang === 'javascript' || lang === 'python') { if (ctx.needs) ctx.needs.add('checkidx'); v = `${pv.v}[_ix(${pv.v}, ${idx})]`; } // Python: -1 wäre sonst das letzte Element
-        else if (lang === 'c' && ctx.cArrLen) { const len = ctx.cArrLen(pv.v); if (len) { if (ctx.needs) ctx.needs.add('checkidx'); v = `${pv.v}[_idx(${idx}, ${len})]`; } }
+        const need = () => { if (ctx.needs) ctx.needs.add('checkidx'); };
+        // Prüffunktion mit dem Text des Interpreters (Plan 2.9); Python: -1 wäre sonst das letzte Element
+        if (lang === 'javascript' || lang === 'python') { need(); v = `${pv.v}[_ix(${pv.v}, ${idx})]`; }
+        else if (lang === 'c' && ctx.cArrLen) { const len = ctx.cArrLen(pv.v); if (len) { need(); v = `${pv.v}[_idx(${idx}, ${len})]`; } }
+        else if (lang === 'cpp') { need(); v = `${pv.v}[_idx(${idx}, (long long) ${pv.v}.size())]`; }
+        else if (lang === 'java') { need(); v = `${pv.v}[_idx(${idx}, ${pv.v}.length)]`; }
+        else if (lang === 'csharp') { need(); v = `${pv.v}[_idx(${idx}, ${pv.v}.Length)]`; }
+        else if (lang === 'kotlin') { need(); v = `${pv.v}[_idx(${idx}, ${pv.v}.size)]`; }
+        else if (lang === 'rust') { need(); v = `${pv.v}[_idx((${idx}) as i64, ${pv.v}.len())]`; }
         if (v) { out.pop(); out.push({ ...pv, v }); i = close < 0 ? toks.length : close; continue; }
       }
     }
@@ -1251,6 +1272,12 @@ function mapToks(toks, lang, ctx) {
         continue;
       } else if (MATH_FUNCS[l] && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
         nt.v = MATH_FUNCS[l][lang] || t.v;
+        // Python: sqrt einer negativen Zahl ist NaN wie in den anderen Sprachen (math.sqrt bräche ab) – außer bei fester Zahl ≥ 0
+        if (l === 'sqrt' && lang === 'python') {
+          const close = matchClose(toks, i + 1);
+          const argSrc = joinTokens(toks.slice(i + 2, close < 0 ? toks.length : close)).trim();
+          if (!/^\d+(\.\d+)?$/.test(argSrc)) { nt.v = '_sqrt'; if (ctx.needs) { ctx.needs.add('fsqrt'); ctx.needs.add('math'); } }
+        }
         if (l === 'abs' && lang === 'c') {
           const close = matchClose(toks, i + 1);
           let at = null;

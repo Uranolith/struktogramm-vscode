@@ -77,6 +77,7 @@ den Abschnitt „Grenzen“ des README.
 | 1.3 Arrays an Unterprogramme | **Als Referenz** wie im Interpreter (ohne Rückfrage, es gibt keine sinnvolle Alternative). | 4.2, 4.3 |
 | 1.4 Laufzeitfehler in `try` | **Nur innerhalb von `try` prüfen.** Im `try`-Block erzeugen C, C++ und JS Prüf-Hilfsfunktionen (z. B. `_div(a, b)`, `_at(a, i)`), die einen abfangbaren Fehler werfen; außerhalb bleibt der Code schlicht. | 2.7 |
 | 1.5 Texte in C | **Dynamisch, Zeichen zählen.** `char*` mit `malloc` statt `char[256]`, keine Längengrenze; `length`/`copy`/`pos`/`insert`/`delete` zählen UTF-8-Zeichen. Speicher wird nicht freigegeben (für Lernprogramme unkritisch, im README erwähnen). | 5.10 |
+| 1.7 Kommazahl durch 0 | **Wie übliche Software (Gleitkommanorm IEEE 754)**, entschieden am 26.11.2026: `2.5 / 0` ergibt `Infinity`, `0.0 / 0` und `sqrt(-1)` ergeben `NaN`, `log(0)` ergibt `-Infinity` – so rechnen Java, C, C++, C#, JavaScript, Kotlin, Rust und der Interpreter. Python bräche ab und bekommt dafür `_fdiv`, `_sqrt`, `_log` (nur wenn Teiler bzw. Argument keine feste Zahl ist). Der Interpreter meldete bei `sqrt(-1)` vorher einen Fehler. Ganzzahlen durch 0 bleiben ein Fehler (wie in allen Sprachen). | 2.9 |
 | 1.6 Nicht Übersetzbares | **Meldung und Kommentar.** Der Code wird erzeugt, an der Stelle steht `// NICHT ÜBERSETZBAR: …`, und im Problems-Panel erscheint eine Meldung mit Verweis auf das Element. | 9.1 |
 
 - [x] **1.1 Ganzzahlbreite.** Der Interpreter rechnet mit JS-Zahlen (exakt bis 2⁵³), die Zielsprachen meist
@@ -149,10 +150,24 @@ den Abschnitt „Grenzen“ des README.
   Ein Index außerhalb von Array oder Text ist im Interpreter ein Fehler. C/C++ lesen dann beliebigen Speicher, JS
   liefert `undefined`, Python akzeptiert negative Indizes. Prüf-Hilfsfunktion `_at(a, i)` wie bei 2.7; in C erst
   möglich, wenn Array-Parameter ihre Länge mitbringen (4.2).
-- [ ] **2.9 Einheitliche Fehlertexte** (M, optional)
+- [x] **2.9 Einheitliche Fehlertexte** (M, optional)
   Wird die Fehlervariable eines `catch` ausgegeben, unterscheidet sich der Text je Sprache (Java „/ by zero“,
   Python „integer division or modulo by zero“, Interpreter „Division durch 0“). Für 100 % gleiche Ausgabe: im
   `catch` bekannte Ausnahmearten auf die Texte des Interpreters abbilden.
+  *Erledigt – statt Abbilden prüfen:* Im `try`-Teil (und in Unterprogrammen, die von dort aufgerufen werden) rechnen
+  jetzt alle acht Sprachen über Prüffunktionen mit den Texten des Interpreters (`src/core/checkhelpers.js`):
+  `_idiv`/`_imod` (Division und Rest durch 0), `_idx` bzw. `_ix` (Index außerhalb; Rust damit auch bei negativem
+  Index übersetzbar) und `_num` für `INPUT` von Zahlen (keine Zahl; Komma statt Punkt mit „meintest du 1.5?“ – auch
+  in C, C++ und JavaScript). Kotlin und Rust prüfen jetzt ebenfalls. Abbilden der Ausnahmen hätte nicht gereicht:
+  C# nennt den Index in der Meldung nicht.
+  Interpreter: Schreiben an einen negativen Index meldet jetzt wie beim Lesen „Index -2 außerhalb des Arrays
+  (Länge 3)“ (vorher „Index -2 ist negativ“). Nebenbei behoben: `try` in einem `catch`-Teil (Java/C#: zweites `_e`,
+  gleicher Name der Fehlervariable), `min(a mod 3, 3)` in C++ (`_imod` lieferte `long long`), Zuweisung an ein
+  Arrayelement mit Indexprüfung in Rust (Borrow-Fehler). Tests `try_catch/11_error_texts`, `try_catch/12_nested_catch`;
+  der Zufallstest erzeugt im `try` jetzt auch Laufzeitfehler.
+  Offen (bewusst): Ein Array wächst im Interpreter beim Schreiben hinter sein Ende – im Code ein Fehler. Liest ein
+  Programm nach einem inneren `catch e` die äußere Fehlervariable `e` wieder, hat sie in Java/C#/Python den neuen
+  Wert (wie im Interpreter), in JavaScript, C, C++, Kotlin und Rust den alten (eigene Variable im inneren Block).
 
 ## Phase 3 – Typableitung
 

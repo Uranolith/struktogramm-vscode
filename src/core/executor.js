@@ -887,7 +887,7 @@ class Interpreter {
       const container = yield* this.evalNode(node.a, path);
       const idx = num(yield* this.evalNode(node.i, path));
       if (!Array.isArray(container)) throw new ExecError(tr('exec.notArrayTarget', joinTokensSafe(target)), path);
-      if (idx < 0) throw new ExecError(tr('exec.negIndex', idx), path);
+      if (idx < 0) throw new ExecError(tr('exec.indexArray', idx, container.length), path); // wie beim Lesen und im erzeugten Code (Plan 2.9)
       while (container.length < idx) container.push(null);
       const base = rootName(node);
       const t = base ? this.frame.types.get(base) : null;
@@ -1082,8 +1082,8 @@ class Interpreter {
       const r = this.fileBuiltin(lname, args, path);
       if (r !== undefined) return r;
     }
-    const tr = this.turtleBuiltin(lname, a, path);
-    if (tr !== undefined) return tr;
+    const tu = this.turtleBuiltin(lname, a, path); // nicht „tr“: das ist die Übersetzungsfunktion der Fehlermeldungen
+    if (tu !== undefined) return tu;
     const s = (k) => String(a[k] == null ? '' : a[k]);
     switch (lname) {
       // ---- Structorizer: Mathematik ----
@@ -1109,7 +1109,7 @@ class Interpreter {
       case 'copyarray': return Array.isArray(args[0]) ? args[0].slice() : args[0];
       case 'copyrecord': return isRecord(args[0]) ? makeRecord(args[0][REC_TYPE], Object.entries(args[0])) : args[0];
       case 'randomize': return null;
-      case 'sqrt': if (a[0] < 0) throw new ExecError(tr('exec.sqrtNeg'), path); return f(Math.sqrt(a[0]));
+      case 'sqrt': return f(Math.sqrt(a[0])); // negativ: NaN wie in Java, C, JavaScript … (Gleitkommanorm)
       case 'abs': return mkNum(Math.abs(a[0]), isFloat(args[0]));
       case 'pow': case 'power': return f(Math.pow(a[0], a[1]));
       case 'exp': return f(Math.exp(a[0]));

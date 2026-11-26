@@ -328,8 +328,15 @@ Damit Interpreter und erzeugter Code dasselbe ausgeben, gilt:
   ist ein Fehler (in `try` abfangbar).
 - **Namen**, die in der Zielsprache reserviert sind oder die der erzeugte Code selbst benutzt (`class`, `new`, in
   Python `len`, `str` …), bekommen einen Unterstrich (`class_`).
-- **Laufzeitfehler in `try`**: Division durch 0 ist in allen Sprachen abfangbar. Ein Index außerhalb eines Arrays
-  ist es in C, C++ und JavaScript nicht. Der Text der Fehlermeldung im `catch` unterscheidet sich je Sprache.
+- **Laufzeitfehler in `try`**: Division und Rest durch 0, ein Index außerhalb eines Arrays und Text statt Zahl bei
+  `INPUT` sind in allen Sprachen abfangbar, mit demselben Text wie im Interpreter („Division durch 0“, „Index 5
+  außerhalb des Arrays (Länge 3)“, „„abc“ ist keine Zahl“). Dafür rechnet der Code im `try`-Teil (und in Unterprogrammen,
+  die von dort aufgerufen werden) über kleine Prüffunktionen (`_idiv`, `_imod`, `_idx`, `_num`); außerhalb bleibt er
+  unverändert. Ein Array wächst im Interpreter, wenn hinter sein Ende geschrieben wird – im erzeugten Code ist das
+  ein Fehler.
+- **Kommazahl durch 0** rechnet wie übliche Software (Gleitkommanorm): `2.5 / 0` ergibt `Infinity`, `0.0 / 0` und
+  `sqrt(-1)` ergeben `NaN` – im Interpreter und in allen Sprachen (Python über kleine Hilfsfunktionen). Ganzzahlen
+  durch 0 sind ein Fehler.
 - **C**: Texte liegen in eigenem Speicher (ohne Längengrenze, wird nicht freigegeben); Längen und Positionen zählen
   Zeichen (UTF-8). Arrays tragen ihre Länge mit (`int name_len`), eine Funktion mit Array-Ergebnis gibt sie über
   `int* _len` zurück. **C++** verwendet für Arrays `std::vector`. `uppercase`/`lowercase` kennen in C und C++
@@ -372,8 +379,12 @@ Parallelverarbeitung im erzeugten Code:
     (`{ "datei.nsd": { "c": "4.2", "*": "6.1" } }` – Sprache oder `*` und der Schritt im Plan, der sie behebt).
   - Auf GitHub läuft der Aufgabentest bei jedem Push und Pull Request je Sprache (`.github/workflows/test.yml`).
   - Das Excel-Protokoll braucht Python mit `openpyxl` (`pip install openpyxl`).
-- **Zufallstest** – `npm run test:fuzz -- --n 100 --seed 1 all`: erzeugt zufällige Struktogramme (Rechnen, Texte,
-  Arrays, alle Schleifen, Sprünge, Unterprogramm, Dateien), übersetzt sie in die Zielsprachen und vergleicht mit dem
+  - **Live-Ansicht:** Im Terminal zeigen Aufgaben- und Zufallstest statt des langen Protokolls eine Ansicht, die
+    sich bei jedem Ergebnis aktualisiert – Fortschritt, Laufzeit und Restzeit, laufende Aufgabe mit dem Stand je
+    Sprache, Ergebnis je Sprache und die Fehler (`test/live.js`). Das ausführliche Protokoll schreibt
+    `--log datei.txt` in eine Datei; `--plain` schaltet die Ansicht ab (ohne Terminal, z. B. in der CI, ist sie aus).
+- **Zufallstest** – `npm run test:fuzz -- --n 100 --seed 1 all` oder *Task ausführen… → Zufallstest*: erzeugt zufällige
+  Struktogramme (Rechnen, Texte, Records, Arrays, alle Schleifen, Sprünge, `try`, Unterprogramme, Dateien), übersetzt sie in die Zielsprachen und vergleicht mit dem
   Interpreter. Ohne Sprachangabe die schnellen Sprachen (Python, JavaScript, C, C++, Rust), `all` für alle acht. Java,
   Kotlin und C# übersetzen alle Programme in einem Compiler-Aufruf, die übrigen laufen parallel (`--jobs`).
   Abweichungen landen als `.nsd` in `test/out/fuzz`; nachstellen mit `--n 1 --seed <Seed>`. Auf GitHub läuft er

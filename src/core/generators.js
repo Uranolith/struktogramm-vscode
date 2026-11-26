@@ -7,6 +7,7 @@ const { t: tr } = require('../i18n');
 const { walk } = require('./model');
 const { joinTokens, findTop, matchClose, OPEN, CLOSE } = require('./tokenizer');
 const { fileHelpers, FILE_HELPER_NAMES } = require('./filehelpers');
+const { checkHelpers, C_NUMCHECK, cNumFail } = require('./checkhelpers');
 
 const DYNAMIC_LANGS = new Set(['python', 'javascript']); // Variablen ohne festen Typ
 // Sprachen, in denen break innerhalb von switch nur das switch verlässt (nicht die umgebende Schleife)
@@ -1804,11 +1805,15 @@ class CGen extends BaseGen {
         // nextDouble() erwartet in deutscher Ländereinstellung ein Komma
         const ln = 'scanner.nextLine().trim()';
         // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
-        const rd = { int: `(int) Double.parseDouble(${ln})`, long: `(long) Double.parseDouble(${ln})`, short: `(short) Double.parseDouble(${ln})`, byte: `(byte) Double.parseDouble(${ln})`, float: `Float.parseFloat(${ln})`, double: `Double.parseDouble(${ln})`, boolean: `Boolean.parseBoolean(${ln})`, char: 'scanner.nextLine().charAt(0)' }[ct] || 'scanner.nextLine()';
+        // innerhalb von try: Zahl über _num mit den Fehlertexten des Interpreters (Plan 2.9)
+        const chk = this.checkDiv && ['int', 'long', 'short', 'byte', 'float', 'double'].includes(ct) ? (this.needs.add('checknum'), { int: `(int) _num(${ln})`, long: `(long) _num(${ln})`, short: `(short) _num(${ln})`, byte: `(byte) _num(${ln})`, float: `(float) _num(${ln})`, double: `_num(${ln})` }[ct]) : null;
+        const rd = chk || { int: `(int) Double.parseDouble(${ln})`, long: `(long) Double.parseDouble(${ln})`, short: `(short) Double.parseDouble(${ln})`, byte: `(byte) Double.parseDouble(${ln})`, float: `Float.parseFloat(${ln})`, double: `Double.parseDouble(${ln})`, boolean: `Boolean.parseBoolean(${ln})`, char: 'scanner.nextLine().charAt(0)' }[ct] || 'scanner.nextLine()';
         out.push(ind + (decl ? this.declLine(v, t, rd) : `${tv} = ${rd};`));
       } else if (L === 'csharp') {
         // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
-        const rd = { int: '(int) double.Parse(Console.ReadLine(), NumberStyles.Float)', long: '(long) double.Parse(Console.ReadLine(), NumberStyles.Float)', short: '(short) double.Parse(Console.ReadLine(), NumberStyles.Float)', byte: '(byte) double.Parse(Console.ReadLine(), NumberStyles.Float)', float: 'float.Parse(Console.ReadLine(), NumberStyles.Float)', double: 'double.Parse(Console.ReadLine(), NumberStyles.Float)', boolean: 'bool.Parse(Console.ReadLine())', char: 'Console.ReadLine()[0]' }[ct] || 'Console.ReadLine()';
+        const cl = 'Console.ReadLine()';
+        const chk = this.checkDiv && ['int', 'long', 'short', 'byte', 'float', 'double'].includes(ct) ? (this.needs.add('checknum'), { int: `(int) _num(${cl})`, long: `(long) _num(${cl})`, short: `(short) _num(${cl})`, byte: `(byte) _num(${cl})`, float: `(float) _num(${cl})`, double: `_num(${cl})` }[ct]) : null;
+        const rd = chk || { int: '(int) double.Parse(Console.ReadLine(), NumberStyles.Float)', long: '(long) double.Parse(Console.ReadLine(), NumberStyles.Float)', short: '(short) double.Parse(Console.ReadLine(), NumberStyles.Float)', byte: '(byte) double.Parse(Console.ReadLine(), NumberStyles.Float)', float: 'float.Parse(Console.ReadLine(), NumberStyles.Float)', double: 'double.Parse(Console.ReadLine(), NumberStyles.Float)', boolean: 'bool.Parse(Console.ReadLine())', char: 'Console.ReadLine()[0]' }[ct] || 'Console.ReadLine()';
         out.push(ind + (decl ? this.declLine(v, t, rd) : `${tv} = ${rd};`));
       } else if (L === 'javascript') {
         this.needs.add('prompt');
@@ -2070,11 +2075,20 @@ class CGen extends BaseGen {
       return [ind + '{', ind + I + this.comment(tr('gen.cppFinally')),
         ind + I + `_Finally _fin${id}([&] {`, ...this.seq(el.qFinally, ind + I + I), ind + I + '});', ...inner, ind + '}'];
     }
-    const head = { java: '} catch (Exception _e) {', csharp: '} catch (Exception _e) {', javascript: '} catch (_e) {', cpp: '} catch (const exception& _e) {' }[L];
-    const decl = { java: `String ${v} = _e.getMessage();`, csharp: `string ${v} = _e.Message;`, javascript: `const ${v} = _e instanceof Error ? _e.message : String(_e);`, cpp: `string ${v} = _e.what();` }[L];
+    // try in einem catch-Teil: eigener Name für die Ausnahme (Java/C# erlauben kein zweites _e im selben Bereich)
+    const depth = this.catchDepth || 0;
+    const ex = depth ? `_e${depth + 1}` : '_e';
+    const head = { java: `} catch (Exception ${ex}) {`, csharp: `} catch (Exception ${ex}) {`, javascript: `} catch (${ex}) {`, cpp: `} catch (const exception& ${ex}) {` }[L];
     const wasDeclared = this.cur.declared.has(v);
-    this.cur.declared.add(v);
-    const out = [ind + 'try {', ...this.checked(() => this.seq(el.qTry, ind + I)), ind + head, ind + I + decl, ...this.seq(el.qCatch, ind + I)];
+    // Fehlervariable schon vorhanden (gleicher Name im umgebenden catch): Java/C# zuweisen statt neu deklarieren
+    const reuse = wasDeclared && (L === 'java' || L === 'csharp');
+    const decl = { java: `${reuse ? '' : 'String '}${v} = ${ex}.getMessage();`, csharp: `${reuse ? '' : 'string '}${v} = ${ex}.Message;`, javascript: `const ${v} = ${ex} instanceof Error ? ${ex}.message : String(${ex});`, cpp: `string ${v} = ${ex}.what();` }[L];
+    const tryPart = this.checked(() => this.seq(el.qTry, ind + I));
+    this.cur.declared.add(v); // erst im catch-Teil deklariert
+    this.catchDepth = depth + 1;
+    let catchPart;
+    try { catchPart = this.seq(el.qCatch, ind + I); } finally { this.catchDepth = depth; }
+    const out = [ind + 'try {', ...tryPart, ind + head, ind + I + decl, ...catchPart];
     if (!wasDeclared) this.cur.declared.delete(v);
     if (el.qFinally.length && L !== 'cpp') out.push(ind + '} finally {', ...this.seq(el.qFinally, ind + I));
     out.push(ind + '}');
@@ -2154,10 +2168,14 @@ class CGen extends BaseGen {
     if (this.lang === 'c') return this.cHelpers();
     if (this.lang !== 'cpp') return [];
     const out = [];
+    // Zahl bzw. Ganzzahl im Format des Interpreters (Eingabe und Dateifunktionen)
+    if (this.needs.has('files') || this.needs.has('readnum')) out.push(...C_NUMCHECK, '');
+    // Index außerhalb des Arrays innerhalb von try: Text des Interpreters (Plan 2.9)
+    if (this.needs.has('checkidx')) { this.needs.add('stdexcept'); this.needs.add('string'); out.push(...checkHelpers('cpp', this.needs)); }
     // Division und Rest innerhalb von try: bei 0 abfangbarer Fehler wie im Interpreter
     if (this.needs.has('checkdiv') || this.needs.has('checkmod')) this.needs.add('stdexcept');
-    if (this.needs.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `long long _idiv(long long a, long long b) { if (b == 0) throw runtime_error(${JSON.stringify(tr('exec.divZero'))}); return a / b; }`, '');
-    if (this.needs.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `long long _imod(long long a, long long b) { if (b == 0) throw runtime_error(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; }`, '');
+    if (this.needs.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `template <class A, class B> auto _idiv(A a, B b) -> decltype(a / b) { if (b == 0) throw runtime_error(${JSON.stringify(tr('exec.divZero'))}); return a / b; }`, '');
+    if (this.needs.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `template <class A, class B> auto _imod(A a, B b) -> decltype(a % b) { if (b == 0) throw runtime_error(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; }`, '');
     if (this.needs.has('utf8')) {
       this.needs.add('string');
       out.push(this.comment(tr('gen.utf8')),
@@ -2190,12 +2208,9 @@ class CGen extends BaseGen {
     // Zahlen einlesen, streng wie im Interpreter: anderer Text ist ein (abfangbarer) Fehler
     if (this.needs.has('readnum')) {
       this.needs.add('stdexcept');
-      const msg = (key) => { const [a, b] = tr(key, '\u0000').split('\u0000'); return `${JSON.stringify(a)} + s + ${JSON.stringify(b)}`; };
-      const body = (key, conv, extra) => ['    string s = read_line();', '    size_t a = s.find_first_not_of(" \\t"), b = s.find_last_not_of(" \\t");',
-        '    string t = a == string::npos ? "" : s.substr(a, b - a + 1);', '    size_t p = 0;', `    ${conv}`,
-        `    if (t.empty() || p != t.size()${extra}) throw runtime_error(${msg(key)});`, '    return v;'];
-      out.push(this.comment(tr('gen.readNum')),
-        'double read_double() {', ...body('exec.notNumber', 'double v = 0; try { v = stod(t, &p); } catch (...) { p = 0; }', ' || t.find_first_of("xXnNiI") != string::npos'), '}',
+      out.push(this.comment(tr('gen.readNum')), ...cNumFail('cpp'),
+        'double read_double() {', '    string s = read_line();', '    size_t a = s.find_first_not_of(" \\t"), b = s.find_last_not_of(" \\t");',
+        '    string t = a == string::npos ? "" : s.substr(a, b - a + 1);', '    if (!_is_num(t.c_str())) _num_fail(s, t);', '    return stod(t);', '}',
         // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
         'long long read_int() {', '    return (long long) read_double();', '}', '');
     }
@@ -2266,15 +2281,21 @@ class CGen extends BaseGen {
         tr('gen.cThrow'),
         'void _throw(const char* msg) {', '    if (_try_env) { _try_msg = msg; longjmp(*_try_env, 1); }', '    fprintf(stderr, "%s\\n", msg);', '    exit(1);', '}');
     }
+    // Zahl bzw. Ganzzahl im Format des Interpreters (Eingabe und Dateifunktionen)
+    if (N.has('files') || N.has('readnum')) out.push(...C_NUMCHECK);
     if (N.has('files')) out.push(...fileHelpers('c'));
-    // Zahlen einlesen, streng wie im Interpreter: anderer Text ist ein Fehler (abfangbar, wenn das Programm try nutzt)
+    // Zahlen einlesen, streng wie im Interpreter: anderer Text ist ein Fehler (abfangbar, wenn das Programm try nutzt),
+    // mit dem Hinweis auf ein Komma statt Punkt (Plan 2.9)
     if (N.has('readnum')) {
       N.add('string');
+      N.add('stdlib');
       const fail = N.has('cthrow') ? '_throw(_in_msg);' : 'fprintf(stderr, "%s\\n", _in_msg); exit(1);';
       out.push(this.comment(tr('gen.readNum')), 'static char _in_msg[1200];',
-        `void _input_fail(const char* fmt, const char* s) { snprintf(_in_msg, sizeof _in_msg, fmt, s); ${fail} }`,
-        'double read_double(void) {', '    char* s = read_line();', '    char* e;', '    double v = strtod(s, &e);',
-        "    while (*e == ' ' || *e == '\\t') e++;", `    if (e == s || *e || strpbrk(s, "xXnNiI")) _input_fail(${JSON.stringify(tr('exec.notNumber', '%s'))}, s);`, '    return v;', '}',
+        `void _input_fail(const char* fmt, const char* s, const char* d) { snprintf(_in_msg, sizeof _in_msg, fmt, s, d); ${fail} }`,
+        'double read_double(void) {', '    char* s = read_line();', '    size_t a = strspn(s, " \\t"), n = strlen(s + a);',
+        "    while (n && (s[a + n - 1] == ' ' || s[a + n - 1] == '\\t')) n--;", '    char* t = malloc(n + 1);', '    memcpy(t, s + a, n); t[n] = 0;',
+        '    if (!_is_num(t)) {', "        char* c = strchr(t, ',');", `        if (c) { *c = '.'; if (_is_num(t)) _input_fail(${JSON.stringify(tr('exec.commaNumber', '%s', '%s'))}, s, t); }`,
+        `        _input_fail(${JSON.stringify(tr('exec.notNumber', '%s') + '%.0s')}, s, "");`, '    }', '    return strtod(t, NULL);', '}',
         // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
         'long long read_int(void) {', '    return (long long) read_double();', '}');
     }
@@ -2528,6 +2549,7 @@ class CGen extends BaseGen {
       if (this.needs.has('scanner')) out.push(this.I + 'static Scanner scanner = new Scanner(System.in);', '');
       if (this.needs.has('fmtnum')) out.push(this.I + this.comment(tr('gen.fmtDouble')), ...fmtHelper('java').map((l) => this.I + l), '');
       if (this.needs.has('files')) out.push(...fileHelpers('java', this.I), '');
+      out.push(...checkHelpers('java', this.needs, this.I));
       out.push(...td);
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
       out.push('}');
@@ -2544,7 +2566,8 @@ class CGen extends BaseGen {
           I2 + 'CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;');
       }
       // Umlaute und andere Sonderzeichen: Ausgabe als UTF-8 (stellt auch die Windows-Konsole um)
-      if (main && (gen.some((g) => /[^\x00-\x7f]/.test(g.lines.join('\n'))) || this.needs.has('files'))) {
+      if (main && (gen.some((g) => /[^\x00-\x7f]/.test(g.lines.join('\n'))) || this.needs.has('files') ||
+          /[^\x00-\x7f]/.test(checkHelpers('csharp', this.needs).join('\n')))) {
         const k = main.lines.findIndex((l) => /static void Main\(/.test(l));
         main.lines.splice(k + 1, 0, this.I + this.I + 'Console.OutputEncoding = System.Text.Encoding.UTF8;');
       }
@@ -2561,6 +2584,7 @@ class CGen extends BaseGen {
         out.push(I + this.comment(tr('gen.fmtDouble')), ...fmtHelper('csharp').map((l) => I + l), '');
       }
       if (this.needs.has('files')) out.push(...fileHelpers('csharp', this.I), '');
+      out.push(...checkHelpers('csharp', this.needs, this.I));
       gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines.map((l) => l.replace(/^(\s*)(.*) \{$/, (m0, a, b) => (/^(static|public)/.test(b.trim()) ? `${a}${b}\n${a}{` : m0)))); });
       out.push('}');
     } else if (L === 'javascript') {
@@ -2574,9 +2598,10 @@ class CGen extends BaseGen {
           '        if (n === 0 || buf[0] === 10) break;', '        if (buf[0] !== 13) bytes.push(buf[0]);', '    }', '    return Buffer.from(bytes).toString("utf8");', '};');
       }
       // Zahlen einlesen, streng wie im Interpreter (Number() nähme 2.5 für eine Ganzzahl und "" als 0)
+      const jsMsg2 = (key) => { const [a, b, c] = tr(key, '\u0000', '\u0001').split(/[\u0000\u0001]/); return `${JSON.stringify(a)} + s + ${JSON.stringify(b)} + d + ${JSON.stringify(c)}`; };
       const jsMsg = (key) => { const [a, b] = tr(key, '\u0000').split('\u0000'); return `${JSON.stringify(a)} + s + ${JSON.stringify(b)}`; };
       if (this.needs.has('readint')) out.push(this.comment(tr('gen.readNum')), `const _int = (s) => Math.trunc(_num(s));`);
-      if (this.needs.has('readnum')) out.push(this.comment(tr('gen.readNum')), `const _num = (s) => { const v = String(s ?? "").trim(); if (!/^[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?$/.test(v)) throw new Error(${jsMsg('exec.notNumber')}); return parseFloat(v); };`);
+      if (this.needs.has('readnum')) out.push(this.comment(tr('gen.readNum')), `const _num = (s) => { const RE = /^[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?$/, v = String(s ?? "").trim(); if (!RE.test(v)) { const d = v.replace(",", "."); throw new Error(v.includes(",") && RE.test(d) ? ${jsMsg2('exec.commaNumber')} : ${jsMsg('exec.notNumber')}); } return parseFloat(v); };`);
       if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), 'const fmtNum = (x) => (Number.isInteger(x) ? x.toFixed(1) : String(x));');
       // Division und Rest innerhalb von try: bei 0 abfangbarer Fehler wie im Interpreter (sonst Infinity bzw. NaN)
       if (this.needs.has('checkidx')) { const [pre, mid, post] = tr('exec.indexArray', '@@1@@', '@@2@@').split(/@@[12]@@/); out.push(this.comment(tr('gen.checkIdx')), `const _ix = (a, i) => { if (i < 0 || i >= a.length) throw new Error(\`${pre}\${i}${mid}\${a.length}${post}\`); return i; };`); }
@@ -2648,7 +2673,9 @@ class PyGen extends BaseGen {
           const t = P.normType(this.typeOf(v));
           const pr = `input(${k === 0 && c.prompt ? this.x(c.prompt) : ''})`;
           // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
-          const rd = t === 'int' ? `int(float(${pr}))` : t === 'double' ? `float(${pr})` : t === 'boolean' ? `${pr} == "True"` : pr;
+          const chk = this.checkDiv && (t === 'int' || t === 'double'); // in try: Fehlertexte des Interpreters (Plan 2.9)
+          if (chk) this.needs.add('checknum');
+          const rd = t === 'int' ? (chk ? `int(_num(${pr}))` : `int(float(${pr}))`) : t === 'double' ? (chk ? `_num(${pr})` : `float(${pr})`) : t === 'boolean' ? `${pr} == "True"` : pr;
           out.push(ind + `${this.x(v)} = ${rd}`);
         });
         return out;
@@ -2891,6 +2918,7 @@ ${this.I}pass`), '', '');
       out.push(this.comment(tr('gen.checkIdx')), 'def _ix(a, i):', '    if i < 0 or i >= len(a):', `        raise IndexError(f${JSON.stringify(pre + '{i}' + mid + '{len(a)}' + post)})`, '    return i', '', '');
     }
     if (this.needs.has('files')) out.push(...fileHelpers('python'), '', '');
+    out.push(...checkHelpers('python', this.needs));
     out.push(...td);
     parts.forEach((p) => out.push(...p, '', ''));
     mainParts.forEach((p, i) => { if (i) out.push(''); out.push(...p); });
@@ -3066,7 +3094,8 @@ class KtGen extends CGen {
         c.vars.forEach((v) => {
           const t = P.normType(this.targetType(v)) || 'string';
           const ct = P.canonType(this.targetType(v)) || t;
-          const rd = { int: 'readln().trim().toDouble().toInt()', long: 'readln().trim().toDouble().toLong()', short: 'readln().trim().toDouble().toInt().toShort()', byte: 'readln().trim().toDouble().toInt().toByte()', float: 'readln().trim().toFloat()', double: 'readln().trim().toDouble()', boolean: 'readln().trim().toBoolean()', char: 'readln()[0]' }[ct] || 'readln()';
+          const chk = this.checkDiv && ['int', 'long', 'short', 'byte', 'float', 'double'].includes(ct) ? (this.needs.add('checknum'), { int: '_num(readln()).toInt()', long: '_num(readln()).toLong()', short: '_num(readln()).toInt().toShort()', byte: '_num(readln()).toInt().toByte()', float: '_num(readln()).toFloat()', double: '_num(readln())' }[ct]) : null;
+          const rd = chk || { int: 'readln().trim().toDouble().toInt()', long: 'readln().trim().toDouble().toLong()', short: 'readln().trim().toDouble().toInt().toShort()', byte: 'readln().trim().toDouble().toInt().toByte()', float: 'readln().trim().toFloat()', double: 'readln().trim().toDouble()', boolean: 'readln().trim().toBoolean()', char: 'readln()[0]' }[ct] || 'readln()';
           const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
           if (decl) this.cur.declared.add(v);
           out.push(ind + (decl ? `var ${v}: ${this.typeName(this.targetType(v) || t)} = ${rd}` : `${this.x(v)} = ${rd}`));
@@ -3186,7 +3215,7 @@ class KtGen extends CGen {
 
   tryEl(el, ind) {
     const I = this.I, v = this.catchVar(el);
-    const out = [ind + 'try {', ...this.seq(el.qTry, ind + I), ind + '} catch (_e: Exception) {', ind + I + `val ${v} = _e.message ?: ""`, ...this.seq(el.qCatch, ind + I)];
+    const out = [ind + 'try {', ...this.checked(() => this.seq(el.qTry, ind + I)), ind + '} catch (_e: Exception) {', ind + I + `val ${v} = _e.message ?: ""`, ...this.seq(el.qCatch, ind + I)];
     if (el.qFinally.length) out.push(ind + '} finally {', ...this.seq(el.qFinally, ind + I));
     out.push(ind + '}');
     return out;
@@ -3206,6 +3235,7 @@ class KtGen extends CGen {
     const isMain = root.rootType === 'program';
     const info = this.analyze(root, isMain ? { ...sig, params: [] } : sig);
     this.cur = info; this.curIsMain = isMain; this.curSig = sig;
+    this.checkDiv = !isMain && this.checkedRoutines().has(sig.name) ? 1 : 0; // aus einem try-Teil aufgerufen: prüfen (Plan 2.9)
     const assigned = assignedNames(root);
     const shadow = isMain ? [] : sig.params.filter((p) => assigned.has(p.name)).map((p) => I + `var ${p.name} = ${p.name}`);
     const hoisted = [...info.hoist].map((n) => I + this.declLine(n, info.types.get(n), null));
@@ -3230,6 +3260,7 @@ class KtGen extends CGen {
     out.push('', ...this.typeDefs());
     if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('kotlin'), '');
     if (this.needs.has('files')) out.push(...fileHelpers('kotlin'), '');
+    out.push(...checkHelpers('kotlin', this.needs));
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
     return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
   }
@@ -3421,7 +3452,12 @@ class RsGen extends BaseGen {
           return [ind + this.letLine(n, t, this.val(t, c.expr))];
         }
         // Ziel ohne .clone() (Element eines Text-/Record-Arrays wird beim Lesen kopiert, beim Schreiben nicht)
-        return [ind + `${this.x(n).replace(/\.clone\(\)/g, '')} = ${this.val(t, c.expr)};`];
+        const tgt = this.x(n).replace(/\.clone\(\)/g, '');
+        // geprüfter Index beim Schreiben (try): Länge vorher bestimmen – arr[_idx(i, arr.len())] = … borgt arr
+        // zugleich zum Schreiben und Lesen (Fund des Zufallstests)
+        const m = /^([\p{L}_][\p{L}\p{N}_]*)\[_idx\((.*), \1\.len\(\)\)\]$/u.exec(tgt);
+        if (m) return [ind + `{ let _n = ${m[1]}.len(); ${m[1]}[_idx(${m[2]}, _n)] = ${this.val(t, c.expr)}; }`];
+        return [ind + `${tgt} = ${this.val(t, c.expr)};`];
       }
       case 'input': {
         const out = [];
@@ -3432,7 +3468,9 @@ class RsGen extends BaseGen {
           const t = P.normType(this.targetType(v)) || 'string';
           const ct = P.canonType(this.targetType(v)) || t;
           const num = EXACT_TYPES.rust[ct];
-          const rd = ct === 'char' ? 'read_line().chars().next().unwrap()' : ct === 'string' || !num ? 'read_line()'
+          const chk = this.checkDiv && num && ct !== 'char' && ct !== 'string'; // in try: Fehlertexte des Interpreters (Plan 2.9)
+          if (chk) this.needs.add('checknum');
+          const rd = chk ? (num === 'f64' ? '_num(&read_line())' : `_num(&read_line()) as ${num}`) : ct === 'char' ? 'read_line().chars().next().unwrap()' : ct === 'string' || !num ? 'read_line()'
             : /^[iu]/.test(num) ? `read_line().parse::<f64>().unwrap() as ${num}` // Ganzzahl: Kommazahl abschneiden (2.5 -> 2)
               : `read_line().parse::<${num}>().unwrap()`;
           const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
@@ -3619,7 +3657,7 @@ class RsGen extends BaseGen {
     const frame = { loopDepth: (this.loopStack || []).length, flows: new Set() };
     this.rsTry = this.rsTry || [];
     const inClosure = (seq, pind) => { this.rsTry.push(frame); try { return this.seq(seq, pind); } finally { this.rsTry.pop(); } };
-    const tryBody = inClosure(el.qTry, ind + I);
+    const tryBody = this.checked(() => inClosure(el.qTry, ind + I));
     if (!fin && !frame.flows.size) {
       // einfache Form: kein Sprung aus dem try-Teil, kein finally
       return [ind + `if let Err(${v}) = try_block(|| {`, ...tryBody, ind + '}) {', ...this.seq(el.qCatch, ind + I), ind + '}'];
@@ -3703,6 +3741,7 @@ class RsGen extends BaseGen {
     const isMain = root.rootType === 'program';
     const info = this.analyze(root, isMain ? { ...sig, params: [] } : sig);
     this.cur = info; this.curIsMain = isMain; this.curSig = sig;
+    this.checkDiv = !isMain && this.checkedRoutines().has(sig.name) ? 1 : 0; // aus einem try-Teil aufgerufen: prüfen (Plan 2.9)
     const assigned = assignedNames(root);
     const hoisted = [...info.hoist].map((n) => I + this.letLine(n, info.types.get(n), null));
     for (const n of info.hoist) info.declared.add(n);
@@ -3742,6 +3781,7 @@ class RsGen extends BaseGen {
     gen.forEach((g, i) => { if (i) out.push(''); out.push(...g.lines); });
     if (this.needs.has('fmtnum')) out.push('', this.comment(tr('gen.fmtDouble')), ...fmtHelper('rust'));
     if (this.needs.has('files')) out.push('', ...fileHelpers('rust'));
+    out.push(...checkHelpers('rust', this.needs));
     if (this.needs.has('input')) {
       out.push('', tr('gen.rsReadLine'), 'fn read_line() -> String {',
         '    use std::io::Write;', '    std::io::stdout().flush().unwrap();', '    let mut s = String::new();',
@@ -3877,6 +3917,7 @@ const RESERVED = {
     'main read_line fmt_num random try_block Flow String Vec',
 };
 for (const k of Object.keys(RESERVED)) RESERVED[k] += ' ' + FILE_HELPER_NAMES; // Dateifunktionen (Plan 6.2)
+for (const k of Object.keys(RESERVED)) RESERVED[k] += ' _idiv _imod _idx _ix _num _int _is_num _is_int _num_fail'; // Prüfungen in try (Plan 2.9)
 const RESERVED_SETS = Object.fromEntries(Object.entries(RESERVED).map(([k, v]) => [k, new Set(v.split(/\s+/))]));
 
 /** Selbst vergebene Namen eines Dokuments: Variablen, Parameter, Unterprogramme, Record-Typen und -Felder, Aufzählungswerte */

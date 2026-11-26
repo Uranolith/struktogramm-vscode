@@ -22,6 +22,16 @@
       "problemMatcher": []
     },
     {
+      "label": "Zufallstest: 100 Struktogramme, alle Sprachen",
+      "type": "shell",
+      "command": "node",
+      "args": ["test/fuzz.js", "--n", "100", "all"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": true },
+      "problemMatcher": []
+    },
+    {
       "label": "Aufgabentest: Excel-Protokoll öffnen",
       "type": "shell",
       "command": "start",
