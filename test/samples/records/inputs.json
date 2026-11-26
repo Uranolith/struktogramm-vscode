@@ -3,5 +3,6 @@
   "01_record.nsd": [[]],
   "02_record_array.nsd": [[]],
   "03_enum.nsd": [[]],
-  "04_includable.nsd": [[]]
+  "04_includable.nsd": [[]],
+  "05_record_param.nsd": [[]]
 }

@@ -178,6 +178,7 @@
  "gen.overflowHint": "Hinweis: {0} reicht bis {1} – bei größeren Werten {2} verwenden",
  "gen.cArrDup": "Kopie eines Arrays mit eigenem Speicher (Länge n, Elementgröße sz)",
  "gen.random01": "Zufallszahl 0 … unter 1 (wie random() im Struktogramm)",
+ "gen.caseLatin1": "Groß-/Kleinschreibung für ASCII und Umlaute (Latin-1), ß wird zu SS wie im Struktogramm",
  "gen.utf8": "Texte in Zeichen (UTF-8) zählen wie im Struktogramm, nicht in Bytes",
  "gen.split": "Text an einem Trennzeichen zerlegen (leere Teile bleiben erhalten)",
  "gen.files": "Dateifunktionen wie im Struktogramm (fileOpen … fileWriteLine): Nummer einer Datei = Position in der Liste + 1",

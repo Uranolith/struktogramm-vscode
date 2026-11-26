@@ -388,6 +388,19 @@ den Abschnitt „Grenzen“ des README.
   Nachts in der CI: `.github/workflows/fuzz.yml`, 200 Programme mit Seed 1 und 200 mit zufälligem Seed;
   Abweichungen als Artefakt. Gefunden: Zählvariable ohne festen Typ in Rust (`for i := -2 to 1` und `i.abs()`),
   dabei `abs` in C ohne `stdlib.h` – Test `control_flow/12_loop_var_abs`.
+  Danach erweitert um Records (Feldzugriff, Record als Argument), `try`/`catch`/`finally` mit `throw` (auch in
+  Schleifen und geschachtelt) und weitere Textfunktionen (`insert`, `delete`, `lowercase`, `trim`, `pos`, `ord`, `chr`,
+  Textvergleich). Gefunden und behoben:
+  - `throw` mit einem Ausdruck (`throw "Fehler " + n`): Java/C#/C++ übersetzten nicht, Python warf einen Text, C
+    meldete nur „Fehler“ – jetzt überall eine Ausnahme mit dem Text wie bei `OUTPUT` (Test `try_catch/10_throw_expr`).
+  - Parameter eines nie aufgerufenen Unterprogramms mit Feldzugriff (`pr.u`) bekam den Typ `int` – jetzt der
+    Record-Typ mit diesen Feldern; Rust übergibt Records als Kopie (`r` war nach `g(r)` „verschoben“)
+    (Test `records/05_record_param`).
+  - `insert`/`copy`/`delete` hinter dem Textende: Java, C# und Kotlin brachen ab, der Interpreter hängt an bzw.
+    liefert "" – jetzt begrenzt.
+  - `lowercase("Ä")` und `ord("Ö")` in C/C++ (nur ASCII bzw. erstes Byte) – jetzt Latin-1 und UTF-8; C# `uppercase`
+    mit `ß` → `SS` und ohne Ländereinstellung (Test `expressions/15_text_edges`).
+  - Verkettung mit `mod`/`div`/Index in `try` in C/C++ (geprüfte Fassung `_imod` galt nicht als Zahl).
 
 ## Phase 9 – Abschluss
 

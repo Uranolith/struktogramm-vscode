@@ -332,7 +332,8 @@ Damit Interpreter und erzeugter Code dasselbe ausgeben, gilt:
   ist es in C, C++ und JavaScript nicht. Der Text der Fehlermeldung im `catch` unterscheidet sich je Sprache.
 - **C**: Texte liegen in eigenem Speicher (ohne Längengrenze, wird nicht freigegeben); Längen und Positionen zählen
   Zeichen (UTF-8). Arrays tragen ihre Länge mit (`int name_len`), eine Funktion mit Array-Ergebnis gibt sie über
-  `int* _len` zurück. **C++** verwendet für Arrays `std::vector`.
+  `int* _len` zurück. **C++** verwendet für Arrays `std::vector`. `uppercase`/`lowercase` kennen in C und C++
+  ASCII und Latin-1 (Umlaute, `ß` → `SS`); andere Schriften bleiben unverändert, `chr` liefert dort nur Zeichen bis 127.
 - Methoden wie `s.length()`, `s.substring(0, 2)` oder `s.toUpperCase()` werden auf die Struktogramm-Funktionen
   abgebildet. Arrays, die wachsen (`push`, `append`, `pop`), werden nicht übersetzt.
 - **`fileRead`** liest in eine Variable je nach deren Typ eine ganze Zahl, eine Kommazahl oder Text (ohne Typangabe

@@ -178,6 +178,7 @@
  "gen.overflowHint": "Note: {0} holds values up to {1} – use {2} for larger values",
  "gen.cArrDup": "copy of an array in its own memory (length n, element size sz)",
  "gen.random01": "random number 0 … below 1 (like random() in the structogram)",
+ "gen.caseLatin1": "upper/lower case for ASCII and Latin-1 letters (umlauts), ß becomes SS as in the structogram",
  "gen.utf8": "count text in characters (UTF-8) as in the structogram, not in bytes",
  "gen.split": "split a text at a separator (empty parts are kept)",
  "gen.files": "file functions as in the structogram (fileOpen … fileWriteLine): file number = position in the list + 1",

@@ -296,6 +296,30 @@ class BaseGen {
       for (const [prm, ts] of argTypes) prm.inferredType = ts.reduce((acc, t) => widenType(acc, t), prm.inferredType || null);
     }
     this.inferringParams = false;
+    // Parameter ohne Typ und ohne Aufruf, auf deren Felder zugegriffen wird (pr.u): der Record-Typ, der alle diese
+    // Felder hat – sonst bekäme pr den Standardtyp int (Fund des Zufallstests)
+    if (this.recordTypes.size) {
+      for (const r of doc.roots) {
+        const sig = this.sigs.get(r);
+        if (r.rootType === 'program') continue;
+        for (const prm of sig.params) {
+          if (prm.type || prm.inferredType) continue;
+          const fields = new Set();
+          walk(r.children, (el) => {
+            for (const line of linesOf(el)) {
+              const toks = P.ptoks(line);
+              toks.forEach((t, i) => {
+                if (t.t === 'id' && t.v === prm.name && toks[i + 1] && toks[i + 1].v === '.' && toks[i + 2] && toks[i + 2].t === 'id' &&
+                  !(toks[i + 3] && toks[i + 3].v === '(') && !(toks[i - 1] && toks[i - 1].v === '.')) fields.add(toks[i + 2].v);
+              });
+            }
+          });
+          if (!fields.size) continue;
+          const fits = [...this.recordTypes].filter(([, fs]) => [...fields].every((f) => fs.some((x) => x.name === f)));
+          if (fits.length === 1) prm.inferredType = fits[0][0];
+        }
+      }
+    }
     // Rückgabetypen vorab bestimmen (für Typinferenz bei Aufrufen)
     for (const r of doc.roots) {
       const sig = this.sigs.get(r);
@@ -1328,8 +1352,9 @@ class BaseGen {
     return fn ? `${c.target} := ${fn}${joinTokens(et.slice(1))}` : null;
   }
 
-  /** Wert für fileWrite als Text wie bei OUTPUT (Kommazahl mit Nachkommastelle, true/false) */
-  fileStr(src) {
+  /** Wert als Text wie bei OUTPUT (Kommazahl mit Nachkommastelle, true/false) – für fileWrite und throw */
+  textOf(src) {
+    if (!String(src || '').trim()) return this.lang === 'rust' ? 'String::new()' : '""';
     return P.normType(this.exprType(src)) === 'string' ? this.x(src) : this.x(`"" + (${src})`);
   }
 
@@ -1710,15 +1735,16 @@ class CGen extends BaseGen {
       case 'leave': return [ind + 'break;'];
       case 'continue': return [ind + 'continue;'];
       case 'throw': {
-        const e = this.x(c.expr);
-        const lit = P.isStringLiteral(c.expr);
-        if (L === 'java') return [ind + (lit ? `throw new RuntimeException(${e});` : `throw ${e};`)];
-        if (L === 'csharp') return [ind + (lit ? `throw new Exception(${e});` : `throw ${e};`)];
-        if (L === 'javascript') return [ind + (lit ? `throw new Error(${e});` : `throw ${e};`)];
-        if (L === 'cpp') { this.needs.add('stdexcept'); return [ind + (lit ? `throw runtime_error(${e});` : `throw ${e};`)]; }
+        // Der Interpreter wirft beliebige Werte, catch bekommt sie als Text: immer als Ausnahme mit diesem Text
+        // („throw "Fehler " + n“ war in Java/C#/C++ ein Übersetzungsfehler, in C „Fehler“ – Fund des Zufallstests)
+        const e = this.textOf(c.expr);
+        if (L === 'java') return [ind + `throw new RuntimeException(${e});`];
+        if (L === 'csharp') return [ind + `throw new Exception(${e});`];
+        if (L === 'javascript') return [ind + `throw new Error(${e});`];
+        if (L === 'cpp') { this.needs.add('stdexcept'); return [ind + `throw runtime_error(${e});`]; }
         this.needs.add('stdlib');
         this.needs.add('cthrow');
-        return [ind + `_throw(${lit ? e : '"Fehler"'});`];
+        return [ind + `_throw(${e});`];
       }
       default: {
         // Pascal-Stil "Funktionsname := Wert" wird oben als assign erkannt
@@ -2177,8 +2203,15 @@ class CGen extends BaseGen {
       this.needs.add('stdlib');
       out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('cpp'), '');
     }
-    if (this.needs.has('strupper')) out.push('string str_upper(string s) { for (auto& c : s) c = toupper((unsigned char) c); return s; }');
-    if (this.needs.has('strlower')) out.push('string str_lower(string s) { for (auto& c : s) c = tolower((unsigned char) c); return s; }');
+    // Groß-/Kleinschreibung für ASCII und Latin-1 (Umlaute, ß -> SS wie im Interpreter) in UTF-8
+    if (this.needs.has('strupper')) out.push(this.comment(tr('gen.caseLatin1')), 'string str_upper(string s) {', '    for (size_t i = 0; i < s.size(); i++) {',
+      '        unsigned char c = s[i], d = i + 1 < s.size() ? s[i + 1] : 0;', "        if (c == 0xC3 && d == 0x9F) { s[i] = 'S'; s[++i] = 'S'; }",
+      '        else if (c == 0xC3 && d >= 0xA0 && d <= 0xBE && d != 0xB7) s[++i] = (char) (d - 0x20);', '        else s[i] = (char) toupper(c);', '    }', '    return s;', '}');
+    if (this.needs.has('strlower')) out.push(this.comment(tr('gen.caseLatin1')), 'string str_lower(string s) {', '    for (size_t i = 0; i < s.size(); i++) {',
+      '        unsigned char c = s[i], d = i + 1 < s.size() ? s[i + 1] : 0;', '        if (c == 0xC3 && d >= 0x80 && d <= 0x9E && d != 0x97) s[++i] = (char) (d + 0x20);', '        else s[i] = (char) tolower(c);', '    }', '    return s;', '}');
+    if (this.needs.has('utf8ord')) out.push(this.comment(tr('gen.utf8')), 'int u_ord(const string& s) {', '    const unsigned char* u = (const unsigned char*) s.c_str();',
+      '    if (u[0] < 0x80) return u[0];', '    if (u[0] < 0xE0) return ((u[0] & 0x1F) << 6) | (u[1] & 0x3F);', '    if (u[0] < 0xF0) return ((u[0] & 0x0F) << 12) | ((u[1] & 0x3F) << 6) | (u[2] & 0x3F);',
+      '    return ((u[0] & 0x07) << 18) | ((u[1] & 0x3F) << 12) | ((u[2] & 0x3F) << 6) | (u[3] & 0x3F);', '}');
     if (this.needs.has('strtrim')) out.push('string str_trim(const string& s) { size_t a = s.find_first_not_of(" \\t\\r\\n"); if (a == string::npos) return ""; size_t b = s.find_last_not_of(" \\t\\r\\n"); return s.substr(a, b - a + 1); }');
     if (out.length) { this.needs.add('string'); out.push(''); }
     return out;
@@ -2260,11 +2293,15 @@ class CGen extends BaseGen {
     // Division und Rest innerhalb von try: bei 0 abfangbarer Fehler wie im Interpreter
     if (N.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `int _idiv(int a, int b) { if (b == 0) _throw(${JSON.stringify(tr('exec.divZero'))}); return a / b; }`);
     if (N.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `int _imod(int a, int b) { if (b == 0) _throw(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; }`);
-    if (N.has('strupper') || N.has('strlower')) {
-      for (const [n, f] of [['strupper', 'toupper'], ['strlower', 'tolower']]) {
-        if (N.has(n)) out.push(`char* str_${n.slice(3)}(const char* s) {`, '    char* r = malloc(strlen(s) + 1);', '    size_t i = 0;', `    for (; s[i]; i++) r[i] = (char) ${f}((unsigned char) s[i]);`, '    r[i] = 0;', '    return r;', '}');
-      }
-    }
+    // Groß-/Kleinschreibung für ASCII und Latin-1 (Umlaute, ß -> SS wie im Interpreter) in UTF-8 – gleiche Länge in Bytes
+    if (N.has('strupper')) out.push(this.comment(tr('gen.caseLatin1')), 'char* str_upper(const char* s) {', '    size_t n = strlen(s), i = 0;', '    char* r = malloc(n + 1);', '    for (; i < n; i++) {',
+      '        unsigned char c = s[i], d = s[i + 1];', "        if (c == 0xC3 && d == 0x9F) { r[i] = 'S'; r[++i] = 'S'; }",
+      '        else if (c == 0xC3 && d >= 0xA0 && d <= 0xBE && d != 0xB7) { r[i] = c; r[++i] = (char) (d - 0x20); }', '        else r[i] = (char) toupper(c);', '    }', '    r[n] = 0;', '    return r;', '}');
+    if (N.has('strlower')) out.push(this.comment(tr('gen.caseLatin1')), 'char* str_lower(const char* s) {', '    size_t n = strlen(s), i = 0;', '    char* r = malloc(n + 1);', '    for (; i < n; i++) {',
+      '        unsigned char c = s[i], d = s[i + 1];', '        if (c == 0xC3 && d >= 0x80 && d <= 0x9E && d != 0x97) { r[i] = c; r[++i] = (char) (d + 0x20); }', '        else r[i] = (char) tolower(c);', '    }', '    r[n] = 0;', '    return r;', '}');
+    if (N.has('utf8ord')) out.push(this.comment(tr('gen.utf8')), 'int utf8_ord(const char* s) {', '    const unsigned char* u = (const unsigned char*) s;',
+      '    if (u[0] < 0x80) return u[0];', '    if (u[0] < 0xE0) return ((u[0] & 0x1F) << 6) | (u[1] & 0x3F);', '    if (u[0] < 0xF0) return ((u[0] & 0x0F) << 12) | ((u[1] & 0x3F) << 6) | (u[2] & 0x3F);',
+      '    return ((u[0] & 0x07) << 18) | ((u[1] & 0x3F) << 12) | ((u[2] & 0x3F) << 6) | (u[3] & 0x3F);', '}');
     if (N.has('strtrim')) out.push('char* str_trim(const char* s) {', '    while (isspace((unsigned char) *s)) s++;', '    size_t n = strlen(s);', '    while (n && isspace((unsigned char) s[n - 1])) n--;', '    char* r = malloc(n + 1);', '    memcpy(r, s, n); r[n] = 0;', '    return r;', '}');
     if (N.has('strpos')) out.push('int str_pos(const char* sub, const char* s) {', '    const char* p = strstr(s, sub);', '    if (!p) return 0;', '    int n = 0;', '    for (const char* q = s; q < p; q++) if ((*q & 0xC0) != 0x80) n++;', '    return n + 1;', '}');
     if (N.has('strcopy')) out.push('char* str_copy(const char* s, int i, int n) {', range, '    size_t e = k + utf8_off(s + k, n < 0 ? 0 : n); if (e > ls) e = ls;', '    char* r = malloc(e - k + 1);', '    memcpy(r, s + k, e - k); r[e - k] = 0;', '    return r;', '}');
@@ -2627,7 +2664,7 @@ class PyGen extends BaseGen {
         const rc = this.innerRepeatCond();
         return [...(rc ? [ind + `if ${this.x(rc)}:`, ind + this.I + 'break'] : []), ind + 'continue'];
       }
-      case 'throw': return [ind + (P.isStringLiteral(c.expr) ? `raise Exception(${this.x(c.expr)})` : `raise ${this.x(c.expr)}`)];
+      case 'throw': return [ind + `raise Exception(${this.textOf(c.expr)})`]; // beliebiger Wert als Text (wie im Interpreter)
       default: return [ind + this.x(c.expr)];
     }
   }
@@ -3054,7 +3091,7 @@ class KtGen extends CGen {
       case 'continue': return [ind + 'continue'];
       case 'throw': {
         const e = this.x(c.expr);
-        return [ind + (P.isStringLiteral(c.expr) ? `throw RuntimeException(${e})` : `throw RuntimeException(${e}.toString())`)];
+        return [ind + `throw RuntimeException(${this.textOf(c.expr)})`];
       }
       default: return [ind + this.x(c.expr)];
     }
@@ -3420,7 +3457,7 @@ class RsGen extends BaseGen {
         const rc = this.innerRepeatCond();
         return [...(rc ? [ind + `if ${this.bare(rc)} {`, ind + this.I + 'break;', ind + '}'] : []), ind + 'continue;'];
       }
-      case 'throw': return [ind + `panic!("{}", ${this.x(c.expr)});`];
+      case 'throw': return [ind + `panic!("{}", ${this.textOf(c.expr)});`];
       default: return [ind + this.x(c.expr) + ';'];
     }
   }

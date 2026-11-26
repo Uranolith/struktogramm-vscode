@@ -354,6 +354,28 @@ function promoteFloats(toks, ctx) {
 /* ------------------------------------------------------------------ */
 const WRAP_OK = /^[\p{L}_][\p{L}\p{N}_.]*(\([^()]*\)|\[[^\]]*\])?$|^"(?:[^"\\]|\\.)*"$|^'(?:[^'\\]|\\.|'')*'$/u;
 const W = (s) => (WRAP_OK.test(s) ? s : `(${s})`);
+/**
+ * copy/insert/delete in Java, C# und Kotlin wie im Interpreter: Eine Position hinter dem Textende hängt an bzw. ergibt
+ * "" (Java/C#/Kotlin würfen sonst „Index außerhalb“ – Fund des Zufallstests). Mit Literalen als Position und Länge
+ * bleibt der Code kurz.
+ */
+function strPart(lang, kind, S, pos, n, w) {
+  const lit = (x) => /^\d+$/.test(String(x).trim());
+  const mn = { java: 'Math.min', csharp: 'Math.Min', kotlin: 'minOf' }[lang];
+  const mx = { java: 'Math.max', csharp: 'Math.Max', kotlin: 'maxOf' }[lang];
+  const len = { java: `${S}.length()`, csharp: `${S}.Length`, kotlin: `${S}.length` }[lang];
+  // Start (0-basiert), begrenzt auf 0 … Länge
+  const st = lit(pos) ? (Number(pos) <= 1 ? '0' : `${mn}(${len}, ${Number(pos) - 1})`) : `${mn}(${len}, ${mx}(0, ${pos} - 1))`;
+  const nn = n == null ? null : lit(n) ? String(Number(n)) : `${mx}(0, ${W(n)})`; // Länge, nicht negativ
+  const end = nn == null ? null : `${mn}(${len}, ${st === '0' ? nn : `${st} + ${nn}`})`; // Ende (exklusiv)
+  const sub = (a, b) => (lang === 'csharp' ? (b == null ? `${S}.Substring(${a})` : `${S}.Substring(${a}, ${b === end && a === '0' ? end : `${end} - ${a}`})`) : b == null ? `${S}.substring(${a})` : `${S}.substring(${a}, ${b})`);
+  if (kind === 'copy') return lang === 'csharp' ? `${S}.Substring(${st}, ${st === '0' ? end : `${end} - ${st}`})` : sub(st, end);
+  if (kind === 'insert') return lang === 'csharp' ? `${S}.Insert(${st}, ${w})` : st === '0' ? `${w} + ${S}` : `${sub('0', st)} + ${w} + ${sub(st)}`;
+  // delete
+  if (lang === 'csharp') return `${S}.Remove(${st}, ${st === '0' ? end : `${end} - ${st}`})`;
+  if (lang === 'kotlin') return `${S}.removeRange(${st}, ${end})`;
+  return `${sub('0', st)} + ${sub(end)}`;
+}
 const PI_OF = { python: 'math.pi', java: 'Math.PI', csharp: 'Math.PI', javascript: 'Math.PI', c: 'M_PI', cpp: 'M_PI' };
 /** Rust: &str-Argument */
 const rsStr = (x) => (/^"/.test(x.out) ? x.out : `${W(x.out)}.as_str()`);
@@ -363,14 +385,14 @@ const rsStr = (x) => (/^"/.test(x.out) ? x.out : `${W(x.out)}.as_str()`);
  * Kotlin/Rust werden für Mathematik in modernFn behandelt.
  */
 const SFN = {
-  uppercase: { c: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.upper()`, java: (a) => `${W(a[0].out)}.toUpperCase()`, csharp: (a) => `${W(a[0].out)}.ToUpper()`, javascript: (a) => `${W(a[0].out)}.toUpperCase()`, kotlin: (a) => `${W(a[0].out)}.uppercase()`, rust: (a) => `${W(a[0].out)}.to_uppercase()`, cpp: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; } },
-  lowercase: { c: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.lower()`, java: (a) => `${W(a[0].out)}.toLowerCase()`, csharp: (a) => `${W(a[0].out)}.ToLower()`, javascript: (a) => `${W(a[0].out)}.toLowerCase()`, kotlin: (a) => `${W(a[0].out)}.lowercase()`, rust: (a) => `${W(a[0].out)}.to_lowercase()`, cpp: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; } },
+  uppercase: { c: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.upper()`, java: (a) => `${W(a[0].out)}.toUpperCase()`, csharp: (a) => `${W(a[0].out)}.ToUpperInvariant().Replace("ß", "SS")`, javascript: (a) => `${W(a[0].out)}.toUpperCase()`, kotlin: (a) => `${W(a[0].out)}.uppercase()`, rust: (a) => `${W(a[0].out)}.to_uppercase()`, cpp: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; } },
+  lowercase: { c: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.lower()`, java: (a) => `${W(a[0].out)}.toLowerCase()`, csharp: (a) => `${W(a[0].out)}.ToLowerInvariant()`, javascript: (a) => `${W(a[0].out)}.toLowerCase()`, kotlin: (a) => `${W(a[0].out)}.lowercase()`, rust: (a) => `${W(a[0].out)}.to_lowercase()`, cpp: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; } },
   trim: { c: (a, ctx) => { need(ctx, 'strtrim'); return `str_trim(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.strip()`, java: (a) => `${W(a[0].out)}.trim()`, csharp: (a) => `${W(a[0].out)}.Trim()`, javascript: (a) => `${W(a[0].out)}.trim()`, kotlin: (a) => `${W(a[0].out)}.trim()`, rust: (a) => `${W(a[0].out)}.trim().to_string()`, cpp: (a, ctx) => { need(ctx, 'strtrim'); return `str_trim(${a[0].out})`; } },
   pos: { c: (a, ctx) => { need(ctx, 'strpos'); return `str_pos(${a[0].out}, ${a[1].out})`; }, python: (a) => `(${W(a[1].out)}.find(${a[0].out}) + 1)`, java: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, csharp: (a) => `(${W(a[1].out)}.IndexOf(${a[0].out}) + 1)`, javascript: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, kotlin: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, rust: (a) => `${W(a[1].out)}.find(${rsStr(a[0])}).map_or(0, |i| ${W(a[1].out)}[..i].chars().count() as i32 + 1)`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_pos(${a[0].out}, ${a[1].out})`; } },
-  copy: { c: (a, ctx) => { need(ctx, 'strcopy'); return `str_copy(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[${a[1].out} - 1:${a[1].out} - 1 + ${W(a[2].out)}]`, java: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, Math.min(${W(a[0].out)}.length(), ${a[1].out} - 1 + ${W(a[2].out)}))`, csharp: (a) => `${W(a[0].out)}.Substring(${a[1].out} - 1, Math.Min(${W(a[2].out)}, ${W(a[0].out)}.Length - (${a[1].out} - 1)))`, javascript: (a) => `${W(a[0].out)}.substr(${a[1].out} - 1, ${a[2].out})`, kotlin: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, minOf(${W(a[0].out)}.length, ${a[1].out} - 1 + ${W(a[2].out)}))`, rust: (a) => `${W(a[0].out)}.chars().skip((${a[1].out} - 1) as usize).take((${a[2].out}) as usize).collect::<String>()`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_copy(${a[0].out}, ${a[1].out}, ${a[2].out})`; } },
-  insert: { c: (a, ctx) => { need(ctx, 'strinsert'); return `str_insert(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[1].out)}[:${a[2].out} - 1] + ${a[0].out} + ${W(a[1].out)}[${a[2].out} - 1:]`, java: (a) => `${W(a[1].out)}.substring(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.substring(${a[2].out} - 1)`, csharp: (a) => `${W(a[1].out)}.Insert(${a[2].out} - 1, ${a[0].out})`, javascript: (a) => `${W(a[1].out)}.slice(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.slice(${a[2].out} - 1)`, kotlin: (a) => `${W(a[1].out)}.substring(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.substring(${a[2].out} - 1)`, rust: (a) => `{ let mut t = ${W(a[1].out)}.clone(); let b = t.char_indices().nth((${a[2].out} - 1) as usize).map_or(t.len(), |(b, _)| b); t.insert_str(b, ${rsStr(a[0])}); t }`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_insert(${a[0].out}, ${a[1].out}, ${a[2].out})`; } },
-  delete: { c: (a, ctx) => { need(ctx, 'strdelete'); return `str_delete(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[:${a[1].out} - 1] + ${W(a[0].out)}[${a[1].out} - 1 + ${W(a[2].out)}:]`, java: (a) => `${W(a[0].out)}.substring(0, ${a[1].out} - 1) + ${W(a[0].out)}.substring(Math.min(${W(a[0].out)}.length(), ${a[1].out} - 1 + ${W(a[2].out)}))`, csharp: (a) => `${W(a[0].out)}.Remove(${a[1].out} - 1, ${a[2].out})`, javascript: (a) => `${W(a[0].out)}.slice(0, ${a[1].out} - 1) + ${W(a[0].out)}.slice(${a[1].out} - 1 + ${W(a[2].out)})`, kotlin: (a) => `${W(a[0].out)}.removeRange(${a[1].out} - 1, minOf(${W(a[0].out)}.length, ${a[1].out} - 1 + ${W(a[2].out)}))`, rust: (a) => `${W(a[0].out)}.chars().take((${a[1].out} - 1) as usize).chain(${W(a[0].out)}.chars().skip((${a[1].out} - 1 + ${W(a[2].out)}) as usize)).collect::<String>()`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_delete(${a[0].out}, ${a[1].out}, ${a[2].out})`; } },
-  ord: { python: (a) => `ord(${a[0].out})`, java: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}.charAt(0)`), csharp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`), javascript: (a) => `${W(a[0].out)}.charCodeAt(0)`, kotlin: (a, ctx) => (isCharArg(a[0], ctx) ? `${W(a[0].out)}.code` : `${W(a[0].out)}[0].code`), rust: (a, ctx) => (isCharArg(a[0], ctx) ? `(${a[0].out} as i32)` : `(${W(a[0].out)}.chars().next().unwrap() as i32)`), cpp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`), c: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`) },
+  copy: { c: (a, ctx) => { need(ctx, 'strcopy'); return `str_copy(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[${a[1].out} - 1:${a[1].out} - 1 + ${W(a[2].out)}]`, java: (a) => strPart('java', 'copy', W(a[0].out), a[1].out, a[2].out), csharp: (a) => strPart('csharp', 'copy', W(a[0].out), a[1].out, a[2].out), javascript: (a) => `${W(a[0].out)}.substr(${a[1].out} - 1, ${a[2].out})`, kotlin: (a) => strPart('kotlin', 'copy', W(a[0].out), a[1].out, a[2].out), rust: (a) => `${W(a[0].out)}.chars().skip((${a[1].out} - 1) as usize).take((${a[2].out}) as usize).collect::<String>()`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_copy(${a[0].out}, ${a[1].out}, ${a[2].out})`; } },
+  insert: { c: (a, ctx) => { need(ctx, 'strinsert'); return `str_insert(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[1].out)}[:${a[2].out} - 1] + ${a[0].out} + ${W(a[1].out)}[${a[2].out} - 1:]`, java: (a) => strPart('java', 'insert', W(a[1].out), a[2].out, null, a[0].out), csharp: (a) => strPart('csharp', 'insert', W(a[1].out), a[2].out, null, a[0].out), javascript: (a) => `${W(a[1].out)}.slice(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.slice(${a[2].out} - 1)`, kotlin: (a) => strPart('kotlin', 'insert', W(a[1].out), a[2].out, null, a[0].out), rust: (a) => `{ let mut t = ${W(a[1].out)}.clone(); let b = t.char_indices().nth((${a[2].out} - 1) as usize).map_or(t.len(), |(b, _)| b); t.insert_str(b, ${rsStr(a[0])}); t }`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_insert(${a[0].out}, ${a[1].out}, ${a[2].out})`; } },
+  delete: { c: (a, ctx) => { need(ctx, 'strdelete'); return `str_delete(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[:${a[1].out} - 1] + ${W(a[0].out)}[${a[1].out} - 1 + ${W(a[2].out)}:]`, java: (a) => strPart('java', 'delete', W(a[0].out), a[1].out, a[2].out), csharp: (a) => strPart('csharp', 'delete', W(a[0].out), a[1].out, a[2].out), javascript: (a) => `${W(a[0].out)}.slice(0, ${a[1].out} - 1) + ${W(a[0].out)}.slice(${a[1].out} - 1 + ${W(a[2].out)})`, kotlin: (a) => strPart('kotlin', 'delete', W(a[0].out), a[1].out, a[2].out), rust: (a) => `${W(a[0].out)}.chars().take((${a[1].out} - 1) as usize).chain(${W(a[0].out)}.chars().skip((${a[1].out} - 1 + ${W(a[2].out)}) as usize)).collect::<String>()`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_delete(${a[0].out}, ${a[1].out}, ${a[2].out})`; } },
+  ord: { python: (a) => `ord(${a[0].out})`, java: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}.charAt(0)`), csharp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`), javascript: (a) => `${W(a[0].out)}.charCodeAt(0)`, kotlin: (a, ctx) => (isCharArg(a[0], ctx) ? `${W(a[0].out)}.code` : `${W(a[0].out)}[0].code`), rust: (a, ctx) => (isCharArg(a[0], ctx) ? `(${a[0].out} as i32)` : `(${W(a[0].out)}.chars().next().unwrap() as i32)`), cpp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : (need(ctx, 'utf8ord'), `u_ord(${a[0].out})`)), c: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : (need(ctx, 'utf8ord'), `utf8_ord(${a[0].out})`)) },
   chr: { python: (a) => `chr(${a[0].out})`, java: (a) => `(char) ${W(a[0].out)}`, csharp: (a) => `(char) ${W(a[0].out)}`, javascript: (a) => `String.fromCharCode(${a[0].out})`, kotlin: (a) => `${W(a[0].out)}.toChar()`, rust: (a) => `char::from_u32((${a[0].out}) as u32).unwrap()`, cpp: (a) => `(char) ${W(a[0].out)}`, c: (a) => `(char) ${W(a[0].out)}` },
   sgn: { python: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))`, java: (a) => `(int) Math.signum(${a[0].out})`, csharp: (a) => `Math.Sign(${a[0].out})`, javascript: (a) => `Math.sign(${a[0].out})`, kotlin: (a) => `(if (${a[0].out} > 0) 1 else if (${a[0].out} < 0) -1 else 0)`, rust: (a) => `(if ${a[0].out} > 0 { 1 } else if ${a[0].out} < 0 { -1 } else { 0 })`, cpp: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))`, c: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))` },
   sqr: { '*': (a) => `${W(a[0].out)} * ${W(a[0].out)}` },
@@ -569,7 +591,7 @@ for (const fn of ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log']) {
 }
 /**
  * Dateifunktionen (Plan 6.2): Aufruf der Hilfsschicht aus filehelpers.js. Rust bekommt Texte als Referenz (&),
- * fileWrite wandelt den Wert wie OUTPUT in Text um (ctx.fileStr). fileRead hat in den Sprachen mit festen Typen keinen
+ * fileWrite wandelt den Wert wie OUTPUT in Text um (ctx.textOf). fileRead hat in den Sprachen mit festen Typen keinen
  * eigenen Typ: In eine Zahl-Variable wird es zu fileReadInt/fileReadDouble (Generator, procLine), sonst liefert es Text.
  */
 const FILE_LANGS = ['python', 'java', 'c', 'cpp', 'csharp', 'javascript', 'kotlin', 'rust'];
@@ -586,7 +608,7 @@ SFN.fileread = fileFn((a, ctx, l) => {
 for (const [n, h] of [['write', 'write'], ['writeline', 'writeln']]) {
   SFN['file' + n] = fileFn((a, ctx, l) => {
     if (a.length < 2) return null;
-    const s = ctx && ctx.fileStr ? ctx.fileStr(a[1].src) : a[1].out;
+    const s = ctx && ctx.textOf ? ctx.textOf(a[1].src) : a[1].out;
     return `file_${h}(${a[0].out}, ${l === 'rust' ? '&' + W(s) : s})`;
   });
 }
@@ -1185,6 +1207,8 @@ function mapToks(toks, lang, ctx) {
               // Arrays als Referenz (wie im Interpreter, Plan 4.3), Texte als Kopie
               if (vt && vt.endsWith('[]') && ctx.rsArrayArg) return ctx.rsArrayArg(t.v, k, x.out);
               if (vt === 'string' || (vt && vt.endsWith('[]'))) return x.out + '.clone()';
+              // Record: als Kopie, sonst ist die Variable nach dem Aufruf „verschoben“ (Fund des Zufallstests)
+              if (vt && ctx.recordTypes && ctx.recordTypes.has(vt)) return x.out + '.clone()';
             }
             return x.out;
           }).join(', ')})`;
@@ -1526,6 +1550,9 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
         else if (l === 'abs') bump(inferType(joinTokens(toks.slice(i + 2, close)), varTypes, funcs) === 'double' ? 'double' : 'int'); // abs hat den Typ des Arguments
         else if (l === 'split') { res = 'string[]'; }
         else if (l === '_aindexof') bump('int');
+        // geprüfte Division, Rest und Index in try (Plan 1.4, 2.8): Ganzzahl – sonst hielte die Verkettung
+        // "" + (arr[4] mod 9) den Teil für Text (Fund des Zufallstests)
+        else if (['_idiv', '_imod', '_idx', '_ix'].includes(l)) bump('int');
         else if (l === 'odd') { if (toks.length === close + 1 && i === 0) return 'boolean'; unknown = true; }
         else if (l === 'randint') bump('int');
         // Dateifunktionen (Plan 6.2); fileRead hat keinen festen Typ

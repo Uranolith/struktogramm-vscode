@@ -27,7 +27,10 @@ Test-Struktogramme) und an vielen Stellen korrigiert. Plan und Entscheidungen: `
   Basisebene (Emoji) ganz, und `fileWriteLine` schreibt unter Windows `\n` statt `\r\n`.
 - **Zufallstest** (`npm run test:fuzz`): vergleicht zufällige Struktogramme in allen Sprachen mit dem Interpreter, auf
   GitHub jede Nacht. Bisher gefunden und behoben: `div` in JavaScript und Python, Textverkettung in Argumenten,
-  `for i := -1 to …`, `abs` mit reinen Zahlen und mit Zählvariablen in Rust, `abs` in C ohne `stdlib.h`.
+  `for i := -1 to …`, `abs` mit reinen Zahlen und mit Zählvariablen in Rust, `abs` in C ohne `stdlib.h`,
+  `throw "Fehler " + n` (Java, C#, C, C++, Python), `insert`/`copy`/`delete` hinter dem Textende (Java, C#, Kotlin),
+  Umlaute bei `uppercase`/`lowercase` und `ord` in C/C++, `ß` in C#, Record-Parameter ohne Aufruf, Records als
+  Argument in Rust.
 
 ## 1.0.3
 - **Testlauf der automatischen Veröffentlichung:** Keine Änderungen an der Erweiterung – inhaltlich gleich 1.0.2.

@@ -47,7 +47,8 @@ function program(seed) {
   const loopVars = ['i', 'j', 'k'];
 
   const intLit = () => String(R.int(-5, 20));
-  const intAtom = (vars) => R.pick([intLit, () => R.pick(vars), () => `length(s)`, () => `arr[${R.int(0, 4)}]`])();
+  const intAtom = (vars) => R.pick([intLit, () => R.pick(vars), () => R.pick(vars), () => `length(s)`, () => `arr[${R.int(0, 4)}]`,
+    () => 'r.u', () => `pos("${R.pick(['b', 'x', 'Ö'])}", s)`, () => 'ord(copy(s + "a", 1, 1))'])();
   const intExpr = (d, vars) => {
     if (d <= 0 || R.chance(0.35)) return intAtom(vars);
     const op = R.pick(['+', '-', '*', 'div', 'mod', 'abs', 'minmax', 'paren']);
@@ -70,56 +71,74 @@ function program(seed) {
     () => `${R.pick(DBLS)} / ${R.pick(['2', '4.0', '8'])}`,
     () => `${R.pick(vars)} / 4.0`,
     () => `${R.int(0, 9)}.25`,
+    () => `r.v * 2`,
+  ])();
+  const strExpr = (vars) => R.pick([
+    () => 's + "x"', () => `copy(s + "${R.pick(['ab', 'Öl', 'z'])}", 1, 6)`, () => `"n" + ${R.pick(vars)}`, () => 'uppercase(s)',
+    () => 'lowercase(s + "QÄ")', () => `insert("${R.pick(['-', 'ü', 'yz'])}", s, ${R.int(1, 4)})`, () => `delete(s + "${R.pick(['k', 'ß'])}", ${R.int(1, 3)}, ${R.int(0, 2)})`,
+    () => 'trim("  " + s + " ")', () => `chr(65 + abs(${R.pick(vars)}) mod 26) + s`, () => 'r.w + "r"', () => `copy(s, ${R.int(1, 3)}, 4)`,
   ])();
   const cond = (vars) => {
     const rel = () => `${intExpr(1, vars)} ${R.pick(['<', '>', '<=', '>=', '=', '<>'])} ${intExpr(1, vars)}`;
-    return R.pick([rel, rel, () => `${rel()} and ${rel()}`, () => `${rel()} or not (${rel()})`, () => `(${rel()}) xor (${rel()})`])();
+    return R.pick([rel, rel, () => `${rel()} and ${rel()}`, () => `${rel()} or not (${rel()})`, () => `(${rel()}) xor (${rel()})`,
+      () => `s ${R.pick(['=', '<>', '<'])} "${R.pick(['ab', 'AB', 'abx'])}"`])();
   };
   const outItem = (vars) => R.pick([
     () => intExpr(1, vars), () => R.pick(DBLS), () => 's', () => `"t" + ${R.pick(vars)}`, () => `copy(s, 1, 2)`, () => cond(vars),
+    () => 'r.u', () => 'r.v', () => 'r.w', () => 'g(r)',
   ])();
 
-  // Anweisungen; vars = lesbare Ganzzahlen (inkl. Zählvariablen der umgebenden Schleifen)
-  const stmts = (d, vars, inLoop) => {
+  // Anweisungen; vars = lesbare Ganzzahlen (inkl. Zählvariablen der umgebenden Schleifen),
+  // k = { loop: in einer Schleife, tryD: Tiefe umschließender try-Blöcke }
+  const stmts = (d, vars, k) => {
     const out = [];
     const n = R.int(1, d > 1 ? 3 : 2);
-    for (let q = 0; q < n && budget > 0; q++) { budget--; out.push(stmt(d, vars, inLoop)); }
+    for (let q = 0; q < n && budget > 0; q++) { budget--; out.push(stmt(d, vars, k)); }
     return out;
   };
-  const stmt = (d, vars, inLoop) => {
-    const kinds = ['assign', 'assign', 'dbl', 'str', 'arr', 'out', 'out', 'file'];
-    if (d > 0) kinds.push('if', 'for', 'while', 'repeat', 'case', 'call');
-    if (inLoop) kinds.push('leave', 'continue');
+  const stmt = (d, vars, k) => {
+    const kinds = ['assign', 'assign', 'dbl', 'str', 'str', 'arr', 'out', 'out', 'file', 'rec'];
+    if (d > 0) kinds.push('if', 'for', 'while', 'repeat', 'case', 'call', 'try');
+    if (k.loop) kinds.push('leave', 'continue');
+    if (k.tryD) kinds.push('throw');
     switch (R.pick(kinds)) {
       case 'assign': return mk.instruction(`${R.pick(INTS)} := ${intVal(vars)}`);
       case 'dbl': return mk.instruction(`${R.pick(DBLS)} := ${dblExpr(vars)}`);
-      case 'str': return mk.instruction(`s := ${R.pick(['s + "x"', `copy(s + "${R.pick(['ab', 'Öl', 'z'])}", 1, 6)`, `"n" + ${R.pick(vars)}`, 'uppercase(s)'])}`);
+      case 'str': return mk.instruction(`s := ${strExpr(vars)}`);
       case 'arr': return mk.instruction(`arr[${R.int(0, 4)}] := ${intVal(vars)}`);
+      case 'rec': return mk.instruction(R.pick([() => `r.u := ${intVal(vars)}`, () => `r.v := ${dblExpr(vars)}`, () => `r.w := copy(${strExpr(vars)}, 1, 5)`])());
       case 'out': return mk.instruction(`OUTPUT ${outItem(vars)}${R.chance(0.4) ? ', " ", ' + outItem(vars) : ''}`);
-      case 'if': return mk.alternative(cond(vars), stmts(d - 1, vars, inLoop), R.chance(0.6) ? stmts(d - 1, vars, inLoop) : []);
+      case 'if': return mk.alternative(cond(vars), stmts(d - 1, vars, k), R.chance(0.6) ? stmts(d - 1, vars, k) : []);
       case 'case': {
         const v = R.pick(vars);
-        return mk.case(`${v} mod 3`, ['0', '1', 'default'], [stmts(d - 1, vars, inLoop), stmts(d - 1, vars, inLoop), R.chance(0.5) ? stmts(d - 1, vars, inLoop) : []]);
+        return mk.case(`${v} mod 3`, ['0', '1', 'default'], [stmts(d - 1, vars, k), stmts(d - 1, vars, k), R.chance(0.5) ? stmts(d - 1, vars, k) : []]);
       }
       case 'for': {
         const lv = loopVars.find((x) => !vars.includes(x)) || 'k';
         const lo = R.int(-2, 3), hi = lo + R.int(0, 4);
         const t = R.chance(0.3) ? `for ${lv} := ${hi} to ${lo} step -1` : `for ${lv} := ${lo} to ${hi}`;
-        return mk.for(t, stmts(d - 1, [...vars, lv], true));
+        return mk.for(t, stmts(d - 1, [...vars, lv], { ...k, loop: true }));
       }
       case 'while': { // Zähler sichert das Ende
         const w = 'w' + d;
-        return [mk.instruction(`${w} := 0`), mk.while(`while ${w} < ${R.int(1, 4)}`, [mk.instruction(`${w} := ${w} + 1`), ...stmts(d - 1, vars, true)])];
+        return [mk.instruction(`${w} := 0`), mk.while(`while ${w} < ${R.int(1, 4)}`, [mk.instruction(`${w} := ${w} + 1`), ...stmts(d - 1, vars, { ...k, loop: true })])];
       }
       case 'repeat': {
         const w = 'r' + d;
-        return [mk.instruction(`${w} := 0`), mk.repeat(`until ${w} >= ${R.int(1, 3)}`, [mk.instruction(`${w} := ${w} + 1`), ...stmts(d - 1, vars, true)])];
+        return [mk.instruction(`${w} := 0`), mk.repeat(`until ${w} >= ${R.int(1, 3)}`, [mk.instruction(`${w} := ${w} + 1`), ...stmts(d - 1, vars, { ...k, loop: true })])];
       }
-      case 'call': return mk.instruction(`${R.pick(INTS)} := f(${intExpr(1, vars)}, ${R.pick(DBLS)}) mod 1000`);
+      case 'call': return mk.instruction(`${R.pick(INTS)} := ${R.chance(0.7) ? `f(${intExpr(1, vars)}, ${R.pick(DBLS)})` : 'g(r)'} mod 1000`);
+      case 'try': { // eigener Name je Tiefe: e1, e2 … (geschachtelt)
+        const e = 'e' + (k.tryD + 1);
+        const inner = { ...k, tryD: k.tryD + 1 };
+        return mk.try(e, stmts(d - 1, vars, inner), [mk.instruction(`OUTPUT "gefangen ", ${e}`), ...(R.chance(0.3) ? stmts(d - 1, vars, k) : [])],
+          R.chance(0.4) ? [mk.instruction(`OUTPUT "finally ${e}"`)] : []);
+      }
+      case 'throw': return mk.alternative(cond(vars), [mk.jump(`throw "${R.pick(['T', 'Fehler', 'Ü'])}" + ${R.pick(vars)}`)], []);
       case 'file': { // Text, Ganzzahl und Kommazahl schreiben und zurücklesen (Plan 6.2)
-        const v = R.pick(INTS), d = R.pick(DBLS);
+        const v = R.pick(INTS), dv = R.pick(DBLS);
         return mk.instruction(['fh := fileCreate("fz.txt")', 'fileWriteLine(fh, s)', `fileWriteLine(fh, ${intExpr(1, vars)})`, `fileWrite(fh, ${R.pick(DBLS)})`,
-          'fileClose(fh)', 'fh := fileOpen("fz.txt")', 's := fileReadLine(fh)', `${v} := fileReadInt(fh)`, `${d} := fileReadDouble(fh)`,
+          'fileClose(fh)', 'fh := fileOpen("fz.txt")', 's := fileReadLine(fh)', `${v} := fileReadInt(fh)`, `${dv} := fileReadDouble(fh)`,
           `OUTPUT "eof ", fileEOF(fh)`, 'fileClose(fh)']);
       }
       case 'leave': return mk.alternative(cond(vars), [mk.jump('leave')], []);
@@ -128,13 +147,15 @@ function program(seed) {
     }
   };
   const flat = (xs) => xs.flatMap((x) => (Array.isArray(x) ? flat(x) : [x]));
-  const init = mk.instruction(['a := 1', 'b := 2', 'c := 3', 'x := 0.5', 'y := 2.0', 's := "ab"', 'arr := {1, 2, 3, 4, 5}']);
-  const body = flat(stmts(3, [...INTS], false));
-  const fin = mk.instruction(['OUTPUT a, " ", b, " ", c, " ", x, " ", y, " ", s', 'OUTPUT arr[0] + arr[4]']);
-  const main = mk.root(`Zufall${seed}`, 'program', [init, ...body, fin]);
-  // Unterprogramm f(p, q): Ganzzahl und Kommazahl, gibt eine Ganzzahl zurück
+  const types = mk.instruction('type P = record{u: int; v: double; w: string}');
+  const init = mk.instruction(['a := 1', 'b := 2', 'c := 3', 'x := 0.5', 'y := 2.0', 's := "ab"', 'arr := {1, 2, 3, 4, 5}', 'r := P{u: 4, v: 1.5, w: "rec"}']);
+  const body = flat(stmts(3, [...INTS], { loop: false, tryD: 0 }));
+  const fin = mk.instruction(['OUTPUT a, " ", b, " ", c, " ", x, " ", y, " ", s', 'OUTPUT arr[0] + arr[4], " ", r.u, " ", r.v, " ", r.w']);
+  const main = mk.root(`Zufall${seed}`, 'program', [types, init, ...body, fin]);
+  // Unterprogramme: f(p, q) mit Ganzzahl und Kommazahl; g(pr) liest einen Record
   const f = mk.root('f(p, q)', 'sub', [mk.alternative('p > 3', [mk.jump('return p * 2 mod 97')], [mk.jump('return p + 1')])]);
-  return { roots: [main, f] };
+  const g = mk.root('g(pr)', 'sub', [mk.jump('return pr.u mod 50 + length(pr.w)')]);
+  return { roots: [main, f, g] };
 }
 
 /* ---------------- Lauf ---------------- */
