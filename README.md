@@ -383,6 +383,10 @@ Parallelverarbeitung im erzeugten Code:
     sich bei jedem Ergebnis aktualisiert – Fortschritt, Laufzeit und Restzeit, laufende Aufgabe mit dem Stand je
     Sprache, Ergebnis je Sprache und die Fehler (`test/live.js`). Das ausführliche Protokoll schreibt
     `--log datei.txt` in eine Datei; `--plain` schaltet die Ansicht ab (ohne Terminal, z. B. in der CI, ist sie aus).
+  - **Gemeinsam übersetzt:** Java, Kotlin und C# übersetzen alle Aufgaben in einem Compiler-Aufruf im Hintergrund
+    (`test/batch.js`; jedes Programm in einem eigenen `package` bzw. `namespace`), während die anderen Sprachen schon
+    prüfen – der Kotlin-Compiler braucht sonst je Aufgabe ≈ 13 s nur zum Hochfahren. Ausgeführt und verglichen wird
+    weiterhin jedes Programm einzeln. `--einzeln` übersetzt wie früher jede Aufgabe für sich (Kontrolllauf).
 - **Zufallstest** – `npm run test:fuzz -- --n 100 --seed 1 all` oder *Task ausführen… → Zufallstest*: erzeugt zufällige
   Struktogramme (Rechnen, Texte, Records, Arrays, alle Schleifen, Sprünge, `try`, Unterprogramme, Dateien), übersetzt sie in die Zielsprachen und vergleicht mit dem
   Interpreter. Ohne Sprachangabe die schnellen Sprachen (Python, JavaScript, C, C++, Rust), `all` für alle acht. Java,

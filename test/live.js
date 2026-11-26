@@ -38,6 +38,8 @@ class LiveView {
   /** Abschnitt des Laufs (z. B. „Code erzeugen“) und optional Zeilen darunter */
   setPhase(text, info = []) { this.phase = text; this.info = info; this.update(); }
   setTotal(n) { this.total = n; this.update(); }
+  /** Zeilen unter dem Abschnitt ersetzen (z. B. Stand des gemeinsamen Übersetzens) */
+  setInfo(lines) { this.info = lines; this.update(); }
 
   /** Aufgabe begonnen: alle Sprachen noch offen */
   startItem(name) { this.current = { name, langs: {} }; this.update(); }

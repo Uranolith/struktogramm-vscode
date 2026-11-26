@@ -2,12 +2,17 @@
 // Interpreter der Sprache übersetzen und ausführen (keine Simulation) und die Ausgabe mit dem eingebauten
 // Interpreter vergleichen. Ergebnis: Konsole plus Excel-Protokoll (O = erfolgreich, X = nicht erfolgreich).
 //
-//   node test/tasktest.js [--out datei.xlsx] [--log protokoll.txt] [--plain] [sprache …] [teil-des-pfads …]
+//   node test/tasktest.js [--out datei.xlsx] [--log protokoll.txt] [--plain] [--einzeln] [sprache …] [teil-des-pfads …]
 //   (oder test\tasktest.cmd bzw. npm test; Beispiel: „edge_cases java“)
 //
 // Im Terminal zeigt eine Live-Ansicht (test/live.js) Fortschritt, Restzeit, den Stand je Sprache und die Fehler;
 // das ausführliche Protokoll steht dann mit --log in einer Datei. Ohne Terminal (CI, Umleitung) oder mit --plain
 // erscheint das Protokoll wie bisher Zeile für Zeile.
+//
+// Java, Kotlin und C# übersetzen alle Aufgaben gemeinsam in einem Compiler-Aufruf (test/batch.js) – Kotlin braucht
+// sonst ≈ 13 s je Aufgabe nur zum Hochfahren. Das läuft im Hintergrund, während die anderen Sprachen Aufgabe für
+// Aufgabe prüfen; ausgeführt wird jedes Programm weiterhin einzeln mit jedem Testfall. --einzeln übersetzt wie früher
+// jede Aufgabe für sich (Kontrolllauf).
 //
 // Die Struktogramme liegen nach Themen in Unterordnern von test/samples (z. B. branching, edge_cases).
 // Je Ordner stehen die Testfälle in inputs.json: je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).
@@ -33,6 +38,7 @@ const { fromNsd } = require('../src/core/nsdxml');
 const { generateCode, TARGETS } = require('../src/core/generators');
 const S = require('./languages');
 const { LiveView, liveWanted, vis } = require('./live');
+const { BATCH_LANGS, compileAll, runCmd } = require('./batch');
 // Kommentare im erzeugten Code in der Sprache der Erweiterung (Einstellung struktogramm.language)
 const CODE_LANG = require('./vscodelang').codeLanguage([path.join(__dirname, 'samples'), path.join(__dirname, '..')]);
 require('../src/i18n').setLanguage(CODE_LANG.lang);
@@ -48,6 +54,7 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--out') out = path.resolve(args[++i]);
   else if (args[i] === '--log') logFile = path.resolve(args[++i]);
   else if (args[i] === '--plain') { /* Zeile für Zeile statt Live-Ansicht */ }
+  else if (args[i] === '--einzeln') { /* jede Aufgabe für sich übersetzen */ }
   else if (args[i] === '--sprache' || args[i] === '--lang') i++; // Sprache der Kommentare (test/vscodelang.js)
   else if (TARGETS[args[i]]) langFilter.push(args[i]);
   else fileFilter.push(args[i]);
@@ -167,9 +174,30 @@ for (const s of ALL) {
 }
 log(gray(`${genFiles} Dateien geschrieben` + (genErrors ? `, ${genErrors} Fehler` : '')));
 
+/* Java, Kotlin, C#: alle Aufgaben gemeinsam übersetzen – startet hier im Hintergrund (test/batch.js) */
+const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'tasktest-'));
+const available = new Map(LANGS.map((l) => [l, S.has(S.RUN[l].tool)]));
+const toRun = selected.filter((s) => docs.has(s.rel));
+const SINGLE = args.includes('--einzeln');
+const batchJobs = {}, batchInfo = {};
+const showBatch = () => { if (live) live.setInfo([...(logFile ? [`Protokoll: ${logFile}`] : []), ...Object.values(batchInfo)]); };
+if (!SINGLE) {
+  for (const lang of LANGS.filter((l) => BATCH_LANGS.includes(l) && available.get(l))) {
+    const items = toRun.map((s, k) => ({ id: k, code: codes.get(`${s.rel}|${lang}`) })).filter((x) => x.code != null);
+    batchInfo[lang] = `${label(lang)}: ${items.length} Programme werden gemeinsam übersetzt …`;
+    batchJobs[lang] = compileAll(lang, path.join(WORK, 'batch', lang), items).then((b) => {
+      batchInfo[lang] = `${label(lang)}: gemeinsam übersetzt in ${Math.round(b.ms / 1000)} s` + (b.errors.size ? ` – ${b.errors.size} mit Übersetzungsfehler` : '');
+      log(gray(batchInfo[lang]));
+      showBatch();
+      return b;
+    });
+  }
+  showBatch();
+}
+
 /* Aufgaben laden und Referenzausgaben des Interpreters berechnen */
 if (live) { live.setPhase('Referenzausgaben mit dem Interpreter berechnen …', live.info); live.render(); }
-const tasks = selected.filter((s) => docs.has(s.rel)).map((s) => {
+const tasks = toRun.map((s) => {
   const doc = docs.get(s.rel);
   const root = doc.roots.find((r) => r.rootType === 'program') || doc.roots[0];
   const defined = inputsFor(s);
@@ -181,31 +209,42 @@ const tasks = selected.filter((s) => docs.has(s.rel)).map((s) => {
 /* ------------------------------------------------------------------ */
 /* 2. Übersetzen und ausführen                                        */
 /* ------------------------------------------------------------------ */
-const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'tasktest-'));
-const available = new Map(LANGS.map((l) => [l, S.has(S.RUN[l].tool)]));
 heading(2, 'Übersetzen und ausführen');
 const missing = LANGS.filter((l) => !available.get(l));
 if (missing.length) log(gray('Nicht installiert (werden als – eingetragen): ' + missing.map((l) => `${label(l)} (${S.RUN[l].tool})`).join(', ')));
+if (Object.keys(batchJobs).length) log(gray(`Gemeinsam übersetzt (test/batch.js): ${Object.keys(batchJobs).map(label).join(', ')} – einzeln mit --einzeln`));
 
 /** Eine Aufgabe in einer Sprache: übersetzen, jeden Testfall ausführen und vergleichen */
-async function runOne(t, lang) {
+async function runOne(t, lang, k) {
   if (!available.get(lang)) return { status: '-', detail: `${S.RUN[lang].tool} nicht installiert`, cases: [] };
   const R = S.RUN[lang];
   const code = codes.get(`${t.rel}|${lang}`);
   if (code == null) return { status: 'X', detail: 'Codeerzeugung fehlgeschlagen', cases: t.cases.map(() => ({ ok: false, detail: 'Codeerzeugung fehlgeschlagen' })) };
-  const dir = path.join(WORK, lang, `${t.group}_${t.name}`.replace(/[^\w.-]/g, '_'));
-  S.prepare(dir, lang);
-  fs.writeFileSync(path.join(dir, R.file), code);
-  const t0 = Date.now();
-  const err = await S.build(lang, dir);
-  const buildMs = Date.now() - t0;
-  if (err) return { status: 'X', detail: 'Übersetzen: ' + err, buildMs, cases: t.cases.map(() => ({ ok: false, detail: 'nicht übersetzt' })) };
-  const res = { status: 'O', detail: '', buildMs, cases: [] };
+  let runCase, buildMs;
+  if (batchJobs[lang]) {
+    // gemeinsam übersetzt: auf den Compiler-Aufruf warten, dann dieses Programm in einem eigenen Ordner starten
+    const b = await batchJobs[lang];
+    if (b.errors.has(k)) return { status: 'X', detail: 'Übersetzen: ' + b.errors.get(k), batched: true, cases: t.cases.map(() => ({ ok: false, detail: 'nicht übersetzt' })) };
+    const [cmd, a] = runCmd(lang, path.join(WORK, 'batch', lang), k);
+    const cwd = path.join(WORK, 'batch', lang, 'run', String(k));
+    fs.mkdirSync(cwd, { recursive: true });
+    runCase = (inputs) => S.exec(cmd, a, { cwd, input: inputs.map(String).join('\n') + '\n', timeout: 30000 });
+  } else {
+    const dir = path.join(WORK, lang, `${t.group}_${t.name}`.replace(/[^\w.-]/g, '_'));
+    S.prepare(dir, lang);
+    fs.writeFileSync(path.join(dir, R.file), code);
+    const t0 = Date.now();
+    const err = await S.build(lang, dir);
+    buildMs = Date.now() - t0;
+    if (err) return { status: 'X', detail: 'Übersetzen: ' + err, buildMs, cases: t.cases.map(() => ({ ok: false, detail: 'nicht übersetzt' })) };
+    runCase = (inputs) => S.run(lang, dir, inputs);
+  }
+  const res = { status: 'O', detail: '', buildMs, batched: !!batchJobs[lang], cases: [] };
   for (const c of t.cases) {
     // Bricht der Interpreter mit einem Laufzeitfehler ab (z. B. 2.5 für eine Ganzzahl-Eingabe, Division durch 0), muss
     // auch das Programm mit einem Fehler enden – mit derselben Ausgabe bis dahin (die Fehlertexte unterscheiden sich)
     if (c.refError && /zu viele Schritte/.test(c.refError)) { res.cases.push({ ok: false, detail: 'Interpreter: ' + c.refError }); res.status = 'X'; res.detail ||= 'Interpreter: ' + c.refError; continue; }
-    const r = await S.run(lang, dir, c.inputs);
+    const r = await runCase(c.inputs);
     let detail = null;
     if (r.error) detail = 'Start: ' + r.error.message;
     else if (r.timedOut) detail = 'Zeitüberschreitung';
@@ -231,7 +270,7 @@ const results = {}; // results[rel][lang] = { status: 'O'|'X'|'K'|'B'|'-', cases
     const name = `${t.group ? t.group + '/' : ''}${t.name}`;
     if (live) live.startItem(name + (t.title ? ' – ' + t.title : ''));
     // jede Sprache meldet sich, sobald sie fertig ist (Live-Ansicht)
-    const res = await Promise.all(LANGS.map((l) => runOne(t, l).then((r) => { if (live) live.langDone(l, knownFor(t, l) && r.status === 'X' ? 'K' : r.status); return r; })));
+    const res = await Promise.all(LANGS.map((l) => runOne(t, l, k).then((r) => { if (live) live.langDone(l, knownFor(t, l) && r.status === 'X' ? 'K' : r.status); return r; })));
     // bekannte Fehler: X -> K (erwartet), O -> B (behoben, Eintrag in _known entfernen)
     LANGS.forEach((l, i) => {
       const step = knownFor(t, l), r = res[i];
@@ -245,7 +284,7 @@ const results = {}; // results[rel][lang] = { status: 'O'|'X'|'K'|'B'|'-', cases
       const r = res[i];
       const per = r.status === '-' ? gray('nicht installiert') : r.cases.map((c, j) => `${j + 1}:${c.ok ? green('O') : red('X')}`).join(' ');
       const ok = r.cases.filter((c) => c.ok).length;
-      const sum = r.status === '-' ? '' : gray(` (${ok}/${t.cases.length} Testfälle${r.buildMs != null && S.RUN[l].build ? `, übersetzt in ${(r.buildMs / 1000).toFixed(1)} s` : ''})`);
+      const sum = r.status === '-' ? '' : gray(` (${ok}/${t.cases.length} Testfälle${r.batched ? ', gemeinsam übersetzt' : r.buildMs != null && S.RUN[l].build ? `, übersetzt in ${(r.buildMs / 1000).toFixed(1)} s` : ''})`);
       log(`  ${mark(r.status)} ${label(l).padEnd(LW)}  ${per}${sum}`);
       if (r.status === 'X') log('      ' + red(r.detail.split('\n')[0].slice(0, 220)));
       else if (r.status === 'K') log('      ' + yellow(r.detail.split('\n')[0].slice(0, 220)));

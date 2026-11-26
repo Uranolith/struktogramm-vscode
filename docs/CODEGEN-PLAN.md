@@ -400,6 +400,11 @@ den Abschnitt „Grenzen“ des README.
   der Rest wird erneut übersetzt. Die übrigen Sprachen bauen und starten mehrere Programme gleichzeitig (`--jobs`,
   Standard: Anzahl Kerne). Jedes Programm läuft in einem eigenen Ordner (Dateifunktionen). Java + C# + Kotlin:
   20 Programme in 28 s statt etwa 15 min; alle acht Sprachen: 100 Programme in 3½ min. `all` wählt alle Sprachen.
+  Später als gemeinsames Modul `test/batch.js` auch für den Aufgabentest: Java und Kotlin mit `package pN`
+  (Klassenname bleibt `Program`), C# mit `namespace PN;`; die Übersetzung startet im Hintergrund, während die anderen
+  Sprachen schon prüfen, ausgeführt wird weiterhin jede Aufgabe einzeln. Kotlin im Aufgabentest ≈ 20 s statt ≈ 30 min;
+  `--einzeln` übersetzt zur Kontrolle wie früher jede Aufgabe für sich. Ein Programm wird nur ausgeführt, wenn es in
+  einem erfolgreichen Übersetzungslauf dabei war – ein Übersetzungsfehler kann so nicht als Erfolg durchrutschen.
   Nachts in der CI: `.github/workflows/fuzz.yml`, 200 Programme mit Seed 1 und 200 mit zufälligem Seed;
   Abweichungen als Artefakt. Gefunden: Zählvariable ohne festen Typ in Rust (`for i := -2 to 1` und `i.abs()`),
   dabei `abs` in C ohne `stdlib.h` – Test `control_flow/12_loop_var_abs`.
