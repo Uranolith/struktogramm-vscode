@@ -25,6 +25,9 @@ Test-Struktogramme) und an vielen Stellen korrigiert. Plan und Entscheidungen: `
   Verhalten wie im Interpreter. `v := fileRead(h)` liest je nach Typ von `v` eine Zahl oder Text.
   `fileReadDouble` lehnt jetzt wie `INPUT` Text wie `2.5abc` ab, `fileReadChar` liefert auch Zeichen außerhalb der
   Basisebene (Emoji) ganz, und `fileWriteLine` schreibt unter Windows `\n` statt `\r\n`.
+- **Zufallstest** (`npm run test:fuzz`): vergleicht zufällige Struktogramme in allen Sprachen mit dem Interpreter, auf
+  GitHub jede Nacht. Bisher gefunden und behoben: `div` in JavaScript und Python, Textverkettung in Argumenten,
+  `for i := -1 to …`, `abs` mit reinen Zahlen und mit Zählvariablen in Rust, `abs` in C ohne `stdlib.h`.
 
 ## 1.0.3
 - **Testlauf der automatischen Veröffentlichung:** Keine Änderungen an der Erweiterung – inhaltlich gleich 1.0.2.

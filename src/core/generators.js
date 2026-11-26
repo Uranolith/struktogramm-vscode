@@ -3492,7 +3492,10 @@ class RsGen extends BaseGen {
     const step = f.step.replace(/\s+/g, '');
     const neg = step.startsWith('-');
     const abs = neg ? step.slice(1).replace(/^\((.*)\)$/, '$1') : step;
-    const start = this.x(f.start);
+    // Literal als Start mit Typ der Zählvariable: Bei for i := -2 to 1 wäre i sonst ohne festen Typ und i.abs()
+    // nicht übersetzbar (Fund des Zufallstests)
+    const tn = this.typeName(this.typeOf(f.var) || 'int');
+    const start = /^-?\d+$/.test(this.x(f.start)) && /^[iu](8|16|32|64)$/.test(tn) ? `${this.x(f.start)}_${tn}` : this.x(f.start);
     let range;
     if (!neg) {
       const m = /^(.*?)\s*-\s*1$/.exec(f.end);

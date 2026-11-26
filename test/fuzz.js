@@ -3,11 +3,16 @@
 // Ausgaben. Abweichungen werden als .nsd mit Seed nach test/out/fuzz/ geschrieben – so lassen sie sich nachstellen und
 // als fester Test nach test/samples übernehmen.
 //
-//   node test/fuzz.js [--n 50] [--seed 1] [--size 12] [sprache …]
-//   (Standard: 30 Struktogramme, Seed aus der Uhrzeit, die schnellen Sprachen python javascript c cpp rust)
+//   node test/fuzz.js [--n 50] [--seed 1] [--size 12] [--jobs 4] [sprache … | all]
+//   (Standard: 30 Struktogramme, Seed aus der Uhrzeit, die schnellen Sprachen python javascript c cpp rust;
+//   all = alle acht Sprachen)
 //
 // Die Struktogramme vermeiden bewusst, was Code und Interpreter absichtlich verschieden behandeln (Plan, Phase 1):
 // Ganzzahlen bleiben klein (mod), geteilt wird nur durch Konstanten ungleich 0.
+//
+// Schnell genug für viele Programme (Plan 8.2): Java, Kotlin und C# übersetzen alle Programme eines Laufs in EINEM
+// Compiler-Aufruf (eigener Klassenname bzw. eigenes Kotlin-package je Programm, C# über ein Startprogramm); die
+// übrigen Sprachen bauen und starten mehrere Programme gleichzeitig (--jobs).
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -22,7 +27,8 @@ const opt = (name, def) => { const i = args.indexOf('--' + name); return i >= 0 
 const COUNT = opt('n', 30);
 const SEED0 = opt('seed', Date.now() % 1000000);
 const SIZE = opt('size', 12);
-const langArgs = args.filter((a, i) => TARGETS[a] && !(args[i - 1] || '').startsWith('--'));
+const JOBS = opt('jobs', Math.max(2, os.cpus().length));
+const langArgs = args.includes('all') ? Object.keys(TARGETS) : args.filter((a, i) => TARGETS[a] && !(args[i - 1] || '').startsWith('--'));
 const LANGS = (langArgs.length ? langArgs : ['python', 'javascript', 'c', 'cpp', 'rust']).filter((l) => S.has(S.RUN[l].tool));
 const OUT = path.join(__dirname, 'out', 'fuzz');
 
@@ -132,39 +138,152 @@ function program(seed) {
 }
 
 /* ---------------- Lauf ---------------- */
+/** Aufgaben mit höchstens n gleichzeitig abarbeiten */
+async function pool(items, n, fn) {
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (next < items.length) { const k = next++; await fn(items[k], k); }
+  }));
+}
+
+/**
+ * Sprachen, die alle Programme in einem Compiler-Aufruf übersetzen: Dateiname, Code, Übersetzen (Dateiliste) und
+ * Starten je Seed. Kotlin: eigenes package je Programm (sonst kollidieren main, f und die Hilfsfunktionen); C#: ein
+ * Startprogramm ruft per Reflection die Main des gewünschten Programms auf.
+ */
+const BATCHED = {
+  java: {
+    file: (seed) => `Program${seed}.java`,
+    code: (doc, seed) => generateCode(doc, 'java', { className: `Program${seed}` }),
+    build: (files) => ['javac', ['-encoding', 'UTF-8', '-d', 'jcls', ...files]],
+    run: (seed, dir) => ['java', ['-Dstdout.encoding=UTF-8', '-cp', path.join(dir, 'jcls'), `Program${seed}`]],
+  },
+  kotlin: {
+    file: (seed) => `prog${seed}.kt`,
+    code: (doc, seed) => `package p${seed}\n` + generateCode(doc, 'kotlin', {}),
+    build: (files) => ['kotlinc', [...files, '-include-runtime', '-nowarn', '-d', 'fuzz.jar'], true],
+    run: (seed, dir) => ['java', ['-Dstdout.encoding=UTF-8', '-cp', path.join(dir, 'fuzz.jar'), `p${seed}.Prog${seed}Kt`]],
+  },
+  csharp: {
+    file: (seed) => `cs/Program${seed}.cs`,
+    code: (doc, seed) => generateCode(doc, 'csharp', { className: `Program${seed}` }),
+    build: () => ['dotnet', ['build', 'cs', '-nologo', '-v', 'q', '-o', 'cs/out']],
+    run: (seed, dir) => ['dotnet', [path.join(dir, 'cs/out/cs.dll'), `Program${seed}`]],
+    prepare(dir) {
+      fs.mkdirSync(path.join(dir, 'cs'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'cs/cs.csproj'), '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType>' +
+        '<TargetFramework>net8.0</TargetFramework><RollForward>Major</RollForward><Nullable>disable</Nullable><ImplicitUsings>disable</ImplicitUsings>' +
+        '<StartupObject>FuzzMain</StartupObject><NoWarn>CS7022;CS0168;CS0219;CS0162</NoWarn></PropertyGroup></Project>');
+      fs.writeFileSync(path.join(dir, 'cs/FuzzMain.cs'), `using System;
+using System.Reflection;
+class FuzzMain
+{
+    static void Main(string[] a)
+    {
+        var m = Type.GetType(a[0]).GetMethod("Main", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+        try { m.Invoke(null, m.GetParameters().Length == 0 ? null : new object[] { new string[0] }); }
+        catch (TargetInvocationException e) { Console.Out.Flush(); Console.Error.WriteLine(e.InnerException); Environment.Exit(1); }
+    }
+}
+`);
+    },
+  },
+};
+
+/** Fehlerzeilen eines gemeinsamen Übersetzens den Programmen (Seeds) zuordnen */
+function errorsBySeed(out) {
+  const m = new Map();
+  for (const line of String(out).replace(/\r/g, '').split('\n')) {
+    const r = /(?:Program|prog)(\d+)\.(?:java|kt|cs)\b.*\b(?:error|fehler)\b/i.exec(line); // javac meldet je nach Sprache „Fehler“
+    if (r && !m.has(Number(r[1]))) m.set(Number(r[1]), line.trim());
+  }
+  return m;
+}
+
 (async () => {
-  console.log(`Zufallstest: ${COUNT} Struktogramme ab Seed ${SEED0}, Sprachen ${LANGS.join(' ')}`);
+  console.log(`Zufallstest: ${COUNT} Struktogramme ab Seed ${SEED0}, Sprachen ${LANGS.join(' ')}, ${JOBS} gleichzeitig`);
+  const t0 = Date.now();
   const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'fuzz-'));
-  let fails = 0, skipped = 0;
+  // 1. Programme erzeugen, Referenz mit dem Interpreter
+  const cases = [];
+  let skipped = 0;
   for (let n = 0; n < COUNT; n++) {
     const seed = SEED0 + n;
     const doc = program(seed);
     const ref = S.interpret(doc, []);
     if (ref.error) { skipped++; continue; } // Interpreter-Fehler (z. B. Wert fehlt): kein sinnvoller Vergleich
-    const res = await Promise.all(LANGS.map(async (lang) => {
-      const dir = path.join(WORK, lang, String(seed));
-      S.prepare(dir, lang);
-      let code;
-      try { code = generateCode(doc, lang, { className: S.CLASS_NAME }); } catch (e) { return { lang, msg: 'Codeerzeugung: ' + e.message }; }
-      fs.writeFileSync(path.join(dir, S.RUN[lang].file), code);
-      const b = await S.build(lang, dir);
-      if (b) return { lang, msg: 'Übersetzen: ' + b.split('\n')[0] };
-      const r = await S.run(lang, dir, [], 20000);
-      const d = r.timedOut ? 'Zeitüberschreitung' : S.diff(ref.output, r.stdout);
-      return d ? { lang, msg: d } : null;
-    }));
-    const bad = res.filter(Boolean);
-    process.stdout.write(bad.length ? 'X' : '.');
-    if (bad.length) {
-      fails++;
-      fs.mkdirSync(OUT, { recursive: true });
-      const file = path.join(OUT, `seed_${seed}.nsd`);
-      fs.writeFileSync(file, toNsd(doc));
-      fs.writeFileSync(file.replace(/\.nsd$/, '.txt'), bad.map((x) => `${x.lang}: ${x.msg}`).join('\n') + '\n');
-      console.log(`\n  Seed ${seed}: ${bad.map((x) => `${x.lang}: ${x.msg.slice(0, 160)}`).join('\n             ')}`);
+    cases.push({ seed, doc, ref, bad: [] });
+  }
+  const check = (c, lang, r) => {
+    const d = r.timedOut ? 'Zeitüberschreitung' : S.diff(c.ref.output, r.stdout);
+    if (d) c.bad.push({ lang, msg: d });
+  };
+
+  // 2. Sprachen mit eigenem Compiler-Aufruf je Programm: mehrere gleichzeitig
+  const single = LANGS.filter((l) => !BATCHED[l]);
+  await pool(cases.flatMap((c) => single.map((lang) => ({ c, lang }))), JOBS, async ({ c, lang }) => {
+    const dir = path.join(WORK, lang, String(c.seed));
+    S.prepare(dir, lang);
+    let code;
+    try { code = generateCode(c.doc, lang, { className: S.CLASS_NAME }); } catch (e) { c.bad.push({ lang, msg: 'Codeerzeugung: ' + e.message }); return; }
+    fs.writeFileSync(path.join(dir, S.RUN[lang].file), code);
+    const b = await S.build(lang, dir);
+    if (b) { c.bad.push({ lang, msg: 'Übersetzen: ' + b.split('\n')[0] }); return; }
+    check(c, lang, await S.run(lang, dir, [], 20000));
+  });
+
+  // 3. Java, Kotlin, C#: alle Programme in einem Compiler-Aufruf, dann nacheinander starten
+  for (const lang of LANGS.filter((l) => BATCHED[l])) {
+    const B = BATCHED[lang];
+    const dir = path.join(WORK, lang);
+    fs.mkdirSync(dir, { recursive: true });
+    if (B.prepare) B.prepare(dir);
+    let todo = [];
+    for (const c of cases) {
+      try { fs.writeFileSync(path.join(dir, B.file(c.seed)), B.code(c.doc, c.seed)); todo.push(c); } catch (e) { c.bad.push({ lang, msg: 'Codeerzeugung: ' + e.message }); }
     }
+    // Übersetzungsfehler: betroffene Programme herausnehmen und den Rest erneut übersetzen
+    for (let attempt = 0; todo.length && attempt < 5; attempt++) {
+      const [cmd, a, shell] = B.build(todo.map((c) => B.file(c.seed)));
+      const r = await S.exec(cmd, a, { cwd: dir, shell: !!shell, timeout: 1800000 });
+      if (r.status === 0) break;
+      const errs = errorsBySeed((r.stdout || '') + (r.stderr || ''));
+      const hit = todo.filter((c) => errs.has(c.seed));
+      if (!hit.length) { // nicht zuzuordnen: alle als fehlgeschlagen melden
+        const msg = ((r.stdout || '') + (r.stderr || '')).split('\n').find((l) => /error|fehler/i.test(l)) || 'Übersetzen fehlgeschlagen';
+        todo.forEach((c) => c.bad.push({ lang, msg: 'Übersetzen: ' + msg.trim() }));
+        todo = [];
+        break;
+      }
+      for (const c of hit) {
+        c.bad.push({ lang, msg: 'Übersetzen: ' + errs.get(c.seed) });
+        if (lang === 'csharp') fs.rmSync(path.join(dir, B.file(c.seed)), { force: true }); // C# übersetzt alle Dateien im Ordner
+      }
+      todo = todo.filter((c) => !errs.has(c.seed));
+    }
+    await pool(todo, JOBS, async (c) => {
+      // eigener Arbeitsordner je Programm: Die Dateifunktionen schreiben sonst gleichzeitig in dieselbe Datei
+      const cwd = path.join(dir, 'run', String(c.seed));
+      fs.mkdirSync(cwd, { recursive: true });
+      const [cmd, a] = B.run(c.seed, dir);
+      check(c, lang, await S.exec(cmd, a, { cwd, input: '\n', timeout: 20000 }));
+    });
+  }
+
+  // 4. Bericht in Seed-Reihenfolge
+  let fails = 0;
+  process.stdout.write(cases.map((c) => (c.bad.length ? 'X' : '.')).join('') + '\n');
+  for (const c of cases) {
+    if (!c.bad.length) continue;
+    fails++;
+    fs.mkdirSync(OUT, { recursive: true });
+    const file = path.join(OUT, `seed_${c.seed}.nsd`);
+    fs.writeFileSync(file, toNsd(c.doc));
+    fs.writeFileSync(file.replace(/\.nsd$/, '.txt'), c.bad.map((x) => `${x.lang}: ${x.msg}`).join('\n') + '\n');
+    console.log(`  Seed ${c.seed}: ${c.bad.map((x) => `${x.lang}: ${x.msg.slice(0, 160)}`).join('\n             ')}`);
   }
   fs.rmSync(WORK, { recursive: true, force: true });
-  console.log(`\n${COUNT - skipped} verglichen, ${fails} mit Abweichung${skipped ? `, ${skipped} übersprungen (Interpreter-Fehler)` : ''}` + (fails ? ` – Dateien in ${OUT}` : ''));
+  console.log(`${cases.length} verglichen, ${fails} mit Abweichung${skipped ? `, ${skipped} übersprungen (Interpreter-Fehler)` : ''}` +
+    ` – ${Math.round((Date.now() - t0) / 1000)} s` + (fails ? ` – Dateien in ${OUT}` : ''));
   process.exitCode = fails ? 1 : 0;
 })();

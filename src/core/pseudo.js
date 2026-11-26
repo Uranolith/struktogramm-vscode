@@ -1235,6 +1235,7 @@ function mapToks(toks, lang, ctx) {
         }
         if (ctx.needs && (lang === 'python' && nt.v.startsWith('math.'))) ctx.needs.add('math');
         if (ctx.needs && (lang === 'c' || lang === 'cpp') && l !== 'abs') ctx.needs.add('math');
+        if (ctx.needs && (lang === 'c' || lang === 'cpp') && nt.v === 'abs') ctx.needs.add('stdlib'); // abs für Ganzzahlen: stdlib.h
       } else if (l === 'random' && toks[i + 1] && toks[i + 1].v === '(') {
         // random() ohne Argument: Kommazahl 0 … <1 (C/C++: rand() wäre eine Ganzzahl bis RAND_MAX, Plan 5.4)
         nt.v = { java: 'Math.random', javascript: 'Math.random', python: 'random.random', c: 'random01', cpp: 'random01', csharp: 'new Random().NextDouble' }[lang] || t.v;

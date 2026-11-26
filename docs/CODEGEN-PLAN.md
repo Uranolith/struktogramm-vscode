@@ -375,10 +375,19 @@ den Abschnitt „Grenzen“ des README.
 
   Je Fall: Interpreter ausführen, dann alle Sprachen übersetzen und die Ausgaben vergleichen. fast-check
   verkleinert einen Fehlschlag auf das kleinste Gegenbeispiel, das dann als fester Test in `test/samples` landet.
-- [ ] **8.2 Schnell genug machen** (M)
+- [x] **8.2 Schnell genug machen** (M)
   Mehrere Programme je Sprache in einem Compiler-Aufruf (Java: mehrere Klassen, Kotlin: eine Datei mit
   mehreren `object`s); Python/JS ohne Übersetzung zuerst. Fuzzing lokal und nachts in der CI mit festem und mit
   zufälligem Seed.
+  *Erledigt:* Java, Kotlin und C# übersetzen alle Programme eines Laufs in einem Compiler-Aufruf: Java mit eigenem
+  Klassennamen, Kotlin mit eigenem `package` je Programm, C# mit einem Startprogramm, das per Reflection die `Main`
+  des Programms aufruft. Übersetzungsfehler werden über den Dateinamen dem Programm zugeordnet; es fällt heraus und
+  der Rest wird erneut übersetzt. Die übrigen Sprachen bauen und starten mehrere Programme gleichzeitig (`--jobs`,
+  Standard: Anzahl Kerne). Jedes Programm läuft in einem eigenen Ordner (Dateifunktionen). Java + C# + Kotlin:
+  20 Programme in 28 s statt etwa 15 min; alle acht Sprachen: 100 Programme in 3½ min. `all` wählt alle Sprachen.
+  Nachts in der CI: `.github/workflows/fuzz.yml`, 200 Programme mit Seed 1 und 200 mit zufälligem Seed;
+  Abweichungen als Artefakt. Gefunden: Zählvariable ohne festen Typ in Rust (`for i := -2 to 1` und `i.abs()`),
+  dabei `abs` in C ohne `stdlib.h` – Test `control_flow/12_loop_var_abs`.
 
 ## Phase 9 – Abschluss
 

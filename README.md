@@ -365,12 +365,18 @@ Parallelverarbeitung im erzeugten Code:
   - `test/samples/checks`: Beispiele für die Prüfungen im Editor (absichtlich fehlerhaft, vom Aufgabentest
     übersprungen).
   - Weitere Themenordner (`control_flow`, `try_catch`, `arrays`, `functions`, `types`, `expressions`, `builtins`,
-    `identifiers`, `records`) prüfen gezielt einzelne Bereiche der Codeerzeugung.
+    `identifiers`, `records`, `files`) prüfen gezielt einzelne Bereiche der Codeerzeugung.
   - Testfälle je Ordner in `inputs.json`: je Struktogramm eine Liste von Eingabefolgen (eine Zeile je `INPUT`);
     `"_tasktest": false` schließt einen Ordner aus. Bekannte Fehler stehen unter `"_known"`
     (`{ "datei.nsd": { "c": "4.2", "*": "6.1" } }` – Sprache oder `*` und der Schritt im Plan, der sie behebt).
   - Auf GitHub läuft der Aufgabentest bei jedem Push und Pull Request je Sprache (`.github/workflows/test.yml`).
   - Das Excel-Protokoll braucht Python mit `openpyxl` (`pip install openpyxl`).
+- **Zufallstest** – `npm run test:fuzz -- --n 100 --seed 1 all`: erzeugt zufällige Struktogramme (Rechnen, Texte,
+  Arrays, alle Schleifen, Sprünge, Unterprogramm, Dateien), übersetzt sie in die Zielsprachen und vergleicht mit dem
+  Interpreter. Ohne Sprachangabe die schnellen Sprachen (Python, JavaScript, C, C++, Rust), `all` für alle acht. Java,
+  Kotlin und C# übersetzen alle Programme in einem Compiler-Aufruf, die übrigen laufen parallel (`--jobs`).
+  Abweichungen landen als `.nsd` in `test/out/fuzz`; nachstellen mit `--n 1 --seed <Seed>`. Auf GitHub läuft er
+  nachts mit festem und zufälligem Seed (`.github/workflows/fuzz.yml`).
 - **Veröffentlichen** – ohne gespeichertes Zugangstoken über *OIDC Trusted Publishing*: Wird auf GitHub ein Release mit
   der `.vsix` veröffentlicht, lädt der Workflow `.github/workflows/publish.yml` genau diese Datei hoch
   (`vsce publish --oidc`). Für ein bestehendes Release lässt er sich auch von Hand starten (*Actions → Marketplace
