@@ -626,13 +626,19 @@ class BaseGen {
     const forDecl = new Map();
     const all = new Set();
     const note = (el, name) => { if (!inline.has(el)) inline.set(el, new Set()); inline.get(el).add(name); };
+    // var x: double in einer Verzweigung/Schleife gilt im Interpreter für die ganze Routine (wie im Structorizer):
+    // Deklaration an den Anfang ziehen, an der Stelle bleibt nur die Zuweisung des Anfangswerts
+    const hoistDecl = new Set();
     walk(root.children, (el, depth) => {
       if (el.disabled) return false;
       if (['instruction', 'call', 'jump'].includes(el.type)) {
         for (const line of linesOf(el)) {
           const c = P.classifyLine(line);
           const assigned = [];
-          if (c.kind === 'decl') c.decls.forEach((d) => { seen.add(d.name); all.add(d.name); });
+          if (c.kind === 'decl') c.decls.forEach((d) => {
+            seen.add(d.name); all.add(d.name);
+            if (depth > 0 && !c.isConst && !d.suffix && SIMPLE_IDENT.test(d.name)) { hoist.add(d.name); hoistDecl.add(d.name); }
+          });
           else if (c.kind === 'assign') assigned.push(...c.target.split(',').map((s) => s.trim()));
           else if (c.kind === 'input') assigned.push(...c.vars);
           for (const name of assigned) {
@@ -698,7 +704,7 @@ class BaseGen {
       if (k) { if (!kinds.has(n)) kinds.set(n, new Set()); kinds.get(n).add(k); }
     }
     for (const [n, ks] of kinds) if (ks.size > 1) mixed.add(n);
-    return { types, rawTypes, explicit, params, inline, hoist, forDecl, all, declared: new Set(), fnTypes,
+    return { types, rawTypes, explicit, params, inline, hoist, hoistDecl, forDecl, all, declared: new Set(), fnTypes,
       switching, mixed, flow: new Map(), flowLock: new Set() };
   }
 
@@ -755,6 +761,17 @@ class BaseGen {
   /** Anweisung mit schrittweisem Typ (Ganzzahl/Kommazahl) und Warnung bei Text/Zahl übersetzen */
   flowStmt(c, ind, el, line) {
     const cur = this.cur;
+    // vorgezogene Deklaration (siehe analyze): hier nur den Anfangswert zuweisen
+    if (c.kind === 'decl' && cur && cur.hoistDecl && c.decls.some((d) => cur.hoistDecl.has(d.name))) {
+      const out = [];
+      const rest = c.decls.filter((d) => !cur.hoistDecl.has(d.name));
+      if (rest.length) out.push(...this.flowStmt({ ...c, decls: rest }, ind, el, null));
+      for (const d of c.decls) {
+        if (!cur.hoistDecl.has(d.name) || d.init == null || d.init === '') continue;
+        out.push(...this.flowStmt({ kind: 'assign', target: d.name, expr: d.init }, ind, el, null));
+      }
+      return out;
+    }
     if (!cur || ((!cur.switching || !cur.switching.size) && (!cur.mixed || !cur.mixed.size))) return this.stmt(c, ind, el);
     const dyn = DYNAMIC_LANGS.has(this.lang);
     const run = (cc) => this.withFlowTypes(() => this.stmt(cc, ind, el));
