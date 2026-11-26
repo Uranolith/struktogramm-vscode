@@ -319,13 +319,13 @@ class BaseGen {
       if (!lit && t.length === 1 && t[0].t === 'id' && P.normType(this.typeOf(t[0].v)) === 'char') ty = 'char';
       return { src, lit, ty, code: lit ? null : this.xPlain(src) };
     });
-    // Verkettung erst ab dem ersten Text (1 + 2 + „a“ rechnet zuerst)
+    // Verkettung erst ab dem ersten Text (1 + 2 + „a“ rechnet zuerst): Zahlen davor zu einer Summe zusammenfassen
     const first = typed.findIndex((t) => t.ty === 'string');
     if (first < 0) return null;
-    if (first > 0) {
-      const head = typed.slice(0, first + 1);
-      if (first > 1) return null; // selten; Zahlen vorn bleiben wie bisher
-      return typed;
+    if (first > 1) {
+      const src = terms.slice(0, first).map(joinTokens).join(' + ');
+      const ty = P.normType(this.exprType(src)) || 'int';
+      return [{ src, lit: false, ty, code: this.xPlain(src) }, ...typed.slice(first)];
     }
     return typed;
   }
@@ -1750,7 +1750,7 @@ class CGen extends BaseGen {
           float: '(float) read_double()', double: 'read_double()', char: 'read_line()[0]', boolean: 'atoi(read_line())' }[ct];
         if (rd && /read_int|read_double/.test(rd)) this.needs.add('readnum');
         if (rd) out.push(ind + `${tv} = ${rd};`);
-        else { this.needs.add('string'); out.push(ind + `strcpy(${tv}, read_line());`); }
+        else { this.needs.add('string'); this.needs.add('strdup'); out.push(ind + `${tv} = str_dup(read_line());`); } // eigener Speicher (read_line nutzt einen festen Puffer)
       }
     });
     return out;
@@ -2061,6 +2061,17 @@ class CGen extends BaseGen {
     if (this.needs.has('checkdiv') || this.needs.has('checkmod')) this.needs.add('stdexcept');
     if (this.needs.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `long long _idiv(long long a, long long b) { if (b == 0) throw runtime_error(${JSON.stringify(tr('exec.divZero'))}); return a / b; }`, '');
     if (this.needs.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `long long _imod(long long a, long long b) { if (b == 0) throw runtime_error(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; }`, '');
+    if (this.needs.has('utf8')) {
+      this.needs.add('string');
+      out.push(this.comment(tr('gen.utf8')),
+        'int u_len(const string& s) {', '    int n = 0;', '    for (char c : s) if ((c & 0xC0) != 0x80) n++;', '    return n;', '}',
+        'size_t u_off(const string& s, int k) {', '    size_t b = 0;', '    while (b < s.size() && k > 0) { b++; while (b < s.size() && (s[b] & 0xC0) == 0x80) b++; k--; }', '    return b;', '}',
+        'string u_copy(const string& s, int i, int n) { size_t a = u_off(s, i < 1 ? 0 : i - 1); return s.substr(a, u_off(s.substr(a), n < 0 ? 0 : n)); }',
+        'int u_pos(const string& sub, const string& s) { size_t p = s.find(sub); return p == string::npos ? 0 : u_len(s.substr(0, p)) + 1; }',
+        'string u_insert(const string& w, const string& s, int i) { string r = s; r.insert(u_off(s, i < 1 ? 0 : i - 1), w); return r; }',
+        'string u_delete(const string& s, int i, int n) { size_t a = u_off(s, i < 1 ? 0 : i - 1); string r = s; r.erase(a, u_off(s.substr(a), n < 0 ? 0 : n)); return r; }', '');
+    }
+    if (this.needs.has('random01')) out.push(this.comment(tr('gen.random01')), 'double random01() {', '    return rand() / (RAND_MAX + 1.0);', '}', '');
     if (this.needs.has('cppfinally')) {
       out.push(this.comment(tr('gen.cppFinallyGuard')), 'struct _Finally {', '    function<void()> f;', '    _Finally(function<void()> g) : f(g) {}',
         '    ~_Finally() { f(); }', '};', '');
@@ -2114,7 +2125,14 @@ class CGen extends BaseGen {
       N.add('string');
       out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('c'), '');
     }
-    const range = '    size_t ls = strlen(s); size_t k = i < 1 ? 0 : (size_t) (i - 1) > ls ? ls : (size_t) (i - 1);';
+    if (N.has('strdup')) out.push('char* str_dup(const char* s) {', '    char* r = malloc(strlen(s) + 1);', '    strcpy(r, s);', '    return r;', '}');
+    // Positionen und Längen in Zeichen (UTF-8), wie im Interpreter (Plan 5.10)
+    if (['strpos', 'strcopy', 'strinsert', 'strdelete'].some((n) => N.has(n))) N.add('utf8');
+    if (N.has('utf8')) {
+      out.push(this.comment(tr('gen.utf8')), 'int utf8_len(const char* s) {', '    int n = 0;', '    for (; *s; s++) if ((*s & 0xC0) != 0x80) n++;', '    return n;', '}',
+        'size_t utf8_off(const char* s, int k) {', '    size_t b = 0;', '    while (s[b] && k > 0) { b++; while ((s[b] & 0xC0) == 0x80) b++; k--; }', '    return b;', '}');
+    }
+    const range = '    size_t ls = strlen(s); size_t k = utf8_off(s, i < 1 ? 0 : i - 1);';
     if (N.has('cthrow')) {
       out.push('static jmp_buf* _try_env = NULL;', 'static const char* _try_msg = "";',
         tr('gen.cThrow'),
@@ -2131,6 +2149,7 @@ class CGen extends BaseGen {
         // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
         'long long read_int(void) {', '    return (long long) read_double();', '}');
     }
+    if (N.has('random01')) out.push(this.comment(tr('gen.random01')), 'double random01(void) {', '    return rand() / (RAND_MAX + 1.0);', '}');
     // Arrays mit Länge (Plan 4.2): Kopie auf dem Heap, Text-Array mit "" gefüllt, Länge eines nicht gebrauchten Ergebnisses
     if (N.has('arrdup')) { N.add('string'); N.add('stdlib'); out.push(this.comment(tr('gen.cArrDup')), 'void* _arr_dup(const void* a, int n, size_t sz) {', '    void* r = malloc(n * sz + 1);', '    memcpy(r, a, n * sz);', '    return r;', '}'); }
     if (N.has('strarray')) { N.add('stdlib'); out.push('char** _str_array(int n) {', '    char** r = malloc((n + 1) * sizeof(char*));', '    for (int i = 0; i < n; i++) r[i] = (char*) "";', '    return r;', '}'); }
@@ -2144,10 +2163,10 @@ class CGen extends BaseGen {
       }
     }
     if (N.has('strtrim')) out.push('char* str_trim(const char* s) {', '    while (isspace((unsigned char) *s)) s++;', '    size_t n = strlen(s);', '    while (n && isspace((unsigned char) s[n - 1])) n--;', '    char* r = malloc(n + 1);', '    memcpy(r, s, n); r[n] = 0;', '    return r;', '}');
-    if (N.has('strpos')) out.push('int str_pos(const char* sub, const char* s) {', '    const char* p = strstr(s, sub);', '    return p ? (int) (p - s) + 1 : 0;', '}');
-    if (N.has('strcopy')) out.push('char* str_copy(const char* s, int i, int n) {', range, '    size_t e = k + (n < 0 ? 0 : (size_t) n); if (e > ls) e = ls;', '    char* r = malloc(e - k + 1);', '    memcpy(r, s + k, e - k); r[e - k] = 0;', '    return r;', '}');
+    if (N.has('strpos')) out.push('int str_pos(const char* sub, const char* s) {', '    const char* p = strstr(s, sub);', '    if (!p) return 0;', '    int n = 0;', '    for (const char* q = s; q < p; q++) if ((*q & 0xC0) != 0x80) n++;', '    return n + 1;', '}');
+    if (N.has('strcopy')) out.push('char* str_copy(const char* s, int i, int n) {', range, '    size_t e = k + utf8_off(s + k, n < 0 ? 0 : n); if (e > ls) e = ls;', '    char* r = malloc(e - k + 1);', '    memcpy(r, s + k, e - k); r[e - k] = 0;', '    return r;', '}');
     if (N.has('strinsert')) out.push('char* str_insert(const char* w, const char* s, int i) {', range, '    size_t lw = strlen(w);', '    char* r = malloc(ls + lw + 1);', '    memcpy(r, s, k); memcpy(r + k, w, lw); strcpy(r + k + lw, s + k);', '    return r;', '}');
-    if (N.has('strdelete')) out.push('char* str_delete(const char* s, int i, int n) {', range, '    size_t e = k + (n < 0 ? 0 : (size_t) n); if (e > ls) e = ls;', '    char* r = malloc(ls - (e - k) + 1);', '    memcpy(r, s, k); strcpy(r + k, s + e);', '    return r;', '}');
+    if (N.has('strdelete')) out.push('char* str_delete(const char* s, int i, int n) {', range, '    size_t e = k + utf8_off(s + k, n < 0 ? 0 : n); if (e > ls) e = ls;', '    char* r = malloc(ls - (e - k) + 1);', '    memcpy(r, s, k); strcpy(r + k, s + e);', '    return r;', '}');
     if (out.length) { N.add('string'); N.add('stdlib'); out.push(''); }
     if (['strupper', 'strlower', 'strtrim'].some((n) => N.has(n))) N.add('ctype');
     return out;
@@ -2267,6 +2286,8 @@ class CGen extends BaseGen {
         });
       }
       for (const v of info.charArrays) info.types.set(v, 'string');
+      // Plan 1.5/5.10: Texte dynamisch (char* mit eigenem Speicher) statt char[256] – keine Längengrenze
+      info.charArrays = new Set();
       this.cArrayInfo(root, info, isMain ? [] : sig.params);
     }
     this.cur = info;
@@ -2386,6 +2407,11 @@ class CGen extends BaseGen {
         const k = main.lines.findIndex((l) => /static void Main\(/.test(l));
         main.lines.splice(k + 1, 0, this.I + this.I + 'Console.OutputEncoding = System.Text.Encoding.UTF8;');
       }
+      // Eingaben als UTF-8 lesen (sonst dekodiert Windows mit der Konsolen-Codepage: „Größe“ hätte 7 statt 5 Zeichen)
+      if (main && gen.some((g) => g.lines.some((l) => /Console\.ReadLine\(/.test(l)))) {
+        const k = main.lines.findIndex((l) => /static void Main\(/.test(l));
+        main.lines.splice(k + 1, 0, this.I + this.I + 'Console.InputEncoding = System.Text.Encoding.UTF8;');
+      }
       const fmtNum = this.needs.has('fmtnum');
       out.push('using System;', ...((main && usesReal) || fmtNum ? ['using System.Globalization;'] : []), ...(this.needs.has('tasks') ? ['using System.Threading.Tasks;'] : []), '', title, `class ${this.opts.className || toClassName(mainName)}`, '{');
       out.push(...td);
@@ -2397,7 +2423,14 @@ class CGen extends BaseGen {
       out.push('}');
     } else if (L === 'javascript') {
       out.push(title);
-      if (this.needs.has('prompt')) out.push(tr('gen.jsPrompt'), 'const prompt = require("prompt-sync")();');
+      // Eingabe: eigene synchrone Funktion statt prompt-sync – das Paket wandelt jedes Byte einzeln um (Umlaute werden
+      // zu Zeichensalat) und müsste erst installiert werden (Plan 5.10)
+      if (this.needs.has('prompt')) {
+        out.push(tr('gen.jsPrompt'), 'const prompt = (msg) => {', '    if (msg) process.stdout.write(String(msg));',
+          '    const fs = require("fs"), buf = Buffer.alloc(1), bytes = [];', '    for (;;) {', '        let n = 0;',
+          '        try { n = fs.readSync(0, buf, 0, 1, null); } catch (e) { if (e.code === "EAGAIN") continue; if (e.code === "EOF") break; throw e; }',
+          '        if (n === 0 || buf[0] === 10) break;', '        if (buf[0] !== 13) bytes.push(buf[0]);', '    }', '    return Buffer.from(bytes).toString("utf8");', '};');
+      }
       // Zahlen einlesen, streng wie im Interpreter (Number() nähme 2.5 für eine Ganzzahl und "" als 0)
       const jsMsg = (key) => { const [a, b] = tr(key, '\u0000').split('\u0000'); return `${JSON.stringify(a)} + s + ${JSON.stringify(b)}`; };
       if (this.needs.has('readint')) out.push(this.comment(tr('gen.readNum')), `const _int = (s) => Math.trunc(_num(s));`);
@@ -2639,9 +2672,15 @@ class PyGen extends BaseGen {
   x(text) {
     const toks = P.ptoks(text);
     const { splitTop } = require('./tokenizer');
-    const terms = splitTop(toks, '+');
+    let terms = splitTop(toks, '+');
     if (this.cur && terms.length > 1 && terms.some((t) => t.length === 1 && t[0].t === 'str') &&
         findTop(toks, (t) => P.REL_OPS.has(t.v) || ['and', 'or', 'not'].includes(String(t.v).toLowerCase())) < 0) {
+      // Zahlen vor dem ersten Text zuerst addieren (a + 1 + "!" -> "2!" wie im Interpreter)
+      const first = terms.findIndex((t) => (t.length === 1 && t[0].t === 'str') || P.normType(P.inferType(joinTokens(t), this.cur.types, this.cur.fnTypes)) === 'string');
+      if (first > 1) {
+        const head = P.ptoks(terms.slice(0, first).map(joinTokens).join(' + '));
+        terms = [[{ t: 'op', v: '(', ws: false }, ...head, { t: 'op', v: ')', ws: false }], ...terms.slice(first)];
+      }
       return terms.map((t) => {
         const tx = joinTokens(t);
         const tt = P.inferType(tx, this.cur.types, this.cur.fnTypes);
@@ -2726,13 +2765,27 @@ function assignedNames(root) {
 }
 
 /** "a" + x + "b"  ->  Teile, wenn eine Zeichenkette verkettet wird (sonst null) */
-function concatParts(text) {
+/**
+ * Kotlin/Rust: „a“ + x + … als Teile für ein Template. Text ist ein Literal oder (mit gen) ein Term vom Typ Text
+ * (c + a mit Text-Variable c). Zahlen vor dem ersten Text werden zuerst addiert (a + 1 + „!“ -> 2!).
+ */
+function concatParts(text, gen) {
   const { splitTop } = require('./tokenizer');
   const toks = P.ptoks(text);
   const terms = splitTop(toks, '+');
-  if (terms.length < 2 || !terms.some((t) => t.length === 1 && t[0].t === 'str')) return null;
+  if (terms.length < 2 || terms.some((t) => !t.length)) return null;
   if (findTop(toks, (t) => P.REL_OPS.has(t.v) || ['and', 'or', 'not'].includes(String(t.v).toLowerCase())) >= 0) return null;
-  return terms.map((t) => (t.length === 1 && t[0].t === 'str' ? { lit: P.literalInner(t[0].v) } : { expr: joinTokens(t) }));
+  const isLit = (t) => t.length === 1 && t[0].t === 'str';
+  const isText = (t) => {
+    if (isLit(t)) return true;
+    if (!gen) return false;
+    try { return P.normType(gen.exprType(joinTokens(t))) === 'string'; } catch (e) { return false; }
+  };
+  const first = terms.findIndex(isText);
+  if (first < 0) return null;
+  const parts = terms.map((t) => (isLit(t) ? { lit: P.literalInner(t[0].v) } : { expr: joinTokens(t) }));
+  if (first > 1) return [{ expr: terms.slice(0, first).map(joinTokens).join(' + ') }, ...parts.slice(first)];
+  return parts;
 }
 
 /* ==================================================================== */
@@ -2786,7 +2839,7 @@ class KtGen extends CGen {
   }
 
   x(text) {
-    const parts = this.cur ? concatParts(text) : null;
+    const parts = this.cur ? concatParts(text, this) : null;
     if (parts) return this.tmpl(parts);
     return super.x(text);
   }
@@ -3070,7 +3123,7 @@ class RsGen extends BaseGen {
   }
 
   x(text) {
-    const parts = this.cur ? concatParts(text) : null;
+    const parts = this.cur ? concatParts(text, this) : null;
     if (parts) { const { f, args } = this.fmt(parts); return `format!(${[f, ...args].join(', ')})`; }
     return super.x(this.cur ? this.rustMix(text) : text);
   }

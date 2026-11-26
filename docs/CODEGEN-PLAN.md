@@ -237,30 +237,46 @@ den Abschnitt „Grenzen“ des README.
 
 ## Phase 5 – Ausdrücke und Textverkettung
 
-- [ ] **5.1 Zahlen vor dem ersten Text** (M)
+- [x] **5.1 Zahlen vor dem ersten Text** (M)
+  *Erledigt:* Zahlen vor dem ersten Text werden zu einer Summe zusammengefasst (`concatTerms`, Python-`x`,
+  `concatParts`).
   `a + 1 + "!"` gibt in Python und Kotlin „11!“ statt „2!“; C/C++ machen daraus Zeigerarithmetik, also
   undefiniertes Verhalten. Stelle: `concatTerms` (`if (first > 1) return null`). Lösung: Die Zahlenterme vor dem
   ersten Text erst addieren, dann verketten. Test: `s36_output_forms`.
-- [ ] **5.2 Rust: Text + Zahl** (S)
+- [x] **5.2 Rust: Text + Zahl** (S)
+  *Erledigt:* `concatParts` erkennt Text auch an Variablen vom Typ Text (nicht nur an Literalen).
   Bei `c + a + b` mit Text `c` vorn fehlt die Umwandlung. Test: `s36_output_forms`.
-- [ ] **5.3 `min`/`max`** (S)
+- [x] **5.3 `min`/`max`** (S)
+  *Erledigt:* `minMaxFn` – beliebig viele Argumente, Ganzzahl-Argumente werden bei Kommazahlen in Kotlin, Rust
+  und C++ umgewandelt; `inferType` liefert den breitesten Typ.
   Mehr als zwei Argumente werden verworfen (verschachteln: `max(a, max(b, c))`). Gemischte Typen: in C `%d`
   für einen `double`-Ausdruck, C++ `max(double, int)` und Rust übersetzen nicht. Ergebnistyp = breitester Typ,
   Argumente angleichen. Tests: `s30_nested_calls`, `d09_mathdoc`.
-- [ ] **5.4 `random()` ohne Argument in C/C++** (S)
+- [x] **5.4 `random()` ohne Argument in C/C++** (S)
+  *Erledigt:* Hilfsfunktion `random01()`.
   Wird zu `rand()`, einer Ganzzahl. Richtig: `rand() / (RAND_MAX + 1.0)`. Test: `s33_random`.
-- [ ] **5.5 `strcmp` einheitlich −1/0/1, ordinal** (S)
+- [x] **5.5 `strcmp` einheitlich −1/0/1, ordinal** (S)
   Java/Kotlin liefern 31, C#/JS vergleichen kulturabhängig, C++ übersetzt mit Literalen nicht. Lösung: Signum
   des ordinalen Vergleichs (`Integer.signum(a.compareTo(b))`, `string.CompareOrdinal`, …). Test: `s32_strcmp`.
-- [ ] **5.6 Methoden auf Text-Literalen in C++** (S)
+- [x] **5.6 Methoden auf Text-Literalen in C++** (S)
+  *Erledigt:* Text-Literale als Argumente von Textfunktionen werden `string("…")`.
   `length("")` → `"".size()` übersetzt nicht. Literal in `string(...)` einpacken. Test: `s17_text_funcs`,
   `s22_umlaut_idents`.
-- [ ] **5.7 `xor`** (S)
+- [x] **5.7 `xor`** (S)
+  *Erledigt:* `xor` auf oberster Ebene wird in allen Sprachen zu `(links) != (rechts)` (in Python, Rust und
+  Kotlin band `^`/`xor` stärker als ein Vergleich, JS lieferte 1/0); bitweises `^` in Kotlin wird `xor`.
   JS: Wahrheitswerte ergeben `1`/`0` (→ `a !== b`). Kotlin: `^` ist ungültig (→ `xor` bzw. `!=`). Ob `^` im
   Struktogramm xor oder Potenz ist, mit dem Interpreter abgleichen. Tests: `s38_xor_bool`, `s35_math_mix`.
-- [ ] **5.8 Python: Wahrheitswerte aus Funktionsaufrufen** (S)
+- [x] **5.8 Python: Wahrheitswerte aus Funktionsaufrufen** (S)
+  *Erledigt* mit 3.1 (Rückgabetyp eines einzelnen Aufrufs).
   In Texten erscheint `True`/`False` statt `true`/`false`. Test: `s18_type_inference`.
-- [ ] **5.10 C: dynamische Texte; C und Rust: Zeichen zählen** (L)
+- [x] **5.10 C: dynamische Texte; C und Rust: Zeichen zählen** (L)
+  *Erledigt:* C liest Texte in eigenen Speicher (`str_dup`, keine Grenze von 255 Zeichen); `length`, `copy`, `pos`,
+  `insert`, `delete` zählen in C, C++ und Rust UTF-8-Zeichen. Gefunden mit dem neuen Test
+  `expressions/12_utf8_text`: C# und JS lasen Umlaute in Eingaben falsch – C# setzt jetzt
+  `Console.InputEncoding = UTF8`, JS nutzt eine eigene Eingabefunktion statt `prompt-sync` (das Paket wandelte
+  jedes Byte einzeln um; der erzeugte Code braucht dadurch auch kein `npm install` mehr). Offen: `uppercase`/
+  `lowercase` und `foreach` über Texte arbeiten in C noch byteweise (Umlaute).
   Umsetzung von 1.5: `char*` mit `malloc` statt `char[256]` (auch für `INPUT`), Hilfsfunktionen für
   `length`/`copy`/`pos`/`insert`/`delete` auf UTF-8-Zeichen. Rust zählt mit `.len()` ebenfalls Bytes →
   `.chars().count()` bzw. Zeichen-Indizes. Test: `expressions/05_umlaut_idents`.

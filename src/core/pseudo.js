@@ -279,7 +279,8 @@ function modernFn(l, args, lang, ctx) {
     case 'int': case 'trunc': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<i32>().unwrap()` : `(${wrap(a.out)} as i32)`;
     case 'float': return typeOf(a) === 'string' ? `${wrap(a.out)}.trim().parse::<f64>().unwrap()` : `(${wrap(a.out)} as f64)`;
     case 'str': return `${wrap(a.out)}.to_string()`;
-    default: return `(${wrap(a.out)}.len() as i32)`;
+    // Texte: Zeichen zählen wie der Interpreter (len() zählt UTF-8-Bytes, Plan 5.10)
+    default: return typeOf(a) === 'string' ? `(${wrap(a.out)}.chars().count() as i32)` : `(${wrap(a.out)}.len() as i32)`;
   }
 }
 
@@ -360,22 +361,74 @@ const SFN = {
   uppercase: { c: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.upper()`, java: (a) => `${W(a[0].out)}.toUpperCase()`, csharp: (a) => `${W(a[0].out)}.ToUpper()`, javascript: (a) => `${W(a[0].out)}.toUpperCase()`, kotlin: (a) => `${W(a[0].out)}.uppercase()`, rust: (a) => `${W(a[0].out)}.to_uppercase()`, cpp: (a, ctx) => { need(ctx, 'strupper'); return `str_upper(${a[0].out})`; } },
   lowercase: { c: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.lower()`, java: (a) => `${W(a[0].out)}.toLowerCase()`, csharp: (a) => `${W(a[0].out)}.ToLower()`, javascript: (a) => `${W(a[0].out)}.toLowerCase()`, kotlin: (a) => `${W(a[0].out)}.lowercase()`, rust: (a) => `${W(a[0].out)}.to_lowercase()`, cpp: (a, ctx) => { need(ctx, 'strlower'); return `str_lower(${a[0].out})`; } },
   trim: { c: (a, ctx) => { need(ctx, 'strtrim'); return `str_trim(${a[0].out})`; }, python: (a) => `${W(a[0].out)}.strip()`, java: (a) => `${W(a[0].out)}.trim()`, csharp: (a) => `${W(a[0].out)}.Trim()`, javascript: (a) => `${W(a[0].out)}.trim()`, kotlin: (a) => `${W(a[0].out)}.trim()`, rust: (a) => `${W(a[0].out)}.trim().to_string()`, cpp: (a, ctx) => { need(ctx, 'strtrim'); return `str_trim(${a[0].out})`; } },
-  pos: { c: (a, ctx) => { need(ctx, 'strpos'); return `str_pos(${a[0].out}, ${a[1].out})`; }, python: (a) => `(${W(a[1].out)}.find(${a[0].out}) + 1)`, java: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, csharp: (a) => `(${W(a[1].out)}.IndexOf(${a[0].out}) + 1)`, javascript: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, kotlin: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, rust: (a) => `${W(a[1].out)}.find(${rsStr(a[0])}).map_or(0, |i| ${W(a[1].out)}[..i].chars().count() as i32 + 1)`, cpp: (a) => `((int) ${W(a[1].out)}.find(${a[0].out}) + 1)` },
-  copy: { c: (a, ctx) => { need(ctx, 'strcopy'); return `str_copy(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[${a[1].out} - 1:${a[1].out} - 1 + ${W(a[2].out)}]`, java: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, Math.min(${W(a[0].out)}.length(), ${a[1].out} - 1 + ${W(a[2].out)}))`, csharp: (a) => `${W(a[0].out)}.Substring(${a[1].out} - 1, Math.Min(${W(a[2].out)}, ${W(a[0].out)}.Length - (${a[1].out} - 1)))`, javascript: (a) => `${W(a[0].out)}.substr(${a[1].out} - 1, ${a[2].out})`, kotlin: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, minOf(${W(a[0].out)}.length, ${a[1].out} - 1 + ${W(a[2].out)}))`, rust: (a) => `${W(a[0].out)}.chars().skip((${a[1].out} - 1) as usize).take((${a[2].out}) as usize).collect::<String>()`, cpp: (a) => `${W(a[0].out)}.substr(${a[1].out} - 1, ${a[2].out})` },
-  insert: { c: (a, ctx) => { need(ctx, 'strinsert'); return `str_insert(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[1].out)}[:${a[2].out} - 1] + ${a[0].out} + ${W(a[1].out)}[${a[2].out} - 1:]`, java: (a) => `${W(a[1].out)}.substring(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.substring(${a[2].out} - 1)`, csharp: (a) => `${W(a[1].out)}.Insert(${a[2].out} - 1, ${a[0].out})`, javascript: (a) => `${W(a[1].out)}.slice(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.slice(${a[2].out} - 1)`, kotlin: (a) => `${W(a[1].out)}.substring(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.substring(${a[2].out} - 1)`, rust: (a) => `{ let mut t = ${W(a[1].out)}.clone(); t.insert_str((${a[2].out} - 1) as usize, ${rsStr(a[0])}); t }`, cpp: (a) => `string(${a[1].out}).insert(${a[2].out} - 1, ${a[0].out})` },
-  delete: { c: (a, ctx) => { need(ctx, 'strdelete'); return `str_delete(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[:${a[1].out} - 1] + ${W(a[0].out)}[${a[1].out} - 1 + ${W(a[2].out)}:]`, java: (a) => `${W(a[0].out)}.substring(0, ${a[1].out} - 1) + ${W(a[0].out)}.substring(Math.min(${W(a[0].out)}.length(), ${a[1].out} - 1 + ${W(a[2].out)}))`, csharp: (a) => `${W(a[0].out)}.Remove(${a[1].out} - 1, ${a[2].out})`, javascript: (a) => `${W(a[0].out)}.slice(0, ${a[1].out} - 1) + ${W(a[0].out)}.slice(${a[1].out} - 1 + ${W(a[2].out)})`, kotlin: (a) => `${W(a[0].out)}.removeRange(${a[1].out} - 1, minOf(${W(a[0].out)}.length, ${a[1].out} - 1 + ${W(a[2].out)}))`, rust: (a) => `{ let mut t = ${W(a[0].out)}.clone(); let e = ((${a[1].out} - 1 + ${W(a[2].out)}) as usize).min(t.len()); t.replace_range((${a[1].out} - 1) as usize..e, ""); t }`, cpp: (a) => `string(${a[0].out}).erase(${a[1].out} - 1, ${a[2].out})` },
+  pos: { c: (a, ctx) => { need(ctx, 'strpos'); return `str_pos(${a[0].out}, ${a[1].out})`; }, python: (a) => `(${W(a[1].out)}.find(${a[0].out}) + 1)`, java: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, csharp: (a) => `(${W(a[1].out)}.IndexOf(${a[0].out}) + 1)`, javascript: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, kotlin: (a) => `(${W(a[1].out)}.indexOf(${a[0].out}) + 1)`, rust: (a) => `${W(a[1].out)}.find(${rsStr(a[0])}).map_or(0, |i| ${W(a[1].out)}[..i].chars().count() as i32 + 1)`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_pos(${a[0].out}, ${a[1].out})`; } },
+  copy: { c: (a, ctx) => { need(ctx, 'strcopy'); return `str_copy(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[${a[1].out} - 1:${a[1].out} - 1 + ${W(a[2].out)}]`, java: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, Math.min(${W(a[0].out)}.length(), ${a[1].out} - 1 + ${W(a[2].out)}))`, csharp: (a) => `${W(a[0].out)}.Substring(${a[1].out} - 1, Math.Min(${W(a[2].out)}, ${W(a[0].out)}.Length - (${a[1].out} - 1)))`, javascript: (a) => `${W(a[0].out)}.substr(${a[1].out} - 1, ${a[2].out})`, kotlin: (a) => `${W(a[0].out)}.substring(${a[1].out} - 1, minOf(${W(a[0].out)}.length, ${a[1].out} - 1 + ${W(a[2].out)}))`, rust: (a) => `${W(a[0].out)}.chars().skip((${a[1].out} - 1) as usize).take((${a[2].out}) as usize).collect::<String>()`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_copy(${a[0].out}, ${a[1].out}, ${a[2].out})`; } },
+  insert: { c: (a, ctx) => { need(ctx, 'strinsert'); return `str_insert(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[1].out)}[:${a[2].out} - 1] + ${a[0].out} + ${W(a[1].out)}[${a[2].out} - 1:]`, java: (a) => `${W(a[1].out)}.substring(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.substring(${a[2].out} - 1)`, csharp: (a) => `${W(a[1].out)}.Insert(${a[2].out} - 1, ${a[0].out})`, javascript: (a) => `${W(a[1].out)}.slice(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.slice(${a[2].out} - 1)`, kotlin: (a) => `${W(a[1].out)}.substring(0, ${a[2].out} - 1) + ${a[0].out} + ${W(a[1].out)}.substring(${a[2].out} - 1)`, rust: (a) => `{ let mut t = ${W(a[1].out)}.clone(); let b = t.char_indices().nth((${a[2].out} - 1) as usize).map_or(t.len(), |(b, _)| b); t.insert_str(b, ${rsStr(a[0])}); t }`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_insert(${a[0].out}, ${a[1].out}, ${a[2].out})`; } },
+  delete: { c: (a, ctx) => { need(ctx, 'strdelete'); return `str_delete(${a[0].out}, ${a[1].out}, ${a[2].out})`; }, python: (a) => `${W(a[0].out)}[:${a[1].out} - 1] + ${W(a[0].out)}[${a[1].out} - 1 + ${W(a[2].out)}:]`, java: (a) => `${W(a[0].out)}.substring(0, ${a[1].out} - 1) + ${W(a[0].out)}.substring(Math.min(${W(a[0].out)}.length(), ${a[1].out} - 1 + ${W(a[2].out)}))`, csharp: (a) => `${W(a[0].out)}.Remove(${a[1].out} - 1, ${a[2].out})`, javascript: (a) => `${W(a[0].out)}.slice(0, ${a[1].out} - 1) + ${W(a[0].out)}.slice(${a[1].out} - 1 + ${W(a[2].out)})`, kotlin: (a) => `${W(a[0].out)}.removeRange(${a[1].out} - 1, minOf(${W(a[0].out)}.length, ${a[1].out} - 1 + ${W(a[2].out)}))`, rust: (a) => `${W(a[0].out)}.chars().take((${a[1].out} - 1) as usize).chain(${W(a[0].out)}.chars().skip((${a[1].out} - 1 + ${W(a[2].out)}) as usize)).collect::<String>()`, cpp: (a, ctx) => { need(ctx, 'utf8'); return `u_delete(${a[0].out}, ${a[1].out}, ${a[2].out})`; } },
   ord: { python: (a) => `ord(${a[0].out})`, java: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}.charAt(0)`), csharp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`), javascript: (a) => `${W(a[0].out)}.charCodeAt(0)`, kotlin: (a, ctx) => (isCharArg(a[0], ctx) ? `${W(a[0].out)}.code` : `${W(a[0].out)}[0].code`), rust: (a, ctx) => (isCharArg(a[0], ctx) ? `(${a[0].out} as i32)` : `(${W(a[0].out)}.chars().next().unwrap() as i32)`), cpp: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`), c: (a, ctx) => (isCharArg(a[0], ctx) ? `(int) ${W(a[0].out)}` : `(int) ${W(a[0].out)}[0]`) },
   chr: { python: (a) => `chr(${a[0].out})`, java: (a) => `(char) ${W(a[0].out)}`, csharp: (a) => `(char) ${W(a[0].out)}`, javascript: (a) => `String.fromCharCode(${a[0].out})`, kotlin: (a) => `${W(a[0].out)}.toChar()`, rust: (a) => `char::from_u32((${a[0].out}) as u32).unwrap()`, cpp: (a) => `(char) ${W(a[0].out)}`, c: (a) => `(char) ${W(a[0].out)}` },
   sgn: { python: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))`, java: (a) => `(int) Math.signum(${a[0].out})`, csharp: (a) => `Math.Sign(${a[0].out})`, javascript: (a) => `Math.sign(${a[0].out})`, kotlin: (a) => `(if (${a[0].out} > 0) 1 else if (${a[0].out} < 0) -1 else 0)`, rust: (a) => `(if ${a[0].out} > 0 { 1 } else if ${a[0].out} < 0 { -1 } else { 0 })`, cpp: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))`, c: (a) => `((${a[0].out} > 0) - (${a[0].out} < 0))` },
   sqr: { '*': (a) => `${W(a[0].out)} * ${W(a[0].out)}` },
   toradians: { '*': (a, ctx, lang) => { mathNeed(ctx, lang); return `${W(a[0].out)} * ${PI_OF[lang]} / 180`; } },
   todegrees: { '*': (a, ctx, lang) => { mathNeed(ctx, lang); return `${W(a[0].out)} * 180 / ${PI_OF[lang]}`; } },
-  min: { python: (a) => `min(${a.map((x) => x.out).join(', ')})`, java: (a) => `Math.min(${a[0].out}, ${a[1].out})`, csharp: (a) => `Math.Min(${a[0].out}, ${a[1].out})`, javascript: (a) => `Math.min(${a.map((x) => x.out).join(', ')})`, kotlin: (a) => `minOf(${a[0].out}, ${a[1].out})`, rust: (a) => `${W(a[0].out)}.min(${a[1].out})`, cpp: (a) => `min(${a[0].out}, ${a[1].out})`, c: (a) => `(${W(a[0].out)} < ${W(a[1].out)} ? ${W(a[0].out)} : ${W(a[1].out)})` },
-  max: { python: (a) => `max(${a.map((x) => x.out).join(', ')})`, java: (a) => `Math.max(${a[0].out}, ${a[1].out})`, csharp: (a) => `Math.Max(${a[0].out}, ${a[1].out})`, javascript: (a) => `Math.max(${a.map((x) => x.out).join(', ')})`, kotlin: (a) => `maxOf(${a[0].out}, ${a[1].out})`, rust: (a) => `${W(a[0].out)}.max(${a[1].out})`, cpp: (a) => `max(${a[0].out}, ${a[1].out})`, c: (a) => `(${W(a[0].out)} > ${W(a[1].out)} ? ${W(a[0].out)} : ${W(a[1].out)})` },
+  min: minMaxFn('min'),
+  max: minMaxFn('max'),
   split: { python: (a) => `${W(a[0].out)}.split(${a[1].out})`, java: (a) => `${W(a[0].out)}.split(java.util.regex.Pattern.quote(${a[1].out}))`, csharp: (a) => `${W(a[0].out)}.Split(${a[1].out})`, javascript: (a) => `${W(a[0].out)}.split(${a[1].out})`, kotlin: (a) => `${W(a[0].out)}.split(${a[1].out}).toTypedArray()`, rust: (a) => `${W(a[0].out)}.split(${rsStr(a[1])}).map(String::from).collect::<Vec<String>>()` },
-  strcmp: { python: (a) => `((${a[0].out} > ${a[1].out}) - (${a[0].out} < ${a[1].out}))`, java: (a) => `${W(a[0].out)}.compareTo(${a[1].out})`, csharp: (a) => `string.Compare(${a[0].out}, ${a[1].out})`, javascript: (a) => `${W(a[0].out)}.localeCompare(${a[1].out})`, kotlin: (a) => `${W(a[0].out)}.compareTo(${a[1].out})`, rust: (a) => `(${W(a[0].out)}.cmp(&${W(a[1].out)}) as i32)`, cpp: (a) => `${W(a[0].out)}.compare(${a[1].out})`, c: (a, ctx) => { need(ctx, 'string'); return `strcmp(${a[0].out}, ${a[1].out})`; } },
+  // strcmp: -1, 0 oder 1, ordinal wie im Interpreter (Plan 5.5; compareTo lieferte die Differenz, C#/JS verglichen kulturabhängig)
+  strcmp: {
+    python: (a) => `((${a[0].out} > ${a[1].out}) - (${a[0].out} < ${a[1].out}))`,
+    java: (a) => `Integer.signum(${W(a[0].out)}.compareTo(${a[1].out}))`,
+    csharp: (a) => `Math.Sign(string.CompareOrdinal(${a[0].out}, ${a[1].out}))`,
+    javascript: (a) => `(${a[0].out} < ${a[1].out} ? -1 : ${a[0].out} > ${a[1].out} ? 1 : 0)`,
+    kotlin: (a) => `${W(a[0].out)}.compareTo(${a[1].out}).coerceIn(-1, 1)`,
+    rust: (a) => `(${W(a[0].out)}.to_string().cmp(&${W(a[1].out)}.to_string()) as i32)`,
+    cpp: (a) => `((${a[0].out} > ${a[1].out}) - (${a[0].out} < ${a[1].out}))`,
+    c: (a, ctx) => { need(ctx, 'string'); return `((strcmp(${a[0].out}, ${a[1].out}) > 0) - (strcmp(${a[0].out}, ${a[1].out}) < 0))`; },
+  },
   copyarray: { python: (a) => `list(${a[0].out})`, java: (a) => `${W(a[0].out)}.clone()`, csharp: (a) => `System.Linq.Enumerable.ToArray(${a[0].out})`, javascript: (a) => `[...${W(a[0].out)}]`, kotlin: (a) => `${W(a[0].out)}.copyOf()`, rust: (a) => `${W(a[0].out)}.clone()`, cpp: (a) => a[0].out },
 };
+/**
+ * min/max mit beliebig vielen Argumenten (Plan 5.3). Ist ein Argument eine Kommazahl, ist das Ergebnis eine
+ * Kommazahl; Kotlin, Rust und C++ verlangen dann gleiche Typen – Ganzzahl-Argumente werden umgewandelt.
+ */
+function minMaxFn(kind) {
+  const isDbl = (x, ctx) => {
+    if (/^-?\d+\.\d*([eE][+-]?\d+)?$/.test(String(x.src).trim())) return true;
+    try { return normType(ctx && ctx.exprType ? ctx.exprType(x.src) : inferType(x.src)) === 'double'; } catch (e) { return false; }
+  };
+  const isIntLit = (x) => /^-?\d+$/.test(String(x.out).trim());
+  // gleiche Typen: Ganzzahl -> Kommazahl, wo die Sprache das verlangt
+  const unify = (a, ctx, lang) => {
+    const dbl = a.some((x) => isDbl(x, ctx));
+    return a.map((x) => {
+      if (!dbl || isDbl(x, ctx)) return x.out;
+      if (isIntLit(x)) return x.out + '.0';
+      if (lang === 'kotlin') return `${W(x.out)}.toDouble()`;
+      if (lang === 'rust') return `(${x.out} as f64)`;
+      if (lang === 'cpp') return `(double) ${W(x.out)}`;
+      return x.out;
+    });
+  };
+  const fold = (xs, f) => xs.slice(0, -1).reduceRight((acc, x) => f(x, acc), xs[xs.length - 1]);
+  const cmp = kind === 'min' ? '<' : '>';
+  const Cs = kind === 'min' ? 'Min' : 'Max';
+  return {
+    python: (a) => `${kind}(${a.map((x) => x.out).join(', ')})`,
+    javascript: (a) => `Math.${kind}(${a.map((x) => x.out).join(', ')})`,
+    java: (a) => fold(a.map((x) => x.out), (x, y) => `Math.${kind}(${x}, ${y})`),
+    csharp: (a) => fold(a.map((x) => x.out), (x, y) => `Math.${Cs}(${x}, ${y})`),
+    kotlin: (a, ctx) => `${kind}Of(${unify(a, ctx, 'kotlin').join(', ')})`,
+    rust: (a, ctx) => {
+      const xs = unify(a, ctx, 'rust');
+      // erstes Argument mit festem Typ (2.5.max(…) wäre ein mehrdeutiger Zahltyp)
+      const head = /^-?\d+(\.\d*)?$/.test(xs[0]) ? `(${xs[0]} as ${/\./.test(xs[0]) ? 'f64' : 'i32'})` : W(xs[0]);
+      return xs.slice(1).reduce((acc, x) => `${acc}.${kind}(${x})`, head);
+    },
+    cpp: (a, ctx) => fold(unify(a, ctx, 'cpp'), (x, y) => `${kind}(${x}, ${y})`),
+    c: (a) => fold(a.map((x) => x.out), (x, y) => `(${W(x)} ${cmp} ${W(y)} ? ${W(x)} : ${W(y)})`),
+  };
+}
+
 /** Turtleizer -> Python-Modul turtle (Structorizer: 0° = oben, y nach unten) */
 const TURTLE_PY = {
   forward: (a) => `turtle.forward(${a[0].out})`, fd: (a) => `turtle.forward(${a[0].out})`,
@@ -735,7 +788,42 @@ const TEXT_INDEX = {
   rust: (s, i) => `${s}.chars().nth(${/^\d+$/.test(i) ? i : `(${i}) as usize`}).unwrap().to_string()`,
 };
 
+/**
+ * xor (Plan 5.7): Der Interpreter rechnet logisch (wahr, wenn genau eine Seite wahr ist). In Python, Rust und Kotlin
+ * bindet ^ bzw. xor stärker als ein Vergleich (n > 1 xor n > 2 würde n > (1 ^ n) > 2), in JavaScript liefert ^ 1/0
+ * statt true/false. Daher auf oberster Ebene zerlegen: (links) != (rechts) – innerhalb von and/or je Teil.
+ */
+const XOR_SPLIT = new Set(['python', 'javascript', 'kotlin', 'rust', 'java', 'csharp', 'c', 'cpp']); // überall: lesbarer als ^ und ohne Vorrangfallen
+function splitXor(toks) {
+  const isKw = (t, w) => t.t === 'id' && t.v.toLowerCase() === w;
+  if (findTop(toks, (t) => isKw(t, 'xor')) < 0) return toks;
+  // zuerst an or/and (schwächer bindend), dann die Teile an xor
+  for (const w of ['or', 'and']) {
+    if (findTop(toks, (t) => isKw(t, w) || t.v === (w === 'or' ? '||' : '&&')) >= 0) {
+      const out = [];
+      let cur = [];
+      let depth = 0;
+      for (const t of toks) {
+        if (t.t === 'op' && OPEN[t.v]) depth++;
+        if (t.t === 'op' && CLOSE[t.v]) depth--;
+        if (depth === 0 && (isKw(t, w) || t.v === (w === 'or' ? '||' : '&&'))) { out.push(...splitXor(cur), t); cur = []; } else cur.push(t);
+      }
+      out.push(...splitXor(cur));
+      return out;
+    }
+  }
+  const parts = splitTop(toks, (t) => isKw(t, 'xor'));
+  if (parts.length < 2 || parts.some((p) => !p.length)) return toks;
+  const out = [];
+  parts.forEach((p, k) => {
+    if (k) out.push({ t: 'op', v: '!=', ws: true });
+    out.push({ t: 'op', v: '(', ws: k > 0 || p[0].ws }, { ...p[0], ws: false }, ...p.slice(1), { t: 'op', v: ')', ws: false });
+  });
+  return out;
+}
+
 function mapToks(toks, lang, ctx) {
+  if (XOR_SPLIT.has(lang)) toks = splitXor(toks);
   if (STRCMP_LANGS.has(lang) || lang === 'kotlin') toks = charsToStrings(toks, ctx);
   if (INTDIV_LANGS.has(lang) || (ctx && ctx.checkDiv && CHECKDIV_LANGS.has(lang))) toks = intDivision(toks, lang, ctx);
   // Textvergleiche zuerst (Operanden werden dabei selbst übersetzt)
@@ -783,6 +871,7 @@ function mapToks(toks, lang, ctx) {
       else if (t.v === '!' ) {
         if (!c) { nt.v = 'not'; nt.t = 'id'; }
       } else if (t.v === '%') nt.v = '%';
+      else if (t.v === '^' && lang === 'kotlin') { nt.v = 'xor'; nt.t = 'id'; nt.ws = true; } // Kotlin kennt ^ nicht (Plan 5.7)
       else if (t.v === '//' && lang !== 'python') nt.v = '/';
       else if (t.v === '<-' || t.v === ':=') nt.v = '=';
       if (nt.t === 'id' && out.length && !t.ws) nt.ws = true;
@@ -816,7 +905,8 @@ function mapToks(toks, lang, ctx) {
         // Structorizer-Funktion (uppercase, pos, copy, ord, sgn …) in der Zielsprache
         const close = matchClose(toks, i + 1);
         const args = splitTop(toks.slice(i + 2, close < 0 ? toks.length : close), ',').filter((x) => x.length)
-          .map((x) => ({ src: joinTokens(x), out: joinTokens(mapToks(x, lang, ctx)) }));
+          .map((x) => ({ src: joinTokens(x), out: joinTokens(mapToks(x, lang, ctx)) }))
+          .map((x) => (lang === 'cpp' && isStringLiteral(x.src) && /^"/.test(x.out) ? { ...x, out: `string(${x.out})` } : x)); // C++: Methoden auf Literalen (Plan 5.6)
         const tab = l === 'random' ? RANDOM_N : SFN[l];
         const fn = tab[lang] || tab['*'];
         if (!fn || (!args.length && !(TURTLE_PY[l] && lang === 'python'))) { out.push(nt); continue; }
@@ -907,7 +997,9 @@ function mapToks(toks, lang, ctx) {
         if (ctx.needs && (lang === 'python' && nt.v.startsWith('math.'))) ctx.needs.add('math');
         if (ctx.needs && (lang === 'c' || lang === 'cpp') && l !== 'abs') ctx.needs.add('math');
       } else if (l === 'random' && toks[i + 1] && toks[i + 1].v === '(') {
-        nt.v = { java: 'Math.random', javascript: 'Math.random', python: 'random.random', c: 'rand', cpp: 'rand', csharp: 'new Random().NextDouble' }[lang] || t.v;
+        // random() ohne Argument: Kommazahl 0 … <1 (C/C++: rand() wäre eine Ganzzahl bis RAND_MAX, Plan 5.4)
+        nt.v = { java: 'Math.random', javascript: 'Math.random', python: 'random.random', c: 'random01', cpp: 'random01', csharp: 'new Random().NextDouble' }[lang] || t.v;
+        if ((lang === 'c' || lang === 'cpp') && ctx.needs) { ctx.needs.add('random01'); ctx.needs.add('stdlib'); }
         if (ctx.needs && lang === 'python') ctx.needs.add('random');
       } else if ((l === 'int' || l === 'trunc' || l === 'float' || l === 'str' || l === 'round') && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
         const close = matchClose(toks, i + 1);
@@ -928,14 +1020,16 @@ function mapToks(toks, lang, ctx) {
       } else if (l === 'length' || l === 'len') {
         if (toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
           const close = matchClose(toks, i + 1);
-          const arg = joinTokens(mapToks(toks.slice(i + 2, close), lang, ctx));
+          let arg = joinTokens(mapToks(toks.slice(i + 2, close), lang, ctx));
+          if (lang === 'cpp' && /^"/.test(arg.trim()) && isStringLiteral(joinTokens(toks.slice(i + 2, close)))) arg = `string(${arg})`; // Plan 5.6
           let at = null;
           try { at = normType(ctx.exprType ? ctx.exprType(joinTokens(toks.slice(i + 2, close))) : null); } catch (e) { at = null; }
           const isArr = !!(at && at.endsWith('[]'));
           const sz = `(int) (sizeof(${arg}) / sizeof(${arg}[0]))`;
           if (lang === 'c' && !isArr && ctx.needs) ctx.needs.add('string');
           const repl = { java: isArr ? `${arg}.length` : `${arg}.length()`, javascript: `${arg}.length`, csharp: `${arg}.Length`, python: `len(${arg})`,
-            cpp: `(int) ${arg}.size()`, c: isArr ? ((ctx.cArrLen && ctx.cArrLen(joinTokens(toks.slice(i + 2, close)))) || sz) : `(int) strlen(${arg})` }[lang]; // C++: std::vector, C: Länge mitgeführt
+            cpp: isArr ? `(int) ${arg}.size()` : `u_len(${arg})`, c: isArr ? ((ctx.cArrLen && ctx.cArrLen(joinTokens(toks.slice(i + 2, close)))) || sz) : `utf8_len(${arg})` }[lang]; // C++: std::vector, C: Länge mitgeführt; Texte: Zeichen (Plan 5.10)
+          if ((lang === 'c' || lang === 'cpp') && !isArr && ctx.needs) ctx.needs.add('utf8');
           if (repl) { out.push({ t: 'id', v: repl, ws: t.ws }); i = close; continue; }
         }
       }
@@ -1164,6 +1258,11 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
         else if (l === 'random' && toks[i + 2] && toks[i + 2].v !== ')') bump('int'); // random(n): ganze Zahl
         else if (['sqrt', 'pow', 'random', 'float', 'double', 'floor', 'ceil', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'toradians', 'todegrees', 'signum'].includes(l)) bump('double');
         else if (l === 'abs') bump(inferType(joinTokens(toks.slice(i + 2, close)), varTypes, funcs) === 'double' ? 'double' : 'int'); // abs hat den Typ des Arguments
+        else if (l === 'min' || l === 'max') { // breitester Typ der Argumente
+          const ats = splitTop(toks.slice(i + 2, close), ',').map((x) => inferType(joinTokens(x), varTypes, funcs));
+          bump(ats.includes('double') ? 'double' : ats.every((x) => x === 'int') ? 'int' : null);
+          if (!ats.every((x) => x === 'int' || x === 'double')) unknown = true;
+        }
         else if (['len', 'length', 'int', 'round', 'ord', 'trunc', 'pos', 'sgn', 'strcmp'].includes(l)) bump('int');
         else if (['str', 'input', 'chr', 'tostring', 'uppercase', 'lowercase', 'trim', 'copy', 'insert', 'delete'].includes(l)) bump('string');
         else unknown = true;
