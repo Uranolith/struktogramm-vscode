@@ -6,7 +6,10 @@ name: Zufallstest
 
 on:
   schedule:
-    - cron: '17 2 * * *' # täglich 02:17 UTC
+    - cron: '17 2 * * *' # täglich 02:17 UTC (GitHub plant nur auf dem Hauptbranch)
+  # Arbeitsbranches der Codeerzeugung (codegen-…): bei jedem Push, damit der Test schon vor dem Zusammenführen läuft
+  push:
+    branches: ['codegen-*']
   workflow_dispatch:
     inputs:
       n:
@@ -15,6 +18,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   KOTLIN_VERSION: 2.4.21

@@ -7,7 +7,9 @@ name: Codeerzeugung testen
 
 on:
   push:
-    branches: [main]
+    # main und Arbeitsbranches der Codeerzeugung (codegen-…): Ein Push veröffentlicht nichts – das macht nur
+    # publish.yml beim Veröffentlichen eines Releases
+    branches: [main, 'codegen-*']
   pull_request:
   workflow_dispatch:
 
