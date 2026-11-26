@@ -145,7 +145,10 @@ async function closeDoc(doc) {
 }
 
 exports.run = async () => {
-  const ext = vscode.extensions.all.find((e) => path.resolve(e.extensionPath) === ROOT);
+  // über die ID aus package.json – ein Pfadvergleich scheitert unter Windows an „c:\“ gegen „C:\“
+  const pkg = require(path.join(ROOT, 'package.json'));
+  const samePath = (a, b) => (process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b));
+  const ext = vscode.extensions.getExtension(`${pkg.publisher}.${pkg.name}`) || vscode.extensions.all.find((e) => samePath(e.extensionPath, ROOT));
   if (!ext) throw new Error('Erweiterung nicht geladen');
   const api = await ext.activate();
   provider = api && api._test && api._test.provider;
