@@ -81,7 +81,8 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
   Darüberfahren zeigt ein Hover-Fenster die Meldung gegliedert (Aussage, Vorschlag, Begründung), die Ansicht
   *Probleme* listet alle.
   - **Fehler** (rot, „!“) – funktioniert so nicht: Syntaxfehler, Variable ohne Wert, unbekannte Funktion, falsche Zahl
-    von Argumenten, `leave` außerhalb einer Schleife, Division durch 0, unlesbarer Schleifenkopf, leere Bedingung,
+    von Argumenten, `leave` außerhalb einer Schleife, Ganzzahl-Division durch 0 (auch `div`, `mod`), unlesbarer
+    Schleifenkopf, leere Bedingung,
     Zuweisung mit `=` statt `:=` bzw. `<-` (`=` ist der Vergleich – die Formatierung ändert es bewusst nicht),
     Zuweisung in einer Bedingung (`if x := 5` – in Bedingungen vergleicht man mit `=`).
   - **Code wird nur aus einem fehlerfreien Struktogramm erzeugt**: Hat die Datei einen Fehler, nennt *Code erzeugen*
@@ -100,7 +101,7 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
     darunter an.
   - Beispiele: `test/samples/checks/errors.nsd` und `hints.nsd` (absichtlich fehlerhaft; der Kommentar jedes
     Elements – sichtbar beim Bearbeiten – nennt die erwartete Meldung).
-  - Hinweise in vier Gruppen, je einzeln abschaltbar (`struktogramm.hints.*`, Standard: alle an); die Gruppe steht
+  - Hinweise in fünf Gruppen, je einzeln abschaltbar (`struktogramm.hints.*`, Standard: alle an); die Gruppe steht
     im Hover-Fenster und als Quelle in *Probleme*:
     - **Good Practice** – Variable, Konstante, Parameter oder Rückgabewert ohne Typ (auch `var s := "Hallo"` →
       `var s: string := "Hallo"`), Unterprogramm ohne Rückgabe ohne `: void`, Eingabe ohne Aufforderungstext,
@@ -112,7 +113,9 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
     - **Missverständlich** – „sonst“-Zweig mit Bedingung beschriftet, Variable mal Text mal Zahl, Kommazahlen mit `=`
       verglichen, Wert wird nie verwendet
     - **Mögliche Logikfehler** – Endlosschleife ohne Ausstieg, Schleifenbedingung ändert sich nie, nicht erreichbares
-      Element
+      Element, Kommazahl durch 0 (ergibt `Infinity` – kein Fehler, der Code wird erzeugt)
+    - **Codeerzeugung** – Befehle, die sich nicht in eine oder alle Zielsprachen übersetzen lassen (wachsende Arrays,
+      Turtle-Befehle außer in Python); der Hinweis nennt die betroffenen Sprachen
   - Einstellung `struktogramm.checks`: Fehler und Hinweise (Standard), nur Fehler oder keine Prüfungen. Fehler
     erscheinen immer, solange die Prüfungen an sind.
 - **Original-Structorizer** (optional, benötigt Java 11+): wird beim ersten Gebrauch von GitHub
@@ -398,8 +401,11 @@ Parallelverarbeitung im erzeugten Code:
   Ausführen mit Eingaben (Ausgabe wie im Interpreter, Dateien der Dateifunktionen neben der `.nsd`), Code erzeugen für
   alle acht Sprachen, Meldungen beim Erzeugen und den Live-Code (`test/vscode/`). Der erzeugte Code wird im Terminal
   „Struktograf: erzeugter Code“ des Test-VS-Code sichtbar mit dem echten Compiler übersetzt und ausgeführt (Java, Kotlin
-  und C# gemeinsam übersetzt). Zum Zuschauen: `npm run test:vscode -- --schritt` wartet nach jedem Programm im Terminal
-  auf Enter; ohne den Schalter läuft der Test durch (so auch in der CI).
+  und C# gemeinsam übersetzt); Struktogramme laufen dabei mit der Geschwindigkeit „Sofort“. `--alle` nimmt zusätzlich
+  alle Struktogramme aus `test/samples` mit allen Testfällen dazu (gesperrte und nicht übersetzbare werden erkannt und
+  nicht als Fehler gezählt). Unter Windows läuft der Test von Hand gestartet in einem eigenen PowerShell-Fenster
+  (`--hier`: im aktuellen Terminal), und das Test-VS-Code bleibt am Ende offen, bis man es schließt; in der CI läuft
+  alles durch und schließt sich selbst. `--log datei.txt` schreibt die Ergebniszeilen zusätzlich in eine Datei.
 - **Veröffentlichen** – ohne gespeichertes Zugangstoken über *OIDC Trusted Publishing*: Wird auf GitHub ein Release mit
   der `.vsix` veröffentlicht, lädt der Workflow `.github/workflows/publish.yml` genau diese Datei hoch
   (`vsce publish --oidc`). Für ein bestehendes Release lässt er sich auch von Hand starten (*Actions → Marketplace

@@ -134,6 +134,7 @@ class NsdEditorProvider {
           case 'editBreakpoint': if (this.bpSync) await this.bpSync.edit(state, msg.path, msg.what); break;
           case 'command': if (/^struktogramm\./.test(msg.command)) vscode.commands.executeCommand(msg.command); break;
           case 'ready': {
+            state.ready = true; // ab jetzt kommen Befehle an (execCommand)
             send();
             const key = document.uri.toString();
             const pend = this.pending.get(key);
@@ -763,6 +764,9 @@ function activate(context) {
     const msg = { type: 'execCommand', cmd, ...(extra || {}) };
     if (uri && (uri.fsPath || uri.path) && /\.nsd$/i.test(uri.fsPath || uri.path)) {
       const open = [...provider.editors].find((s) => s.document.uri.toString() === uri.toString());
+      // Editor offen, aber seine Webansicht lädt noch: Befehl vormerken (sonst ginge er verloren und die Ausführung
+      // startete nie – Fund des VS-Code-Tests); er wird bei „ready“ geschickt
+      if (open && !open.ready && (cmd === 'run' || cmd === 'step')) { provider.pending.set(uri.toString(), { cmd, ...(extra || {}) }); open.panel.reveal(); return; }
       if (open) { open.panel.reveal(); safePost(() => open.panel.webview, msg); return; }
       if (cmd === 'run' || cmd === 'step') provider.pending.set(uri.toString(), { cmd, ...(extra || {}) });
       await vscode.commands.executeCommand('vscode.openWith', uri, 'struktogramm.editor');
@@ -795,7 +799,7 @@ function activate(context) {
       if (e.affectsConfiguration('struktogramm.language')) {
         // Texte stecken im HTML der Ansichten: alle offenen Struktograf-Ansichten neu aufbauen
         setLanguage(languageSetting());
-        provider.editors.forEach((st) => { try { st.panel.webview.html = webviewHtml(st.panel.webview, context.extensionUri, false); } catch (err) { /* geschlossen */ } });
+        provider.editors.forEach((st) => { try { st.ready = false; st.panel.webview.html = webviewHtml(st.panel.webview, context.extensionUri, false); } catch (err) { /* geschlossen */ } });
         if (preview.panel) { try { preview.panel.webview.html = webviewHtml(preview.panel.webview, context.extensionUri, true); } catch (err) { /* geschlossen */ } }
         tools.relocalize();
         execView.relocalize();

@@ -92,9 +92,9 @@ jobs:
           if-no-files-found: ignore
 
   vscode:
-    name: Im echten VS Code (alle Sprachen)
+    name: Im echten VS Code (alle Struktogramme, alle Sprachen)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -133,4 +133,5 @@ jobs:
 
       # VS Code braucht einen Bildschirm: virtueller X-Server unter Linux
       - name: Test im echten VS Code
-        run: xvfb-run -a npm run test:vscode
+        # --alle: alle Struktogramme aus test/samples mit allen Testfällen (auf GitHub, nicht auf dem eigenen Rechner)
+        run: xvfb-run -a npm run test:vscode -- --alle

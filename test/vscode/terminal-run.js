@@ -2,11 +2,10 @@
 // und startet dort sichtbar jedes erzeugte Programm mit dem echten Compiler – keine Simulation: Compiler-Aufruf,
 // Eingaben, Programmausgabe und der Vergleich mit dem Interpreter stehen im Terminal.
 //
-//   node terminal-run.js <auftragsordner> [--schritt]
+//   node terminal-run.js <auftragsordner>
 //
 // Die Testsuite legt Aufträge als job-<n>.json in den Ordner (run: Programm übersetzen und ausführen; note: Text
-// anzeigen; end: Zusammenfassung). Das Ergebnis steht danach in result-<n>.json. Mit --schritt wartet das Terminal
-// nach jedem Auftrag auf Enter und meldet das mit ack-<n> – so kann man jedes Ergebnis in Ruhe ansehen.
+// anzeigen; end: Zusammenfassung). Das Ergebnis steht danach in result-<n>.json.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -14,8 +13,7 @@ const { spawn } = require('child_process');
 const S = require('../languages');
 const { compileAll, runCmd } = require('../batch');
 
-const [DIR, ...flags] = process.argv.slice(2);
-const STEP = flags.includes('--schritt');
+const [DIR] = process.argv.slice(2);
 const C = { r: '\x1b[0m', b: '\x1b[1m', d: '\x1b[2m', red: '\x1b[31m', green: '\x1b[32m', cyan: '\x1b[36m', yellow: '\x1b[33m' };
 const W = fs.mkdtempSync(path.join(require('os').tmpdir(), 'struktograf-term-'));
 const label = (l) => S.RUN[l] ? ({ python: 'Python', java: 'Java', c: 'C', cpp: 'C++', csharp: 'C#', javascript: 'JavaScript', kotlin: 'Kotlin', rust: 'Rust' })[l] : l;
@@ -34,6 +32,25 @@ function runVisible(cmd, args, { cwd, input, shell, timeout = 60000 }) {
     p.stdin.on('error', () => {});
     p.stdin.end(input || '');
   });
+}
+
+/**
+ * Übersetztes Programm mit jedem Testfall ausführen – Regeln wie im Aufgabentest: Ausgabe wie im Interpreter; bricht
+ * der Interpreter mit einem Fehler ab, muss auch das Programm mit einem Fehler enden; sonst derselbe Exitcode.
+ */
+async function runCases(cmd, args, cwd, job) {
+  const cases = job.cases || [{ inputs: job.inputs, expected: job.expected, refError: null, exitCode: 0 }];
+  const bad = [];
+  for (const [k, c] of cases.entries()) {
+    process.stdout.write(`${C.cyan}Ausführen${cases.length > 1 ? ` (Fall ${k + 1})` : ''}${c.inputs.length ? ` mit Eingaben ${c.inputs.map((x) => `„${x}“`).join(', ')}` : ''}:${C.r}\n`);
+    const r = await runVisible(cmd, args, { cwd, input: c.inputs.join('\n') + '\n', timeout: 60000 });
+    let d = r.timedOut ? 'Zeitüberschreitung' : S.diff(c.expected, r.stdout);
+    if (!d && c.refError && r.status === 0) d = `Interpreter bricht ab („${c.refError}“), das Programm nicht`;
+    else if (!d && !c.refError && r.status !== c.exitCode) d = `Exitcode ${r.status}${c.exitCode ? ` statt ${c.exitCode}` : ''}`;
+    if (c.refError && !d) process.stdout.write(`${C.d}(endet mit Fehler wie der Interpreter: ${c.refError})${C.r}\n`);
+    if (d) bad.push(`${cases.length > 1 ? `Fall ${k + 1}: ` : ''}${d}`);
+  }
+  return bad.length ? { ok: false, msg: bad.join(' | ') } : { ok: true, msg: `Ausgabe wie im Interpreter${cases.length > 1 ? ` (${cases.length} Testfälle)` : ''}` };
 }
 
 /**
@@ -63,11 +80,7 @@ async function runCompiled(job) {
   const cwd = path.join(b.dir, 'run', String(job.id));
   fs.mkdirSync(cwd, { recursive: true });
   const [cmd, args] = runCmd(job.lang, b.dir, job.id);
-  process.stdout.write(`${C.cyan}Ausführen${job.inputs.length ? ` mit Eingaben ${job.inputs.map((x) => `„${x}“`).join(', ')}` : ''}:${C.r}\n`);
-  const r = await runVisible(cmd, args, { cwd, input: job.inputs.join('\n') + '\n', timeout: 60000 });
-  if (r.timedOut) return { ok: false, msg: 'Zeitüberschreitung' };
-  const d = S.diff(job.expected, r.stdout);
-  return d ? { ok: false, msg: d } : { ok: true, msg: 'Ausgabe wie im Interpreter' };
+  return runCases(cmd, args, cwd, job);
 }
 
 /** Programm übersetzen (wie der Nutzer es täte) und mit den Eingaben ausführen */
@@ -92,24 +105,11 @@ async function runJob(job) {
     const b = await runVisible(build[0], build[1], { cwd: dir, shell: !!build[2], timeout: 300000 });
     if (b.status !== 0) return { ok: false, msg: 'Übersetzen fehlgeschlagen: ' + ((b.stdout || '') + (b.stderr || '')).split('\n').find((l) => /error|fehler/i.test(l)) };
   }
-  process.stdout.write(`${C.cyan}Ausführen${job.inputs.length ? ` mit Eingaben ${job.inputs.map((x) => `„${x}“`).join(', ')}` : ''}:${C.r}\n`);
-  const r = await runVisible(run[0], run[1], { cwd: dir, input: job.inputs.join('\n') + '\n', timeout: 60000 });
-  if (r.timedOut) return { ok: false, msg: 'Zeitüberschreitung' };
-  const d = S.diff(job.expected, r.stdout);
-  return d ? { ok: false, msg: d } : { ok: true, msg: 'Ausgabe wie im Interpreter' };
-}
-
-function waitEnter(text) {
-  process.stdout.write(`\n${C.b}${text}${C.r}`);
-  return new Promise((resolve) => {
-    const on = (d) => { if (/[\r\n]/.test(String(d))) { process.stdin.off('data', on); process.stdin.pause(); resolve(); } };
-    process.stdin.resume();
-    process.stdin.on('data', on);
-  });
+  return runCases(run[0], run[1], dir, job);
 }
 
 (async () => {
-  process.stdout.write(`${C.b}Struktograf – erzeugter Code im echten Compiler${C.r}${STEP ? ' (Schritt für Schritt: nach jedem Programm Enter)' : ''}\n`);
+  process.stdout.write(`${C.b}Struktograf – erzeugter Code im echten Compiler${C.r}\n`);
   for (let n = 1; ; n++) {
     const f = path.join(DIR, `job-${n}.json`);
     while (!fs.existsSync(f)) await new Promise((r) => setTimeout(r, 100));
@@ -125,9 +125,6 @@ function waitEnter(text) {
       process.stdout.write(`\n${job.text}\n`);
     }
     fs.writeFileSync(path.join(DIR, `result-${n}.json`), JSON.stringify(result));
-    // nach dem gemeinsamen Übersetzen nicht anhalten – angesehen wird jedes einzelne Programm
-    if (STEP && job.type !== 'compile') await waitEnter(job.type === 'end' ? 'Enter beendet den Test … ' : 'Enter für den nächsten Schritt … ');
-    fs.writeFileSync(path.join(DIR, `ack-${n}`), '');
     if (job.type === 'end') break;
   }
   fs.rmSync(W, { recursive: true, force: true });

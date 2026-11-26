@@ -1,8 +1,9 @@
 # Änderungen
 
-## Unveröffentlicht
-Der erzeugte Code wurde mit den echten Compilern aller acht Sprachen gegen den Interpreter geprüft (66 neue
-Test-Struktogramme) und an vielen Stellen korrigiert. Plan und Entscheidungen: `docs/CODEGEN-PLAN.md`.
+## 1.1.0
+Der erzeugte Code wurde mit den echten Compilern aller acht Sprachen gegen den Interpreter geprüft (113
+Test-Struktogramme in Themenordnern, dazu ein Zufallstest) und an vielen Stellen korrigiert. Plan und Entscheidungen:
+`docs/CODEGEN-PLAN.md`.
 - **Kontrollfluss:** `leave` in einer Fallauswahl verlässt die Schleife (vorher Endlosschleife in C, C++, C#, JS);
   `continue` in `repeat … until` prüft die Bedingung (Python, Rust); zwei Schleifen mit derselben Zählvariable
   übersetzen in C, C++, Java und C#; die Zählvariable hat nach der Schleife den Wert des letzten Durchlaufs.
@@ -16,11 +17,15 @@ Test-Struktogramme) und an vielen Stellen korrigiert. Plan und Entscheidungen: `
 - **Arrays:** C trägt die Länge mit (vorher maß `sizeof` bei Parametern nur den Zeiger), C++ verwendet `std::vector`,
   Rust übergibt Referenzen (Änderungen kommen beim Aufrufer an), `new int[n]` und `copyArray` in allen Sprachen.
 - **Texte:** Zeichen statt Bytes (C, C++, Rust); C ohne Längengrenze für Eingaben; Umlaute in Eingaben in C# und
-  JavaScript (JavaScript liest jetzt ohne das Paket `prompt-sync`).
+  JavaScript (JavaScript liest jetzt ohne das Paket `prompt-sync`); C# gibt Umlaute aus Eingaben richtig aus
+  („Jörg“ wurde zu „J�rg“).
 - **Ausdrücke und Befehle:** `a + 1 + "!"`, `min`/`max` mit mehreren Argumenten, `strcmp`, `xor`, `random()`,
   `signum`, `isArray` & Co., `split`, `odd`, `randint`, `sum`, weitere Namen (`upper`, `intToStr`, `strToInt` …)
   und Methoden wie `s.length()`, `s.substring(…)`.
 - **Namen**, die in der Zielsprache reserviert sind (`class`, `new`, in Python `len`, `str` …), werden umbenannt.
+- **Nicht Übersetzbares** (wachsende Arrays wie `push`/`append`, Turtle-Befehle außer in Python): Im Code steht
+  „NICHT ÜBERSETZBAR“ an der Stelle, beim Erzeugen erscheint eine Meldung, und die Prüfung im Editor zeigt einen
+  Hinweis der neuen, abschaltbaren Gruppe „Codeerzeugung“ (`struktogramm.hints.codegen`).
 - **Dateifunktionen** (`fileOpen` … `fileWriteLine`) werden jetzt in alle acht Sprachen übersetzt, mit demselben
   Verhalten wie im Interpreter. `v := fileRead(h)` liest je nach Typ von `v` eine Zahl oder Text.
   `fileReadDouble` lehnt jetzt wie `INPUT` Text wie `2.5abc` ab, `fileReadChar` liefert auch Zeichen außerhalb der
@@ -30,14 +35,23 @@ Test-Struktogramme) und an vielen Stellen korrigiert. Plan und Entscheidungen: `
   Bei einem Komma statt Punkt („1,5“) nennen auch C, C++ und JavaScript die gemeinte Zahl. Der Interpreter meldet
   einen negativen Index beim Schreiben jetzt wie beim Lesen.
 - **Kommazahl durch 0:** `2.5 / 0` ergibt überall `Infinity`, `0.0 / 0` und `sqrt(-1)` `NaN` (Python brach vorher
-  ab). Der Interpreter liefert bei `sqrt(-1)` jetzt `NaN` statt eines Fehlers. Behoben: Ein Fehler in einer
-  eingebauten Funktion konnte den Interpreter mit „tr is not a function“ abbrechen; `sqrt(-1.0)` ergab in Rust `-1`.
+  ab). Der Interpreter liefert bei `sqrt(-1)` jetzt `NaN` statt eines Fehlers. Die Prüfung im Editor meldet
+  „Kommazahl durch 0“ nur noch als Hinweis (der Code wird erzeugt); Ganzzahl, `div` und `mod` durch 0 bleiben ein
+  Fehler. Behoben: Ein Fehler in einer eingebauten Funktion konnte den Interpreter mit „tr is not a function“
+  abbrechen; `sqrt(-1.0)` ergab in Rust `-1`.
+- **Ausführen:** Wurde ein Struktogramm gestartet, während sein Editor noch lud, ging der Startbefehl verloren und
+  die Ausführung begann nie (nach 20 s „nicht gestartet“) – jetzt wird er vorgemerkt.
 - **Zufallstest** (`npm run test:fuzz`): vergleicht zufällige Struktogramme in allen Sprachen mit dem Interpreter, auf
   GitHub jede Nacht. Bisher gefunden und behoben: `div` in JavaScript und Python, Textverkettung in Argumenten,
   `for i := -1 to …`, `abs` mit reinen Zahlen und mit Zählvariablen in Rust, `abs` in C ohne `stdlib.h`,
   `throw "Fehler " + n` (Java, C#, C, C++, Python), `insert`/`copy`/`delete` hinter dem Textende (Java, C#, Kotlin),
   Umlaute bei `uppercase`/`lowercase` und `ord` in C/C++, `ß` in C#, Record-Parameter ohne Aufruf, Records als
   Argument in Rust.
+- **Entwicklung:** Der Aufgabentest (`npm test`) übersetzt Java, Kotlin und C# gemeinsam und braucht etwa 5 statt
+  30 Minuten; im Terminal zeigt eine Live-Ansicht den Fortschritt. Neu ist ein Test im echten VS Code
+  (`npm run test:vscode`), der Ausführen, Codeerzeugung (samt Übersetzen und Ausführen im Terminal), Meldungen und
+  Live-Code über die echten Befehle prüft. Auf GitHub laufen alle Tests bei jedem Push auf `main` und `codegen-…`,
+  der Zufallstest zusätzlich jede Nacht.
 
 ## 1.0.3
 - **Testlauf der automatischen Veröffentlichung:** Keine Änderungen an der Erweiterung – inhaltlich gleich 1.0.2.
