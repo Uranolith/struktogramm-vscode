@@ -314,6 +314,11 @@
           "group": "navigation@10"
         },
         {
+          "command": "struktogramm.openSettings",
+          "when": "activeCustomEditorId == struktogramm.editor",
+          "group": "navigation@11"
+        },
+        {
           "command": "struktogramm.toggleExecutionLocation",
           "when": "activeCustomEditorId == struktogramm.editor",
           "group": "1_struktogramm@2"

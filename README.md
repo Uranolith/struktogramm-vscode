@@ -123,11 +123,12 @@ Updates installiert VS Code automatisch. Deinstallieren geht über **Erweiterung
 - **Sprache**: Deutsch oder Englisch (Einstellung `struktogramm.language`, Standard: wie die VS-Code-Oberfläche) –
   gilt für Editor, Werkzeuge, Ausführung, Prüfungen und Kommentare im erzeugten Code und wirkt sofort. Die Texte der
   VS-Code-Einstellungen und Befehlsnamen folgen immer der VS-Code-Oberfläche.
-- **Einstellungen** – am schnellsten über die Befehlspalette (Strg+Umschalt+P) mit *Struktograf: Settings*
-  (bzw. *Struktograf: Einstellungen*); das öffnet die Einstellungen von VS Code gefiltert auf Struktograf. Sie stehen
-  in fünf Abschnitten: **Allgemein** (Sprache, Ort der Werkzeuge und der Ausführung), **Darstellung** (Farbschema,
-  Hervorhebung, Operatoren, Anzeige der Zuweisung, Zweig-Beschriftungen), **Prüfungen** (Prüfungen und
-  Hinweisgruppen), **Code erzeugen und einlesen**, **Structorizer**.
+- **Einstellungen** – am schnellsten über das Zahnrad oben rechts im Struktogramm-Editor oder über die
+  Befehlspalette (Strg+Umschalt+P) mit *Struktograf: Settings* (bzw. *Struktograf: Einstellungen*); beides öffnet die
+  Einstellungen von VS Code gefiltert auf Struktograf. Sie stehen in fünf Abschnitten: **Allgemein** (Sprache, Ort
+  der Werkzeuge und der Ausführung), **Darstellung** (Farbschema, Hervorhebung, Operatoren, Anzeige der Zuweisung,
+  Zweig-Beschriftungen), **Prüfungen** (Prüfungen und Hinweisgruppen), **Code erzeugen und einlesen**,
+  **Structorizer**.
 - **Export** als SVG, PNG, JSON, XML, KI-kompakter Pseudocode und einzelne Structorizer-Dateien (siehe [Export](#export)).
 - **Structorizer-kompatibel**: liest und schreibt `.nsd` (XML) in Structorizer-Schreibweise. Eine Datei mit
   einem Diagramm öffnet der Structorizer direkt. Dateien mit mehreren Diagrammen (z.B. nach einem
