@@ -222,7 +222,8 @@ den Abschnitt „Grenzen“ des README.
   *Erledigt:* C `_arr_dup`, C++ über `vector`, C# `System.Linq.Enumerable.ToArray`; `copyArray(x)` hat den Typ von x.
   C++ `auto b = a;` erzeugt bei C-Arrays einen Zeiger, das Original ändert sich mit (C++ besser durchgängig
   `vector`). C fehlt ganz, C# fehlt `using System.Linq`. Test: `d03_copyarray`.
-- [ ] **4.5 Text-Arrays in C** (S)
+- [x] **4.5 Text-Arrays in C** (S)
+  *Erledigt* mit der Parameter-Syntax für mehrteilige Typen (3.6).
   Parameter `char*[] arr` ist ungültig, richtig ist `char* arr[]`. Test: `s29_string_array`.
 - [x] **4.7 Rust: Elemente aus Text-Arrays** (S)
   *Erledigt:* Lesen eines Elements aus einem Text- oder Record-Array mit `.clone()`, als Zuweisungsziel ohne.
@@ -348,3 +349,4 @@ den Abschnitt „Grenzen“ des README.
 | 26.11.2026 | Phase 2 | 2.1–2.7 erledigt, dazu zwei weitere Fehler gefunden (gleiche Zählvariable in zwei Schleifen, Python `leave n` in `try`); 4 neue Tests |
 | 26.11.2026 | Phase 3 (Teil) | 3.1–3.5 erledigt, 3.6 Teil Eingabe; dazu 4.1 (ohne C/C++) und 5.9. Interpreter folgt der Typableitung bei Parametern und `INPUT` (Entscheidung); 1.1 präzisiert (Zähler bleiben `int`) |
 | 26.11.2026 | 3.6 | Eingabe: Kommazahl für Ganzzahl abschneiden. 1.1 neu entschieden: Typ ist Sache des Anwenders, Hinweis-Kommentar statt automatischem 64 Bit (64-Bit-Umbau verworfen) |
+| 26.11.2026 | Phase 4 | Arrays: Rust als Referenz (`&mut`/`&`), C++ `std::vector`, C mit Länge (`name_len`, `_len`), `copyArray` in C/C#, Elemente aus Text-Arrays in Rust |
