@@ -72,7 +72,7 @@ den Abschnitt „Grenzen“ des README.
 
 | Frage | Entscheidung | Umsetzung |
 |---|---|---|
-| 1.1 Ganzzahlbreite | **64 Bit im Code, Grenze im Interpreter.** `long`/`i64`/`Long` statt `int`; der Interpreter meldet einen Fehler, wenn ein ganzzahliges Ergebnis 2⁵³ überschreitet. **Präzisiert am 26.11.2026:** Variablen, die nur als Schleifenzähler, Index, Array-Größe, Länge oder Textposition dienen, bleiben `int` – Java/Kotlin (und C# bei Texten) verlangen dort 32 Bit, und Werte über 2³¹ sind an diesen Stellen unmöglich. | 3.6 |
+| 1.1 Ganzzahlbreite | **Geändert am 26.11.2026 – der Datentyp ist Sache des Anwenders:** Der Code verwendet den angegebenen Typ (`var x: long` → `long`/`long long`/`Long`/`i64`), ohne Angabe wie bisher `int` (bzw. `long` beim vorhandenen Fall `f := f * i`). Ein Überlauf ist kein Fehler des Generators; eine `int`-Variable, die mit einer Multiplikation berechnet wird, bekommt einmal einen Hinweis-Kommentar („int reicht bis 2147483647 – bei größeren Werten long verwenden“). Bei Werten über 32 Bit kann der Interpreter daher anders rechnen als `int`-Code – bewusste Grenze. *Verworfen:* 64 Bit im Code, Grenze im Interpreter (der Umbau machte den Code mit `long` überall, `(long) i * i` und `.toLong()` deutlich schwerer lesbar). `long`/`i64`/`Long` statt `int`; der Interpreter meldet einen Fehler, wenn ein ganzzahliges Ergebnis 2⁵³ überschreitet. | 3.6 |
 | 1.2 Typ von `INPUT` | **Interpreter folgt der Ableitung.** Die Typableitung wird besser (Kommazahl, wenn die Variable mit `/`, Kommazahlen, `sqrt` … benutzt wird) und gilt für Generator und Interpreter: Der Interpreter wandelt die Eingabe in den abgeleiteten Typ um – wie das echte Programm. **Geändert am 26.11.2026:** `2.5` für eine Ganzzahl-Variable wird abgeschnitten (`2`, `-2.7` → `-2`), nur Text wie `abc` ist ein Fehler. | 3.6 |
 | 1.3 Arrays an Unterprogramme | **Als Referenz** wie im Interpreter (ohne Rückfrage, es gibt keine sinnvolle Alternative). | 4.2, 4.3 |
 | 1.4 Laufzeitfehler in `try` | **Nur innerhalb von `try` prüfen.** Im `try`-Block erzeugen C, C++ und JS Prüf-Hilfsfunktionen (z. B. `_div(a, b)`, `_at(a, i)`), die einen abfangbaren Fehler werfen; außerhalb bleibt der Code schlicht. | 2.7 |
@@ -182,7 +182,7 @@ den Abschnitt „Grenzen“ des README.
   *Erledigt:* Die Typableitung kannte Record-Felder gar nicht (alles nach dem Punkt wurde übersprungen).
   `fieldAccess` in pseudo.js löst `p.x`, `leute[1].n` und verschachtelte Felder auf; die Definitionen kommen
   über `fnTypes.records`. Test `records/02_record_array`.
-- [ ] **3.6 Umsetzung von 1.1 (Ganzzahlbreite) und 1.2 (`INPUT`-Typ)** (M)
+- [x] **3.6 Umsetzung von 1.1 (Ganzzahlbreite) und 1.2 (`INPUT`-Typ)** (M)
   *Teil 1.2 erledigt:* Der Interpreter wandelt Eingaben ohne Typangabe in den abgeleiteten Typ um (`5` für eine
   Kommazahl-Variable wird `5.0`; `2.5` für eine Ganzzahl-Variable wird auf `2` abgeschnitten, Text wie `abc` ist
   ein Fehler). Alle Sprachen lesen Zahlen genauso: Ganzzahlen über eine Kommazahl mit Abschneiden
@@ -192,21 +192,13 @@ den Abschnitt „Grenzen“ des README.
   Der Aufgabentest zählt jetzt „Interpreter und Programm brechen beide ab, gleiche Ausgabe bis dahin“ als Erfolg.
   Im Vergleich alter und neuer Interpreter ändern sich von 185 Testfällen nur die 4 beabsichtigten.
   Tests: `types/03_input_mixed`, `04_avg`, `09_input_error_try`.
-  *Offen – Teil 1.1:* 64 Bit (`long`/`i64`/`Long`) statt `int`, Fehler im Interpreter über 2⁵³; dann auch
-  `_idiv`/`_imod` in C auf `long long`. Test: `types/05_big_ints`.
-  Entwurf (Entscheidung „Zähler int, Rest 64 Bit“):
-  - In `analyze` gilt eine Ganzzahl-Variable als **Zähler**, wenn sie Zählvariable einer Schleife ist oder als
-    Index (`a[i]`), Array-Größe (`new int[n]`) oder Textposition (`copy`/`insert`/`delete`) vorkommt. Sie bleibt
-    `int`, alle übrigen Ganzzahl-Variablen, Parameter und Rückgabewerte werden `long` (die vorhandene
-    `rawTypes`-Regel für `f := f * i` geht darin auf).
-  - Kotlin und Rust wandeln nie automatisch um: Wo ein Zähler auf einen 64-Bit-Wert trifft (Zuweisung, Argument;
-    in Rust auch `+`), braucht es `.toLong()` bzw. `as i64`. In Java/C#/C/C++ genügt die automatische
-    Erweiterung, umgekehrt (64 Bit → Index) braucht Java `(int)`. Das gehört in `narrow`/`val`.
-  - `printf`-Formate (`%lld`), `str_int`, `read_int` (gibt schon `long long` zurück) und C# `long.Parse` anpassen.
-  - Interpreter: Fehler, wenn ein ganzzahliges Ergebnis |x| > 2⁵³ wird (`mkNum`/Rechenoperatoren in executor.js).
-
-## Phase 4 – Arrays
-
+  *Teil 1.1 erledigt (neuer Ansatz):* Ausdrücklich angegebene Typen kommen in allen Sprachen an (Test
+  `types/05_big_ints` mit `var g: long`). Eine `int`-Variable, die mit einer Multiplikation berechnet wird,
+  bekommt in Java, C, C++, C#, Kotlin und Rust einmal je Routine einen Hinweis-Kommentar (`overflowHint`).
+  Mitgenommen: C-Parameter mit mehrteiligem Typ (`long long a[]`), Kotlin übernimmt den genauen Typ bei
+  Deklarationen, `foreach`-Variable mit genauem Typ.
+  Anmerkung, nicht geändert: Der vorhandene `long`-Sonderfall (`f := f * i`) rechnet ein Produkt aus
+  `int`-Operanden (`a * b`) erst in 32 Bit und weitet dann – in Java/C/C#/Kotlin kann es dabei schon überlaufen.
 - [ ] **4.1 `new int[n]` in allen Sprachen** (S)
   *Teilweise erledigt:* Python, JS, Java, C# (`NEW_ARRAY` in pseudo.js; Text-Arrays mit `""` statt `null`
   gefüllt). Kotlin und Rust hatten es schon. Offen: C und C++ (mit 4.2/4.6).
@@ -343,3 +335,4 @@ den Abschnitt „Grenzen“ des README.
 | 26.11.2026 | Phase 1 | Entscheidungen 1.1–1.6 getroffen (Tabelle oben) |
 | 26.11.2026 | Phase 2 | 2.1–2.7 erledigt, dazu zwei weitere Fehler gefunden (gleiche Zählvariable in zwei Schleifen, Python `leave n` in `try`); 4 neue Tests |
 | 26.11.2026 | Phase 3 (Teil) | 3.1–3.5 erledigt, 3.6 Teil Eingabe; dazu 4.1 (ohne C/C++) und 5.9. Interpreter folgt der Typableitung bei Parametern und `INPUT` (Entscheidung); 1.1 präzisiert (Zähler bleiben `int`) |
+| 26.11.2026 | 3.6 | Eingabe: Kommazahl für Ganzzahl abschneiden. 1.1 neu entschieden: Typ ist Sache des Anwenders, Hinweis-Kommentar statt automatischem 64 Bit (64-Bit-Umbau verworfen) |

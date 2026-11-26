@@ -175,6 +175,7 @@
  "gen.rsFlow": "/// Jump out of a try block (closure): break (Leave with number of loops), continue or return",
  "gen.checkDiv": "division/remainder inside try: dividing by 0 raises a catchable error as in the structogram",
  "gen.readNum": "read a number as in the structogram: other text is an error",
+ "gen.overflowHint": "Note: {0} holds values up to {1} – use {2} for larger values",
  "gen.cppFinallyGuard": "finally for C++: runs a function when the block is left",
  "gen.csCulture": "Write and read decimal numbers with a point (as in the structogram), regardless of the regional settings",
  "gen.disabled": "(disabled) {0}",

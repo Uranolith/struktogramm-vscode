@@ -1133,6 +1133,30 @@ class BaseGen {
     return (this._checkedRoutines = res);
   }
 
+  /**
+   * Hinweis-Kommentar bei möglichem Überlauf (Plan 1.1): Der Datentyp ist Sache des Anwenders – wird eine
+   * 32-Bit-Ganzzahl mit einer Multiplikation berechnet, weist ein Kommentar einmal je Variable und Routine auf den
+   * größeren Typ hin. Nur in Sprachen mit fester Breite (nicht Python/JavaScript).
+   */
+  overflowHint(c) {
+    if (!TYPED_LANGS.has(this.lang) || !this.cur) return null;
+    const pairs = c.kind === 'assign' ? [[c.target.trim(), c.expr]] : c.kind === 'decl' ? c.decls.filter((d) => d.init).map((d) => [d.name, d.init]) : [];
+    for (const [n, e] of pairs) {
+      if (!SIMPLE_IDENT.test(n) || !e) continue;
+      const dt = this.declType(n);
+      if (P.canonType(dt) !== 'int' && !(P.normType(dt) === 'int' && !P.canonType(dt))) continue;
+      const toks = P.ptoks(e);
+      const star = toks.findIndex((t) => t.t === 'op' && t.v === '*');
+      if (star < 0 || !toks.some((t) => t.t === 'id')) continue;
+      this.cur.overflowHinted = this.cur.overflowHinted || new Set();
+      if (this.cur.overflowHinted.has(n)) continue;
+      this.cur.overflowHinted.add(n);
+      const big = { java: 'long', csharp: 'long', c: 'long long', cpp: 'long long', kotlin: 'Long', rust: 'i64' }[this.lang];
+      return this.comment(tr('gen.overflowHint', this.typeName('int'), '2147483647', big));
+    }
+    return null;
+  }
+
   /** Sprung aus try-Blöcken heraus – C und Rust brauchen Vorarbeit (CFamily.tryExit, RustGen.tryExit) */
   tryExit() { return null; }
 
@@ -1223,7 +1247,10 @@ class BaseGen {
           const c = P.classifyLine(pl);
           if (c.kind === 'typedef') continue; // Typdefinitionen stehen am Dateianfang (typeDefs)
           const multi = c.kind === 'leave' ? (c.count > 1 ? this.leaveN(c.count, ind) : leaveSwitch()) : null;
-          out.push(...viaTry(c, () => multi || this.flowStmt(c, ind, el, pl)));
+          const lines = viaTry(c, () => multi || this.flowStmt(c, ind, el, pl));
+          const hint = this.overflowHint(c);
+          if (hint && lines.length) lines[lines.length - 1] += ' ' + hint;
+          out.push(...lines);
         }
         break;
       }
@@ -1778,7 +1805,7 @@ class CGen extends BaseGen {
     } else {
       const v = hv || f.var;
       let coll = this.x(f.coll);
-      const t = this.typeOf(f.var);
+      const t = this.declType(f.var) || this.typeOf(f.var); // genauer Typ (z. B. var a: long[])
       // Feld-Literal im Schleifenkopf (foreach k in {1, 2, 3}) je Sprache als gültiges Feld
       const lit = isArrayLit(f.coll);
       const items = lit ? arrayItems(f.coll) : [];
@@ -2143,7 +2170,7 @@ class CGen extends BaseGen {
     const body = this.seq(root.children, bodyInd);
     const ret = isMain ? null : this.retType(sig);
     const rt = ret ? this.typeName(ret) : 'void';
-    const params = isMain ? [] : sig.params.map((p) => (L === 'javascript' ? p.name : `${this.typeName(p.type || p.inferredType || 'int')} ${p.name}`.replace(/^(\w+)\[\] (\w+)$/, L === 'c' || L === 'cpp' ? '$1 $2[]' : '$1[] $2')));
+    const params = isMain ? [] : sig.params.map((p) => (L === 'javascript' ? p.name : `${this.typeName(p.type || p.inferredType || 'int')} ${p.name}`.replace(/^(.+?)\[\] (\w+)$/, L === 'c' || L === 'cpp' ? '$1 $2[]' : '$1[] $2')));
     const doc = (root.comment || []).filter((s) => s.trim()).map((s) => this.comment(s));
     const pre = L === 'java' || L === 'csharp' ? I : '';
     doc.forEach((d) => head.push(pre + d));
@@ -2659,6 +2686,9 @@ class KtGen extends CGen {
 
   declLine(name, type, init, isConst) {
     const kw = isConst ? 'val' : 'var';
+    // genauer Typ aus der Analyse (z. B. Long für f := f * i oder var x: long), wenn er zum vereinheitlichten passt
+    const raw = this.cur && this.cur.rawTypes && SIMPLE_IDENT.test(name) ? this.cur.rawTypes.get(name) : null;
+    if (raw && P.canonType(raw) && P.normType(raw) === P.normType(type)) type = raw;
     const arr = /^(.*?)\[(.*)\]$/.exec(name);
     if (arr) return `${kw} ${arr[1]} = ${this.newArray(type, this.x(arr[2]) || '0')}`;
     if (init == null) return `${kw} ${name}: ${this.typeName(type)} = ${this.narrow(type, this.defaultValue(type))}`;

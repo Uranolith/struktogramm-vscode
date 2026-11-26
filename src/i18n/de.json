@@ -175,6 +175,7 @@
  "gen.rsFlow": "/// Sprung aus einem try-Block (Closure) heraus: break (Leave mit Anzahl Schleifen), continue oder return",
  "gen.checkDiv": "Division/Rest innerhalb von try: bei 0 ein abfangbarer Fehler wie im Struktogramm",
  "gen.readNum": "Zahl einlesen wie im Struktogramm: anderer Text ist ein Fehler",
+ "gen.overflowHint": "Hinweis: {0} reicht bis {1} – bei größeren Werten {2} verwenden",
  "gen.cppFinallyGuard": "finally für C++: führt eine Funktion aus, wenn der Block verlassen wird",
  "gen.csCulture": "Kommazahlen mit Punkt schreiben und lesen (wie im Struktogramm), unabhängig von der Ländereinstellung",
  "gen.disabled": "(deaktiviert) {0}",
