@@ -384,6 +384,45 @@ const SFN = {
     cpp: (a, ctx) => { need(ctx, 'split'); need(ctx, 'vector'); need(ctx, 'string'); return `u_split(${a[0].out}, ${a[1].out})`; },
     c: (a, ctx) => { need(ctx, 'split'); need(ctx, 'lenignore'); return `str_split(${a[0].out}, ${a[1].out}, &_len_ignore)`; },
   },
+  // copyRecord: neuer Record mit den Feldern des alten (Rust: clone)
+  copyrecord: { '*': (a, ctx, lang) => {
+    let t = null;
+    try { t = normType(ctx.exprType(a[0].src)); } catch (e) { t = null; }
+    if (!ctx.recordTypes || !ctx.recordTypes.has(t) || !ctx.recordNew) return null;
+    if (lang === 'rust') return `${W(a[0].out)}.clone()`;
+    return ctx.recordNew(t, ctx.recordTypes.get(t).map((f) => `${W(a[0].out)}.${f.name}`));
+  } },
+  // range(n) bzw. range(a, b): Array der Ganzzahlen a … b-1 (mit Schrittweite nur in Python, Java, JavaScript)
+  range: { '*': (a, ctx, lang) => {
+    const [lo, hi] = a.length === 1 ? ['0', a[0].out] : [a[0].out, a[1].out];
+    const st = a[2] ? a[2].out : null;
+    if (lang === 'python') return `list(range(${a.map((x) => x.out).join(', ')}))`;
+    if (lang === 'java') return st ? `java.util.stream.IntStream.iterate(${lo}, k -> ${st} > 0 ? k < ${hi} : k > ${hi}, k -> k + ${st}).toArray()` : `java.util.stream.IntStream.range(${lo}, ${hi}).toArray()`;
+    if (lang === 'javascript') return st ? `Array.from({ length: Math.max(0, Math.ceil((${hi} - ${W(lo)}) / ${st})) }, (_, k) => ${lo} + k * ${st})` : `Array.from({ length: Math.max(0, ${hi} - ${W(lo)}) }, (_, k) => ${lo} + k)`;
+    if (st) return null;
+    if (lang === 'csharp') return `System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Range(${lo}, Math.Max(0, ${hi} - ${W(lo)})))`;
+    if (lang === 'kotlin') return `(${lo} until ${hi}).toList().toIntArray()`;
+    if (lang === 'rust') return `(${lo}..${hi}).collect::<Vec<i32>>()`;
+    if (lang === 'cpp') { need(ctx, 'range'); need(ctx, 'vector'); return `u_range(${lo}, ${hi})`; }
+    return null; // C: nur als Zuweisung an ein Array (Länge, siehe cPtrAssign)
+  } },
+  // Suche in einem Array (a.indexOf(x), a.contains(x) – interne Funktion aus rewriteMethods): Index oder -1
+  _aindexof: {
+    python: (a) => `(${W(a[0].out)}.index(${a[1].out}) if ${a[1].out} in ${W(a[0].out)} else -1)`,
+    java: (a) => `java.util.stream.IntStream.range(0, ${W(a[0].out)}.length).filter(_k -> java.util.Objects.equals(${W(a[0].out)}[_k], ${a[1].out})).findFirst().orElse(-1)`,
+    csharp: (a) => `System.Array.IndexOf(${a[0].out}, ${a[1].out})`,
+    javascript: (a) => `${W(a[0].out)}.indexOf(${a[1].out})`,
+    kotlin: (a) => `${W(a[0].out)}.indexOf(${a[1].out})`,
+    rust: (a) => `${W(a[0].out)}.iter().position(|v| *v == ${a[1].out}).map_or(-1, |p| p as i32)`,
+    cpp: (a, ctx) => { need(ctx, 'aindex'); return `u_index(${a[0].out}, ${a[1].out})`; },
+    c: (a, ctx) => {
+      const len = ctx && ctx.cArrLen ? ctx.cArrLen(a[0].src) : null;
+      if (!len) return null;
+      const str = normType(ctx.exprType(a[0].src)) === 'string[]';
+      need(ctx, str ? 'aindexstr' : 'aindexint');
+      return `${str ? '_index_str' : '_index_int'}(${a[0].out}, ${len}, ${a[1].out})`;
+    },
+  },
   // odd, randint, sum (Plan 6.3)
   odd: { '*': (a, ctx, lang) => `(${W(a[0].out)} % 2 ${lang === 'javascript' ? '!==' : '!='} 0)` },
   randint: {
@@ -921,8 +960,8 @@ const METHOD_MAP = {
   trim: (r) => `trim(${r})`, strip: (r) => `trim(${r})`,
   substring: (r, a) => (a.length === 2 ? `copy(${r}, ${plus1(a[0])}, ${minus(a[1], a[0])})` : `copy(${r}, ${plus1(a[0])}, length(${r}))`),
   charat: (r, a) => `copy(${r}, ${plus1(a[0])}, 1)`,
-  indexof: (r, a, isArr) => (isArr ? null : `(pos(${a[0]}, ${r}) - 1)`),
-  contains: (r, a, isArr) => (isArr ? null : `(pos(${a[0]}, ${r}) > 0)`),
+  indexof: (r, a, isArr) => (isArr ? `_aindexof(${r}, ${a[0]})` : `(pos(${a[0]}, ${r}) - 1)`),
+  contains: (r, a, isArr) => (isArr ? `(_aindexof(${r}, ${a[0]}) >= 0)` : `(pos(${a[0]}, ${r}) > 0)`),
   equals: (r, a) => `(${r} = ${a[0]})`,
   startswith: (r, a) => `(copy(${r}, 1, length(${a[0]})) = ${a[0]})`,
   endswith: (r, a) => `(length(${r}) >= length(${a[0]}) and copy(${r}, length(${r}) - length(${a[0]}) + 1, length(${a[0]})) = ${a[0]})`,
@@ -1055,7 +1094,9 @@ function mapToks(toks, lang, ctx) {
         const tab = l === 'random' ? RANDOM_N : SFN[l];
         const fn = tab[lang] || tab['*'];
         if (!fn || (!args.length && !(TURTLE_PY[l] && lang === 'python'))) { out.push(nt); continue; }
-        out.push({ t: 'id', v: fn(args, ctx, lang), ws: t.ws });
+        const res = fn(args, ctx, lang);
+        if (res == null) { out.push(nt); continue; } // nicht übersetzbar: Aufruf bleibt (Meldung über UNTRANSLATABLE)
+        out.push({ t: 'id', v: res, ws: t.ws });
         i = close < 0 ? toks.length : close;
         continue;
       } else if ((MODERN.has(lang) || NEW_ARRAY[lang]) && l === 'new' && toks[i + 1] && toks[i + 1].t === 'id' && toks[i + 2] && toks[i + 2].v === '[') {
@@ -1392,7 +1433,8 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
     if (fa && fa.end === toks.length - 1) return fa.type;
   }
   // copyArray(x) hat den Typ von x
-  if (toks.length >= 3 && toks[0].t === 'id' && toks[0].v.toLowerCase() === 'copyarray' && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1) {
+  if (toks.length >= 3 && toks[0].t === 'id' && toks[0].v.toLowerCase() === 'range' && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1) return 'int[]';
+  if (toks.length >= 3 && toks[0].t === 'id' && ['copyarray', 'copyrecord'].includes(toks[0].v.toLowerCase()) && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1) {
     return inferType(joinTokens(toks.slice(2, -1)), varTypes, funcs);
   }
   // chr(…) allein ist ein Zeichen
@@ -1429,6 +1471,7 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
         else if (['sqrt', 'pow', 'random', 'float', 'double', 'floor', 'ceil', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', 'toradians', 'todegrees', 'signum'].includes(l)) bump('double');
         else if (l === 'abs') bump(inferType(joinTokens(toks.slice(i + 2, close)), varTypes, funcs) === 'double' ? 'double' : 'int'); // abs hat den Typ des Arguments
         else if (l === 'split') { res = 'string[]'; }
+        else if (l === '_aindexof') bump('int');
         else if (l === 'odd') { if (toks.length === close + 1 && i === 0) return 'boolean'; unknown = true; }
         else if (l === 'randint') bump('int');
         else if (l === 'sum') { const at = inferType(joinTokens(toks.slice(i + 2, close)), varTypes, funcs); bump(at && at.endsWith('[]') ? at.slice(0, -2) : 'int'); }

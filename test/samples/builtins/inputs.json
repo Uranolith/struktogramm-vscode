@@ -4,5 +4,7 @@
   "02_signum.nsd": [[]],
   "03_isx.nsd": [[]],
   "04_aliases.nsd": [[]],
-  "05_methods.nsd": [[]]
+  "05_methods.nsd": [[]],
+  "06_range_copyrecord.nsd": [[]],
+  "07_array_search.nsd": [[]]
 }

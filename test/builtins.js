@@ -79,13 +79,9 @@ const NATIVE_METHODS = {
  * Stand 26.11.2026 (Bestandsaufnahme); wird mit den Schritten in docs/CODEGEN-PLAN.md kleiner.
  */
 const KNOWN = {
-  copyrecord: { '*': '6.1' },
-  range: { java: '6.3', c: '6.3', cpp: '6.3', csharp: '6.3', javascript: '6.3', kotlin: '6.3', rust: '6.3' },
   tostring: { java: '6.3' },
   "methode:add": { python: '6.5', c: '6.5', cpp: '6.5', csharp: '6.5', javascript: '6.5', rust: '6.5' },
   "methode:append": { java: '6.5', c: '6.5', cpp: '6.5', csharp: '6.5', javascript: '6.5', kotlin: '6.5', rust: '6.5' },
-  "methode:contains": { python: '6.5', c: '6.5', cpp: '6.5', csharp: '6.5', javascript: '6.5' },
-  "methode:indexof": { python: '6.5', c: '6.5', cpp: '6.5', csharp: '6.5', rust: '6.5' },
   "methode:pop": { java: '6.5', c: '6.5', cpp: '6.5', csharp: '6.5', kotlin: '6.5' },
   "methode:push": { python: '6.5', java: '6.5', c: '6.5', cpp: '6.5', csharp: '6.5', kotlin: '6.5' },
 };

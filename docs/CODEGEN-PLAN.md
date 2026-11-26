@@ -298,20 +298,21 @@ den Abschnitt „Grenzen“ des README.
 - [ ] **6.2 Dateifunktionen** (L)
   `fileOpen` … `fileEOF` fehlen in allen Sprachen. Je Sprache eine kleine Hilfsschicht (Handle = Index in eine
   Liste offener Dateien). Alternative: ausdrücklich „nicht übersetzbar“ (1.6) und das README anpassen.
-- [ ] **6.3 Weitere Interpreter-Funktionen** (M)
+- [x] **6.3 Weitere Interpreter-Funktionen** (M)
   *Großteils erledigt:* weitere Namen werden auf vorhandene Funktionen abgebildet (`FN_ALIAS`: `upper`, `lower`,
   `ln`, `power`, `real`, `intToStr`, `floatToStr`, `toString`, `strToInt`, `strToFloat`); neu `odd`, `randint`,
   `sum`. `int`/`float` auf Text parsen, `str` auf Kommazahlen schreibt wie der Interpreter (`3.0`). Interpreter:
-  `sum` über Kommazahlen ist eine Kommazahl. Offen: `range`, `substring`, `indexOf`, `contains`, `startsWith`/
-  `endsWith` als Funktionen (siehe `npm run test:builtins`).
+  `sum` über Kommazahlen ist eine Kommazahl. Dazu `range(n)`/`range(a, b)` (mit Schrittweite nur Python, Java, JS;
+  C als Zuweisung oder im `foreach`-Kopf) und `copyRecord`. Test `builtins/06_range_copyrecord`.
   `intToStr`, `strToInt`, `strToFloat`, `floatToStr`, `toString`, `odd`, `power`, `ln`, `upper`/`lower`,
   `substring`, `indexOf`, `contains`, `startsWith`/`endsWith`, `strip`, `randint`, `size`, `sum` – heute in allen
   Sprachen roh übernommen. Entweder übersetzen oder in 0.5 als „nicht übersetzbar“ führen.
-- [ ] **6.5 Methoden auf Texten und Arrays** (M)
+- [x] **6.5 Methoden auf Texten und Arrays** (M)
   *Großteils erledigt:* `rewriteMethods` bildet `length`/`size`, `substring`, `charAt`, `indexOf`, `contains`,
   `equals`, `startsWith`/`endsWith`, `toUpperCase`/`upper`, `toLowerCase`/`lower`, `trim`/`strip` und `get` vor der
-  Übersetzung auf Struktogramm-Funktionen ab (auch in der Typableitung). Test `builtins/05_methods`. Offen: Arrays,
-  die wachsen (`push`/`append`/`add`, `pop`) und `contains`/`indexOf` auf Arrays.
+  Übersetzung auf Struktogramm-Funktionen ab (auch in der Typableitung). Test `builtins/05_methods`. `contains`/
+  `indexOf` auf Arrays über `_aindexof` (Test `builtins/07_array_search`). Bewusst nicht übersetzt (Meldung nach 9.1):
+  Arrays, die wachsen (`push`/`append`/`add`, `pop`) – Java, C# und C haben Arrays fester Größe.
   Der Interpreter kennt `s.length()`, `s.substring(…)`, `s.toUpperCase()`, `a.append(x)`, `a.pop()` … (`method()` in
   `executor.js`). Der Generator gibt sie unverändert aus: In C, C++ und C# ist das immer falsch, in den anderen
   Sprachen je nach Methode. Gefunden mit `test/builtins.js`.
@@ -394,3 +395,4 @@ den Abschnitt „Grenzen“ des README.
 | 26.11.2026 | Phase 4 | Arrays: Rust als Referenz (`&mut`/`&`), C++ `std::vector`, C mit Länge (`name_len`, `_len`), `copyArray` in C/C#, Elemente aus Text-Arrays in Rust |
 | 26.11.2026 | Phase 5, 6.1, 6.3 | Ausdrücke, Texte (UTF-8, auch Eingabe in C#/JS), Befehlssatz; Gesamtlauf: 770 erfolgreich, 0 neue Fehler. Bekannte Fehler nur noch bei Bezeichnern (Phase 7) |
 | 26.11.2026 | Phase 7, 6.5, 2.8, 9.2, 9.3 | Bezeichner umbenennen, Methoden, Indexprüfung in `try`, README/CHANGELOG. Gesamtlauf: **alle 856 erfolgreich** (107 Struktogramme × 8 Sprachen, keine bekannten Fehler mehr) |
+| 26.11.2026 | 9.1, 6.3, 6.5 | Meldungen für nicht Übersetzbares (Code-Kommentar, Meldung, Hinweis im Editor); `range`, `copyRecord`, Array-Suche. Abdeckung Bibliotheksfunktionen 647/672 (Rest: wachsende Arrays, bewusst nicht übersetzt) |

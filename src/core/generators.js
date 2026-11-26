@@ -1548,6 +1548,11 @@ class CGen extends BaseGen {
     const call = toks[0] && toks[0].t === 'id' && toks[1] && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1;
     const args = call ? splitTop(toks.slice(2, -1), ',').map(joinTokens).filter(Boolean) : [];
     if (call && this.funcs.has(toks[0].v)) return [ind + `${n} = ${this.cCall(toks[0].v, args, `&${n}_len`)};`];
+    if (call && toks[0].v.toLowerCase() === 'range' && args.length <= 2 && args.length >= 1) {
+      this.needs.add('range');
+      const [lo, hi] = args.length === 1 ? ['0', this.x(args[0])] : [this.x(args[0]), this.x(args[1])];
+      return [ind + `${n} = _range(${lo}, ${hi}, &${n}_len);`];
+    }
     if (call && toks[0].v.toLowerCase() === 'split' && args.length === 2) {
       this.needs.add('split');
       return [ind + `${n} = str_split(${this.x(args[0])}, ${this.x(args[1])}, &${n}_len);`];
@@ -1945,7 +1950,16 @@ class CGen extends BaseGen {
         case 'csharp': out.push(ind + `foreach (${tn} ${v} in ${coll}) {`); break;
         case 'cpp': out.push(ind + `for (auto ${v} : ${coll}) {`); break;
         case 'javascript': out.push(ind + `for (const ${v} of ${coll}) {`); break;
-        default:
+        default: {
+          // C: foreach k in range(a, b) als Zählschleife
+          const rm = /^\s*range\s*\((.*)\)\s*$/i.exec(f.coll);
+          const ra = rm ? require('./tokenizer').splitTop(P.ptoks(rm[1]), ',').map(joinTokens) : null;
+          if (ra && ra.length >= 1 && ra.length <= 2) {
+            const [lo, hi] = ra.length === 1 ? ['0', this.x(ra[0])] : [this.x(ra[0]), this.x(ra[1])];
+            out.push(ind + `for (int ${v} = ${lo}; ${v} < ${hi}; ${v}++) {`);
+            break;
+          }
+        }
           if (isText) {
             // C: bis zum Textende ('\0'), nicht sizeof (das wäre die Puffergröße)
             out.push(ind + `for (int _i = 0; ${coll}[_i] != '\\0'; _i++) {`, ind + this.I + `char ${v} = ${coll}[_i];`);
@@ -2082,6 +2096,8 @@ class CGen extends BaseGen {
         'string u_insert(const string& w, const string& s, int i) { string r = s; r.insert(u_off(s, i < 1 ? 0 : i - 1), w); return r; }',
         'string u_delete(const string& s, int i, int n) { size_t a = u_off(s, i < 1 ? 0 : i - 1); string r = s; r.erase(a, u_off(s.substr(a), n < 0 ? 0 : n)); return r; }', '');
     }
+    if (this.needs.has('aindex')) out.push('template <class T, class U> int u_index(const vector<T>& a, const U& x) {', '    for (size_t i = 0; i < a.size(); i++) if (a[i] == x) return (int) i;', '    return -1;', '}', '');
+    if (this.needs.has('range')) out.push('vector<int> u_range(int a, int b) {', '    vector<int> r;', '    for (int i = a; i < b; i++) r.push_back(i);', '    return r;', '}', '');
     if (this.needs.has('split')) {
       out.push(this.comment(tr('gen.split')), 'vector<string> u_split(const string& s, const string& sep) {', '    vector<string> r;',
         '    if (sep.empty()) { r.push_back(s); return r; }', '    size_t a = 0, p;',
@@ -2142,6 +2158,9 @@ class CGen extends BaseGen {
       N.add('string');
       out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('c'), '');
     }
+    if (N.has('aindexint')) out.push('int _index_int(const int* a, int n, int x) { for (int i = 0; i < n; i++) if (a[i] == x) return i; return -1; }');
+    if (N.has('aindexstr')) { N.add('string'); out.push('int _index_str(char** a, int n, const char* x) { for (int i = 0; i < n; i++) if (strcmp(a[i], x) == 0) return i; return -1; }'); }
+    if (N.has('range')) { N.add('stdlib'); out.push('int* _range(int a, int b, int* n) {', '    *n = b > a ? b - a : 0;', '    int* r = malloc((*n + 1) * sizeof(int));', '    for (int i = 0; i < *n; i++) r[i] = a + i;', '    return r;', '}'); }
     if (N.has('split')) {
       N.add('string'); N.add('stdlib');
       out.push(this.comment(tr('gen.split')), 'char** str_split(const char* s, const char* sep, int* n) {',
@@ -3700,8 +3719,8 @@ const UNTRANSLATABLE = (() => {
   const m = {};
   const files = ['fileopen', 'filecreate', 'fileappend', 'fileclose', 'fileeof', 'fileread', 'filereadchar', 'filereadint', 'filereaddouble', 'filereadline', 'filewrite', 'filewriteline'];
   for (const f of files) m[f] = [];
-  m.copyrecord = [];
-  m.range = ['python'];
+  m.copyrecord = ALL_LANGS.slice();
+  m.range = ALL_LANGS.slice(); // range mit Schrittweite: nur Python, Java, JavaScript (sonst bleibt der Aufruf stehen)
   const turtle = ['forward', 'fd', 'backward', 'bk', 'left', 'rl', 'right', 'rr', 'gotoxy', 'gotox', 'gotoy', 'penup', 'up', 'pendown', 'down',
     'hideturtle', 'showturtle', 'setpencolor', 'setbackground', 'clear', 'getx', 'gety', 'getorientation'];
   for (const f of turtle) m[f] = ['python'];
