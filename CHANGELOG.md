@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.3
+- **Testlauf der automatischen Veröffentlichung:** Keine Änderungen an der Erweiterung – inhaltlich gleich 1.0.2.
+  Diese Version wird erstmals über den GitHub-Workflow `publish.yml` per OIDC Trusted Publishing im Marketplace
+  veröffentlicht, ausgelöst durch das GitHub-Release. Die README beschreibt den Ablauf unter *Entwicklung*.
+
 ## 1.0.2
 - **Hinweis „ohne Typ“ an jeder ersten Zuweisung je Weg:** Bekommt eine Variable ohne Typ in mehreren Fällen einer
   Fallauswahl (oder Zweigen einer Verzweigung) ihren ersten Wert, erscheint der Hinweis in jedem dieser Fälle – bisher
