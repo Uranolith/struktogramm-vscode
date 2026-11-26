@@ -426,6 +426,17 @@ function modernNewArray(elType, size, lang) {
   return `vec![${def}; ${/^\d+$/.test(size) ? size : `(${size}) as usize`}]`;
 }
 
+/**
+ * new int[n] (neues Array mit Vorgabewerten wie im Interpreter: 0, 0.0, "", false) für Python, JavaScript, Java und
+ * C#. Java und C# füllten ein Text-Array mit null. C und C++ fehlen noch (Array-Länge, siehe docs/CODEGEN-PLAN.md 4.2/4.6).
+ */
+const NEW_ARRAY = {
+  python: (t, n) => `[${{ double: '0.0', string: '""', boolean: 'False', char: '" "' }[t] || '0'}] * ${/^\w+$/.test(n) ? n : `(${n})`}`,
+  javascript: (t, n) => `new Array(${n}).fill(${{ string: '""', boolean: 'false', char: '" "' }[t] || '0'})`,
+  java: (t, n) => (t === 'string' ? `java.util.Collections.nCopies(${n}, "").toArray(new String[0])` : `new ${{ boolean: 'boolean', double: 'double', char: 'char' }[t] || 'int'}[${n}]`),
+  csharp: (t, n) => (t === 'string' ? `System.Linq.Enumerable.Repeat("", ${n}).ToArray()` : `new ${{ boolean: 'bool', double: 'double', char: 'char' }[t] || 'int'}[${n}]`),
+};
+
 /** Operand-Ende nach "not" bestimmen (bis and/or/Klammer zu/Komma auf gleicher Ebene) */
 function operandEnd(toks, i) {
   let depth = 0;
@@ -631,6 +642,8 @@ function charsToStrings(toks, ctx) {
  * „/“ mit Ganzzahlen ohnehin so. Bestimmt wird je Division aus den Operandentypen.
  */
 const INTDIV_LANGS = new Set(['python', 'javascript']);
+// Sprachen, in denen Division durch 0 keinen abfangbaren Fehler auslöst (C/C++: Absturz, JavaScript: Infinity/NaN)
+const CHECKDIV_LANGS = new Set(['c', 'cpp', 'javascript']);
 function intDivision(toks, lang, ctx) {
   // zuerst in Klammergruppen
   const res = [];
@@ -643,7 +656,11 @@ function intDivision(toks, lang, ctx) {
     res.push(t);
   }
   const isMod = (t) => lang === 'python' && !t.modDone && ((t.t === 'op' && t.v === '%') || (t.t === 'id' && t.v.toLowerCase() === 'mod'));
-  if (!res.some((t) => (t.t === 'op' && t.v === '/' && !t.intDivDone) || isMod(t))) return res;
+  // innerhalb von try (C, C++, JavaScript): Ganzzahldivision und Rest über Prüf-Hilfsfunktionen, die bei 0 einen
+  // abfangbaren Fehler werfen wie der Interpreter (siehe generators.js, checkDiv)
+  const checked = !!(ctx && ctx.checkDiv) && CHECKDIV_LANGS.has(lang);
+  const isChk = (t) => checked && !t.chkDone && ((t.t === 'op' && ['/', '%'].includes(t.v)) || (t.t === 'id' && ['div', 'mod'].includes(t.v.toLowerCase())));
+  if (!res.some((t) => (t.t === 'op' && t.v === '/' && !t.intDivDone) || isMod(t) || isChk(t))) return res;
   const isMul = (t) => (t.t === 'op' && ['*', '/', '%'].includes(t.v)) || (t.t === 'id' && ['div', 'mod'].includes(t.v.toLowerCase()));
   const KW = new Set(['and', 'or', 'xor', 'not', 'div', 'mod']);
   const endsFactor = (t) => t && (t.t === 'num' || t.t === 'str' || (t.t === 'id' && !KW.has(t.v.toLowerCase())) || (t.t === 'op' && CLOSE[t.v]));
@@ -667,6 +684,20 @@ function intDivision(toks, lang, ctx) {
     ops.forEach((op, k) => {
       const f = parts[k + 1];
       const intOf = (p) => { try { return normType(ctx.exprType ? ctx.exprType(joinTokens(p)) : inferType(joinTokens(p))) === 'int'; } catch (e) { return false; } };
+      if (isChk(op) && f.length) {
+        const kw = op.t === 'id' ? op.v.toLowerCase() : op.v;
+        const ints = intOf(acc) && intOf(f);
+        // geprüft wird, was der Interpreter bei 0 ablehnt: div und mod immer, / nur mit Ganzzahlen; % in C/C++ nur Ganzzahlen
+        const fn = kw === 'div' || (kw === '/' && ints) ? '_idiv' : (kw === 'mod' || kw === '%') && (ints || lang === 'javascript') ? '_imod' : null;
+        if (fn) {
+          if (ctx.needs) ctx.needs.add(fn === '_idiv' ? 'checkdiv' : 'checkmod');
+          const first = { ...acc[0], ws: false };
+          acc = [{ t: 'id', v: fn, ws: acc[0].ws }, tok('(', 'op', false), first, ...acc.slice(1), { t: 'op', v: ',', ws: false },
+            ...f.map((x, k) => (k === 0 ? { ...x, ws: true } : x)), tok(')', 'op', false)];
+          return;
+        }
+      }
+      if (!INTDIV_LANGS.has(lang)) { acc = [...acc, op, ...f]; return; } // C/C++: nur die Prüfung oben
       if (isMod(op) && f.length) {
         // Python rechnet -7 % 3 = 2, der Interpreter (wie Java) -1: math.fmod behält das Vorzeichen
         if (ctx.needs) ctx.needs.add('math');
@@ -693,9 +724,19 @@ function intDivision(toks, lang, ctx) {
 /** pi als Konstante der Zielsprache (wenn es keine Variable dieses Namens gibt) */
 const PI_CONST = { python: 'math.pi', java: 'Math.PI', csharp: 'Math.PI', javascript: 'Math.PI', c: 'M_PI', cpp: 'M_PI', kotlin: 'Math.PI', rust: 'std::f64::consts::PI' };
 
+/** s[i] auf einem Text je Sprache als Text aus einem Zeichen (Python und JavaScript können das selbst) */
+const TEXT_INDEX = {
+  java: (s, i) => `String.valueOf(${s}.charAt(${i}))`,
+  csharp: (s, i) => `${s}[${i}].ToString()`,
+  kotlin: (s, i) => `${s}[${i}].toString()`,
+  cpp: (s, i) => `string(1, ${s}[${i}])`,
+  c: (s, i) => `str_chr(${s}[${i}])`,
+  rust: (s, i) => `${s}.chars().nth(${/^\d+$/.test(i) ? i : `(${i}) as usize`}).unwrap().to_string()`,
+};
+
 function mapToks(toks, lang, ctx) {
   if (STRCMP_LANGS.has(lang) || lang === 'kotlin') toks = charsToStrings(toks, ctx);
-  if (INTDIV_LANGS.has(lang)) toks = intDivision(toks, lang, ctx);
+  if (INTDIV_LANGS.has(lang) || (ctx && ctx.checkDiv && CHECKDIV_LANGS.has(lang))) toks = intDivision(toks, lang, ctx);
   // Textvergleiche zuerst (Operanden werden dabei selbst übersetzt)
   if (STRCMP_LANGS.has(lang)) { const sc = stringCompare(toks, lang, ctx); if (sc) toks = sc; }
   if (MODERN.has(lang)) toks = promoteFloats(toks, ctx);
@@ -705,6 +746,19 @@ function mapToks(toks, lang, ctx) {
     const t = toks[i];
     const l = lc(t);
     const nt = { ...t };
+    // Index in einen Text (s[i]): wie im Interpreter ein Text aus einem Zeichen – Java kennt s[i] nicht, Rust indiziert
+    // Bytes, C/C++/C#/Kotlin lieferten ein Zeichen statt eines Texts
+    const prev = out[out.length - 1];
+    if (TEXT_INDEX[lang] && t.t === 'op' && t.v === '[' && prev && prev.t === 'id' && !(out[out.length - 2] && out[out.length - 2].v === '.') &&
+      ctx && ctx.cur && ctx.cur.types && normType(ctx.cur.types.get(prev.v)) === 'string') {
+      const close = matchClose(toks, i);
+      const r = joinTokens(mapToks(toks.slice(i + 1, close < 0 ? toks.length : close), lang, ctx));
+      if (lang === 'c' && ctx.needs) { ctx.needs.add('strcat'); ctx.needs.add('string'); }
+      out.pop();
+      out.push({ ...prev, v: TEXT_INDEX[lang](prev.v, r) });
+      i = close < 0 ? toks.length : close;
+      continue;
+    }
     // Rust: Indizes müssen usize sein  a[i] -> a[i as usize]
     if (lang === 'rust' && t.t === 'op' && t.v === '[' && out.length && (out[out.length - 1].t === 'id' || [')', ']'].includes(out[out.length - 1].v))) {
       const close = matchClose(toks, i);
@@ -761,10 +815,10 @@ function mapToks(toks, lang, ctx) {
         out.push({ t: 'id', v: fn(args, ctx, lang), ws: t.ws });
         i = close < 0 ? toks.length : close;
         continue;
-      } else if (MODERN.has(lang) && l === 'new' && toks[i + 1] && toks[i + 1].t === 'id' && toks[i + 2] && toks[i + 2].v === '[') {
+      } else if ((MODERN.has(lang) || NEW_ARRAY[lang]) && l === 'new' && toks[i + 1] && toks[i + 1].t === 'id' && toks[i + 2] && toks[i + 2].v === '[') {
         const c = matchClose(toks, i + 2);
         const size = joinTokens(mapToks(toks.slice(i + 3, c < 0 ? toks.length : c), lang, ctx));
-        out.push({ t: 'id', v: modernNewArray(toks[i + 1].v, size, lang), ws: t.ws });
+        out.push({ t: 'id', v: MODERN.has(lang) ? modernNewArray(toks[i + 1].v, size, lang) : NEW_ARRAY[lang](normType(toks[i + 1].v), size), ws: t.ws });
         i = c < 0 ? toks.length : c;
         continue;
       } else if (MODERN.has(lang) && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.') &&
@@ -1045,9 +1099,23 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
     if (vt === 'char') return 'char';
     // ebenso ein Wahrheitswert (b := a > 3; OUTPUT b)
     if (vt === 'boolean') return 'boolean';
+    // und ein Record (p als Argument: Parameter vom Typ Punkt)
+    if (vt && funcs && funcs.records && funcs.records.has(vt)) return vt;
+  }
+  // new int[n]: Array dieses Typs
+  if (toks.length >= 4 && toks[0].t === 'id' && toks[0].v.toLowerCase() === 'new' && toks[1].t === 'id' && toks[2].v === '[' &&
+    matchClose(toks, 2) === toks.length - 1 && normType(toks[1].v)) return normType(toks[1].v) + '[]';
+  // Feldzugriff auf einen Record als ganzer Ausdruck (p.ok, leute[1].name): Typ des Feldes, auch Wahrheitswert
+  if (toks[0].t === 'id' && varTypes.has(toks[0].v)) {
+    const fa = fieldAccess(toks, 0, varTypes, funcs);
+    if (fa && fa.end === toks.length - 1) return fa.type;
   }
   // chr(…) allein ist ein Zeichen
   if (toks.length >= 3 && toks[0].t === 'id' && toks[0].v.toLowerCase() === 'chr' && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1) return 'char';
+  // ein einzelner Aufruf eines Unterprogramms hat dessen Rückgabetyp – auch Wahrheitswert, Zeichen, Feld oder Record
+  // (OUTPUT istGerade(4) -> true statt True bzw. 1)
+  if (toks.length >= 3 && toks[0].t === 'id' && toks[1].v === '(' && matchClose(toks, 1) === toks.length - 1 &&
+    funcs && funcs.has(toks[0].v) && funcs.get(toks[0].v).returnType) return normType(funcs.get(toks[0].v).returnType);
   // Record-Literal Punkt{…} hat den Typ Punkt
   if (toks.length >= 3 && toks[0].t === 'id' && toks[1].v === '{' && matchClose(toks, 1) === toks.length - 1) return toks[0].v;
   if (findTop(toks, (t) => REL_OPS.has(t.v) || ['and', 'or', 'not', 'xor'].includes(lc(t)) || t.v === '&&' || t.v === '||' || t.v === '!') >= 0) return 'boolean';
@@ -1083,6 +1151,13 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
       if (toks[i - 1] && toks[i - 1].v === '.') continue;
       if (['div', 'mod'].includes(l)) continue;
       if (l === 'pi' && !varTypes.has(t.v)) { bump('double'); continue; }
+      const fa = varTypes.has(t.v) ? fieldAccess(toks, i, varTypes, funcs) : null;
+      if (fa) {
+        if (fa.type === 'char') bump('string'); else bump(fa.type);
+        if (!rank[fa.type] && fa.type !== 'char') unknown = true;
+        i = fa.end;
+        continue;
+      }
       if (varTypes.has(t.v)) {
         const vt = normType(varTypes.get(t.v));
         if (vt && vt.endsWith('[]') && toks[i + 1] && toks[i + 1].v === '[') { bump(vt.slice(0, -2)); i = matchClose(toks, i + 1); continue; }
@@ -1094,6 +1169,34 @@ function inferType(expr, varTypes = new Map(), funcs = new Map()) {
   if (res === 'string') return 'string';
   if (unknown && res !== 'double') return res === 'int' && toks.length > 1 ? null : (unknown ? null : res);
   return res;
+}
+
+/**
+ * Feldzugriff ab toks[i] (Variable eines Record-Typs, optional mit Index: p.x, leute[1].name, a.b.c): Typ des
+ * letzten Feldes und Index des letzten Tokens – sonst null. Die Record-Definitionen kommen als funcs.records
+ * (Map Typname -> [{ name, type }], gesetzt von der Codeerzeugung).
+ */
+function fieldAccess(toks, i, varTypes, funcs) {
+  const recs = funcs && funcs.records;
+  if (!recs || !recs.size) return null;
+  let vt = normType(varTypes.get(toks[i].v));
+  let j = i;
+  if (vt && vt.endsWith('[]') && toks[j + 1] && toks[j + 1].v === '[') {
+    const c = matchClose(toks, j + 1);
+    if (c < 0) return null;
+    vt = vt.slice(0, -2);
+    j = c;
+  }
+  let any = false;
+  while (vt && recs.has(vt) && toks[j + 1] && toks[j + 1].v === '.' && toks[j + 2] && toks[j + 2].t === 'id') {
+    const f = recs.get(vt).find((x) => x.name === toks[j + 2].v);
+    vt = f ? normType(f.type) : null;
+    j += 2;
+    any = true;
+    // Feld, das selbst ein Array ist: f[k]
+    if (vt && vt.endsWith('[]') && toks[j + 1] && toks[j + 1].v === '[') { const c = matchClose(toks, j + 1); if (c < 0) return null; vt = vt.slice(0, -2); j = c; }
+  }
+  return any && vt ? { type: vt, end: j } : null;
 }
 
 /**

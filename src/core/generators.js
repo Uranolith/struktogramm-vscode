@@ -8,6 +8,8 @@ const { walk } = require('./model');
 const { joinTokens, findTop, matchClose, OPEN, CLOSE } = require('./tokenizer');
 
 const DYNAMIC_LANGS = new Set(['python', 'javascript']); // Variablen ohne festen Typ
+// Sprachen, in denen break innerhalb von switch nur das switch verlässt (nicht die umgebende Schleife)
+const SWITCH_BREAK_LANGS = new Set(['c', 'cpp', 'csharp', 'java', 'javascript']);
 
 /**
  * Hilfsfunktion je Sprache: Kommazahl wie der Interpreter ausgeben (Regel von JavaScript): kürzeste exakte
@@ -209,6 +211,21 @@ const EXACT_TYPES = {
 };
 const identsOf = (text) => P.ptoks(text).filter((t, i, a) => t.t === 'id' && !(a[i - 1] && a[i - 1].v === '.')).map((t) => t.v);
 
+/**
+ * Gemeinsamer Typ zweier abgeleiteter Typen (z. B. Argumente an verschiedenen Aufrufstellen): Ganzzahl und Kommazahl
+ * ergeben Kommazahl, ebenso bei Arrays (int[] und double[] -> double[]). Sonst bleibt der erste.
+ */
+function widenType(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const arr = (t) => /\[\]$/.test(String(t));
+  if (arr(a) && arr(b)) { const w = widenType(String(a).slice(0, -2), String(b).slice(0, -2)); return w ? w + '[]' : a; }
+  const na = P.normType(a), nb = P.normType(b);
+  if (na === nb) return a;
+  if ((na === 'int' && nb === 'double') || (na === 'double' && nb === 'int')) return 'double';
+  return a;
+}
+
 function linesOf(el) {
   return (el.text || []).map((l) => String(l)).filter((l) => l.trim());
 }
@@ -240,9 +257,11 @@ class BaseGen {
       this.sigs.set(r, sig);
       if (r.rootType !== 'program') this.funcs.set(sig.name, sig);
     }
-    // Parametertypen ohne Angabe aus den Aufrufstellen ableiten
+    // Parametertypen ohne Angabe aus allen Aufrufstellen ableiten: Ganzzahl und Kommazahl ergeben Kommazahl (der
+    // Interpreter wandelt Argumente beim Aufruf in diesen Typ um, siehe paramTypes in executor.js)
     this.inferringParams = true;
     for (let pass = 0; pass < 2; pass++) {
+      const argTypes = new Map(); // Parameter -> Typen der Argumente
       for (const r of doc.roots) {
         const sig = this.sigs.get(r);
         const types = this.analyze(r, r.rootType === 'program' ? { ...sig, params: [] } : sig).types;
@@ -256,14 +275,15 @@ class BaseGen {
               const args = require('./tokenizer').splitTop(toks.slice(i + 2, close < 0 ? toks.length : close), ',');
               args.forEach((a, k) => {
                 const prm = fsig.params[k];
-                if (!prm || prm.type || prm.inferredType || !a.length) return;
-                const at = P.inferType(joinTokens(a), types, new Map());
-                if (at) prm.inferredType = at;
+                if (!prm || prm.type || !a.length) return;
+                const at = P.inferType(joinTokens(a), types, Object.assign(new Map(), { records: this.recordTypes }));
+                if (at) argTypes.set(prm, [...(argTypes.get(prm) || []), at]);
               });
             });
           }
         });
       }
+      for (const [prm, ts] of argTypes) prm.inferredType = ts.reduce((acc, t) => widenType(acc, t), prm.inferredType || null);
     }
     this.inferringParams = false;
     // Rückgabetypen vorab bestimmen (für Typinferenz bei Aufrufen)
@@ -346,6 +366,7 @@ class BaseGen {
       return terms.map((t) => {
         if (t.lit) return q(litOf(t));
         if (t.ty === 'double') { this.needs.add('fmtnum'); return `Fmt(${t.code})`; }
+        if (t.ty === 'boolean') return `(${t.code} ? "true" : "false")`; // C# schriebe True/False
         return this.needsParens(t.src) ? `(${t.code})` : t.code;
       }).join(' + ');
     }
@@ -412,6 +433,7 @@ class BaseGen {
       types.set(p.name, P.normType(p.type) || p.inferredType || (this.inferringParams ? null : this.defaultParamType()));
     }
     const fnTypes = new Map([...this.funcs].map(([k, v]) => [k, { returnType: v.returnType || v.inferredReturn }]));
+    fnTypes.records = this.recordTypes; // Feldtypen für p.x (inferType, fieldAccess)
     // Pass 1: Typen sammeln (zweimal für einfache Propagation)
     for (let pass = 0; pass < 2; pass++) {
       walk(root.children, (el) => {
@@ -619,6 +641,29 @@ class BaseGen {
     for (const v of inputVars) if (open(v)) { types.set(v, 'string'); more = true; }
     if (more) settle();
 
+    // Zählvariablen, die auch außerhalb einer Schleife über sich selbst vorkommen (davor zugewiesen oder danach gelesen):
+    // Sie gehören der ganzen Routine. Die Schleife zählt dann mit einer Hilfsvariable und setzt die Zählvariable in
+    // jedem Durchlauf – danach hat sie wie im Interpreter den Wert des letzten Durchlaufs (auch nach leave).
+    // Alle anderen deklariert jede Schleife in ihrem Kopf selbst (zwei Schleifen nacheinander mit demselben i).
+    const loopVars = new Set();
+    const outsideUse = new Set();
+    const scanUse = (seq, active) => {
+      for (const el of seq) {
+        if (el.disabled) continue;
+        const f = el.type === 'for' ? P.parseForText(linesOf(el).join(' ')) : null;
+        if (f && (f.kind === 'count' || f.kind === 'each') && SIMPLE_IDENT.test(f.var)) {
+          loopVars.add(f.var);
+          identsOf(f.kind === 'count' ? `${f.start} ${f.end} ${f.step}` : f.coll).forEach((n) => { if (!active.has(n)) outsideUse.add(n); });
+          scanUse(el.body, new Set([...active, f.var]));
+          continue;
+        }
+        for (const line of linesOf(el)) identsOf(line).forEach((n) => { if (!active.has(n)) outsideUse.add(n); });
+        for (const s of require('./model').sequencesOf(el)) scanUse(s.seq, active);
+      }
+    };
+    scanUse(root.children, new Set());
+    const loopOuter = new Set([...loopVars].filter((v) => outsideUse.has(v) && !explicit.has(v) && !params.has(v)));
+
     // Pass 2: Deklarationsorte bestimmen
     const seen = new Set(params);
     const inline = new Map();
@@ -654,7 +699,12 @@ class BaseGen {
         const f = P.parseForText(linesOf(el).join(' '));
         if (f && (f.kind === 'count' || f.kind === 'each') && SIMPLE_IDENT.test(f.var)) {
           all.add(f.var);
-          forDecl.set(el, !seen.has(f.var) && !explicit.has(f.var) && !params.has(f.var));
+          if (loopOuter.has(f.var)) {
+            // Variable der Routine: einmal deklarieren (am Anfang, falls nicht schon vorher zugewiesen)
+            forDecl.set(el, false);
+            if (!seen.has(f.var)) hoist.add(f.var);
+            seen.add(f.var);
+          } else forDecl.set(el, !explicit.has(f.var) && !params.has(f.var));
           identsOf(f.kind === 'count' ? `${f.start} ${f.end} ${f.step}` : f.coll).forEach((n) => seen.add(n));
         }
       } else if (el.type !== 'repeat') {
@@ -704,7 +754,7 @@ class BaseGen {
       if (k) { if (!kinds.has(n)) kinds.set(n, new Set()); kinds.get(n).add(k); }
     }
     for (const [n, ks] of kinds) if (ks.size > 1) mixed.add(n);
-    return { types, rawTypes, explicit, params, inline, hoist, hoistDecl, forDecl, all, declared: new Set(), fnTypes,
+    return { types, rawTypes, explicit, params, inline, hoist, hoistDecl, forDecl, loopOuter, all, declared: new Set(), fnTypes,
       switching, mixed, flow: new Map(), flowLock: new Set() };
   }
 
@@ -821,6 +871,7 @@ class BaseGen {
   inferReturn(root, sig, types) {
     let t = null, any = false;
     const fnTypes = new Map([...this.funcs].map(([k, v]) => [k, { returnType: v.returnType || v.inferredReturn }]));
+    fnTypes.records = this.recordTypes; // Feldtypen für p.x (inferType, fieldAccess)
     walk(root.children, (el) => {
       if (!['instruction', 'call', 'jump'].includes(el.type)) return;
       for (const l of linesOf(el)) {
@@ -1005,15 +1056,97 @@ class BaseGen {
 
   parallelEl(el, ind) { return this.parallelSeq(el, ind, 'gen.parallelSeq'); }
 
-  /** Wird diese Schleife von einem „leave n“ (n > 1) weiter innen verlassen? */
+  /**
+   * Wird diese Schleife von einem „leave n“ (n > 1) weiter innen verlassen – oder von einem einfachen „leave“ in einer
+   * Fallauswahl? In C, C++, C#, Java und JavaScript verließe break dort nur das switch (Endlosschleife).
+   */
   loopNeedsLabel(loop) {
     const LOOPS = ['for', 'while', 'repeat', 'forever'];
-    const scan = (seq, d) => seq.some((e) => {
+    const switchBreaks = SWITCH_BREAK_LANGS.has(this.lang);
+    const leave1 = (e) => { const ls = linesOf(e); return !ls.length || ls.some((l) => { const c = P.classifyLine(l); return c.kind === 'leave' && c.count === 1; }); };
+    const scan = (seq, d, inCase) => seq.some((e) => {
       if (e.type === 'jump' && linesOf(e).some((l) => { const c = P.classifyLine(l); return c.kind === 'leave' && c.count > 1 && c.count === d + 1; })) return true;
-      if (LOOPS.includes(e.type)) return scan(e.body, d + 1);
-      return require('./model').sequencesOf(e).some((s) => scan(s.seq, d));
+      if (e.type === 'jump' && switchBreaks && inCase && d === 0 && leave1(e)) return true;
+      if (LOOPS.includes(e.type)) return scan(e.body, d + 1, false);
+      return require('./model').sequencesOf(e).some((s) => scan(s.seq, d, inCase || e.type === 'case'));
     });
-    return scan(loop.body || [], 0);
+    return scan(loop.body || [], 0, false);
+  }
+
+  /**
+   * Bedingung der innersten Schleife, wenn sie eine Fußschleife (repeat … until) ist, sonst null. Python und Rust bilden
+   * sie als Endlosschleife mit Prüfung am Ende des Rumpfs nach – ein continue muss vorher selbst prüfen.
+   */
+  innerRepeatCond() {
+    const k = this.loopEls;
+    const top = k && k[k.length - 1];
+    return top && top.type === 'repeat' ? this.cond(top.text, ['until', 'bis', 'solange']) : null;
+  }
+
+  /** Elemente, die tatsächlich Code erzeugen (nicht deaktiviert) */
+  activeEls(seq) { return (seq || []).filter((e) => !e.disabled); }
+
+  /**
+   * Zählvariable, die der ganzen Routine gehört (auch außerhalb der Schleife benutzt, siehe analyze): Name der
+   * Hilfsvariable, mit der die Schleife zählt – sonst null. Python braucht sie nicht (Variable bleibt nach for erhalten).
+   */
+  loopHidden(v) {
+    return this.lang !== 'python' && this.cur && this.cur.loopOuter && this.cur.loopOuter.has(v) ? '_' + v : null;
+  }
+
+  /**
+   * Code im try-Teil erzeugen: Division und Rest werden dort geprüft (C, C++, JavaScript; siehe intDivision in pseudo.js),
+   * damit Division durch 0 wie im Interpreter abgefangen werden kann
+   */
+  checked(fn) {
+    this.checkDiv = (this.checkDiv || 0) + 1;
+    try { return fn(); } finally { this.checkDiv--; }
+  }
+
+  /** Unterprogramme, die (auch über weitere Aufrufe) aus einem try-Teil heraus aufgerufen werden: dort ebenfalls prüfen */
+  checkedRoutines() {
+    if (this._checkedRoutines) return this._checkedRoutines;
+    const callsIn = (seq) => {
+      const names = new Set();
+      walk(seq, (el) => {
+        if (el.disabled) return false;
+        for (const line of linesOf(el)) {
+          const toks = P.ptoks(line);
+          toks.forEach((t, i) => { if (t.t === 'id' && this.funcs.has(t.v) && toks[i + 1] && toks[i + 1].v === '(') names.add(t.v); });
+        }
+      });
+      return names;
+    };
+    const res = new Set();
+    const queue = [];
+    for (const r of this.doc.roots) {
+      walk(r.children, (el) => { if (el.disabled) return false; if (el.type === 'try') for (const n of callsIn(el.qTry)) queue.push(n); });
+    }
+    const byName = new Map(this.doc.roots.filter((r) => r.rootType !== 'program').map((r) => [this.sigs.get(r).name, r]));
+    while (queue.length) {
+      const n = queue.pop();
+      if (res.has(n)) continue;
+      res.add(n);
+      const r = byName.get(n);
+      if (r) for (const m of callsIn(r.children)) queue.push(m);
+    }
+    return (this._checkedRoutines = res);
+  }
+
+  /** Sprung aus try-Blöcken heraus – C und Rust brauchen Vorarbeit (CFamily.tryExit, RustGen.tryExit) */
+  tryExit() { return null; }
+
+  /** Steht die Ausgabe gerade in einem switch innerhalb der innersten Schleife? (dann verließe break nur das switch) */
+  inSwitchOfLoop() {
+    const s = this.switchCounts;
+    return SWITCH_BREAK_LANGS.has(this.lang) && !!s && s.length > 0 && s[s.length - 1] > 0;
+  }
+
+  /** Rumpf eines switch erzeugen und dabei mitzählen, dass ein leave hier die Schleife per Sprungmarke verlassen muss */
+  inSwitch(fn) {
+    const s = this.switchCounts;
+    if (s && s.length) s[s.length - 1]++;
+    try { return fn(); } finally { if (s && s.length) s[s.length - 1]--; }
   }
 
   /** leave n: mehrere Schleifen verlassen */
@@ -1047,8 +1180,12 @@ class BaseGen {
       const label = this.loopNeedsLabel(el) ? `L${(this.labelCount = (this.labelCount || 0) + 1)}` : null;
       this.loopStack = this.loopStack || [];
       this.loopStack.push(label);
+      this.switchCounts = this.switchCounts || [];
+      this.switchCounts.push(0);
+      this.loopEls = this.loopEls || [];
+      this.loopEls.push(el);
       let out;
-      try { out = this.elInner(el, ind); } finally { this.loopStack.pop(); }
+      try { out = this.elInner(el, ind); } finally { this.loopStack.pop(); this.switchCounts.pop(); this.loopEls.pop(); }
       if (label) {
         const k = out.findIndex((l) => l.startsWith(ind) && !l.slice(ind.length).startsWith(this.comment('').trim()));
         const pre = { java: `${label}: `, javascript: `${label}: `, kotlin: `${label}@ `, rust: `'${label.toLowerCase()}: ` }[this.lang];
@@ -1072,14 +1209,21 @@ class BaseGen {
     switch (el.type) {
       case 'instruction': case 'call': case 'jump': {
         const lines = linesOf(el);
-        if (el.type === 'jump' && !lines.length) out.push(...this.stmt({ kind: 'leave' }, ind, el));
+        // leave in einer Fallauswahl (switch) verlässt die Schleife über deren Sprungmarke, nicht nur das switch
+        const leaveSwitch = () => (this.inSwitchOfLoop() ? this.leaveN(1, ind) : null);
+        // C: Sprung aus einem try-Block heraus (Sprungpunkt zurücksetzen, finally ausführen)
+        const viaTry = (c, jump) => (['return', 'leave', 'continue'].includes(c.kind) && this.tryExit(c, ind, jump)) || jump();
+        if (el.type === 'jump' && !lines.length) {
+          const c = { kind: 'leave', count: 1 };
+          out.push(...viaTry(c, () => leaveSwitch() || this.stmt(c, ind, el)));
+        }
         for (const l of lines) {
           const pl = this.procLine(l);
           if (pl == null) continue;
           const c = P.classifyLine(pl);
           if (c.kind === 'typedef') continue; // Typdefinitionen stehen am Dateianfang (typeDefs)
-          const multi = c.kind === 'leave' && c.count > 1 ? this.leaveN(c.count, ind) : null;
-          out.push(...(multi || this.flowStmt(c, ind, el, pl)));
+          const multi = c.kind === 'leave' ? (c.count > 1 ? this.leaveN(c.count, ind) : leaveSwitch()) : null;
+          out.push(...viaTry(c, () => multi || this.flowStmt(c, ind, el, pl)));
         }
         break;
       }
@@ -1432,29 +1576,38 @@ class CGen extends BaseGen {
         // zeilenweise lesen: nextInt() ließe den Zeilenumbruch stehen (das nächste nextLine() wäre leer),
         // nextDouble() erwartet in deutscher Ländereinstellung ein Komma
         const ln = 'scanner.nextLine().trim()';
-        const rd = { int: `Integer.parseInt(${ln})`, long: `Long.parseLong(${ln})`, short: `Short.parseShort(${ln})`, byte: `Byte.parseByte(${ln})`, float: `Float.parseFloat(${ln})`, double: `Double.parseDouble(${ln})`, boolean: `Boolean.parseBoolean(${ln})`, char: 'scanner.nextLine().charAt(0)' }[ct] || 'scanner.nextLine()';
+        // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
+        const rd = { int: `(int) Double.parseDouble(${ln})`, long: `(long) Double.parseDouble(${ln})`, short: `(short) Double.parseDouble(${ln})`, byte: `(byte) Double.parseDouble(${ln})`, float: `Float.parseFloat(${ln})`, double: `Double.parseDouble(${ln})`, boolean: `Boolean.parseBoolean(${ln})`, char: 'scanner.nextLine().charAt(0)' }[ct] || 'scanner.nextLine()';
         out.push(ind + (decl ? this.declLine(v, t, rd) : `${tv} = ${rd};`));
       } else if (L === 'csharp') {
-        const rd = { int: 'int.Parse(Console.ReadLine())', long: 'long.Parse(Console.ReadLine())', short: 'short.Parse(Console.ReadLine())', byte: 'byte.Parse(Console.ReadLine())', float: 'float.Parse(Console.ReadLine())', double: 'double.Parse(Console.ReadLine())', boolean: 'bool.Parse(Console.ReadLine())', char: 'Console.ReadLine()[0]' }[ct] || 'Console.ReadLine()';
+        // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
+        const rd = { int: '(int) double.Parse(Console.ReadLine(), NumberStyles.Float)', long: '(long) double.Parse(Console.ReadLine(), NumberStyles.Float)', short: '(short) double.Parse(Console.ReadLine(), NumberStyles.Float)', byte: '(byte) double.Parse(Console.ReadLine(), NumberStyles.Float)', float: 'float.Parse(Console.ReadLine(), NumberStyles.Float)', double: 'double.Parse(Console.ReadLine(), NumberStyles.Float)', boolean: 'bool.Parse(Console.ReadLine())', char: 'Console.ReadLine()[0]' }[ct] || 'Console.ReadLine()';
         out.push(ind + (decl ? this.declLine(v, t, rd) : `${tv} = ${rd};`));
       } else if (L === 'javascript') {
         this.needs.add('prompt');
         const pr = `prompt(${k === 0 && c.prompt ? this.x(c.prompt) : ''})`;
-        const rd = t === 'int' || t === 'double' ? `Number(${pr})` : pr;
+        // Zahlen streng wie im Interpreter (Number() nähme 2.5 für eine Ganzzahl und "" als 0)
+        if (t === 'int') this.needs.add('readint');
+        if (t === 'int' || t === 'double') this.needs.add('readnum');
+        const rd = t === 'int' ? `_int(${pr})` : t === 'double' ? `_num(${pr})` : pr;
         out.push(ind + (decl ? `let ${v} = ${rd};` : `${tv} = ${rd};`));
       } else if (L === 'cpp') {
         // ganze Zeile lesen: Text mit Leerzeichen
         this.needs.add('readline');
-        const rd = { int: 'stoi(read_line())', long: 'stoll(read_line())', short: '(short) stoi(read_line())', byte: '(unsigned char) stoi(read_line())',
-          float: 'stof(read_line())', double: 'stod(read_line())', char: 'read_line()[0]', boolean: '(read_line() == "true")' }[ct] || 'read_line()';
+        // Zahlen streng wie im Interpreter (stoi nähme 2.5 als 2)
+        const rd = { int: '(int) read_int()', long: 'read_int()', short: '(short) read_int()', byte: '(unsigned char) read_int()',
+          float: '(float) read_double()', double: 'read_double()', char: 'read_line()[0]', boolean: '(read_line() == "true")' }[ct] || 'read_line()';
+        if (/read_int|read_double/.test(rd)) this.needs.add('readnum');
         out.push(ind + (decl ? this.declLine(v, t, rd) : `${tv} = ${rd};`));
       } else { // C
         // ganze Zeile lesen (fgets): Text mit Leerzeichen, kein Zeilenumbruch im Puffer
         this.needs.add('readline');
         this.needs.add('stdlib');
         if (decl) out.push(ind + this.declLine(v, t, null));
-        const rd = { int: 'atoi(read_line())', long: 'atoll(read_line())', short: '(short) atoi(read_line())', byte: '(unsigned char) atoi(read_line())',
+        // Zahlen streng wie im Interpreter (atoi nähme 2.5 als 2 und Text als 0)
+        const rd = { int: '(int) read_int()', long: 'read_int()', short: '(short) read_int()', byte: '(unsigned char) read_int()',
           float: '(float) read_double()', double: 'read_double()', char: 'read_line()[0]', boolean: 'atoi(read_line())' }[ct];
+        if (rd && /read_int|read_double/.test(rd)) this.needs.add('readnum');
         if (rd) out.push(ind + `${tv} = ${rd};`);
         else { this.needs.add('string'); out.push(ind + `strcpy(${tv}, read_line());`); }
       }
@@ -1547,7 +1700,7 @@ class CGen extends BaseGen {
   /** Rumpf eines switch-Zweigs samt break (entfällt, wenn der Zweig ohnehin mit einem Sprung endet) */
   switchBody(body, ind) {
     const I2 = ind + this.I + this.I;
-    const out = this.seq(body, I2);
+    const out = this.inSwitch(() => this.seq(body, I2));
     const last = body[body.length - 1];
     const ends = last && last.type === 'jump' && /^(return|exit|throw|leave|break|continue)\b/i.test(linesOf(last).join(' ').trim() || 'leave');
     if (!ends) out.push(I2 + 'break;');
@@ -1604,9 +1757,12 @@ class CGen extends BaseGen {
       return out;
     }
     const decl = this.cur.forDecl.get(el);
+    // Zählvariable der Routine (nach der Schleife benutzt): mit Hilfsvariable zählen, im Rumpf zuweisen
+    const hv = this.loopHidden(f.var);
+    if (hv) body.unshift(ind + this.I + `${this.x(f.var)} = ${hv};`);
     if (f.kind === 'count') {
-      const v = this.x(f.var);
-      const tn = decl ? (L === 'javascript' ? 'let ' : this.typeName(this.typeOf(f.var) || 'int') + ' ') : '';
+      const v = hv || this.x(f.var);
+      const tn = decl || hv ? (L === 'javascript' ? 'let ' : this.typeName(this.typeOf(f.var) || 'int') + ' ') : '';
       if (decl && L === 'c') { /* C99 */ }
       const step = f.step.replace(/\s+/g, '');
       const neg = step.startsWith('-');
@@ -1620,9 +1776,9 @@ class CGen extends BaseGen {
       const inc = step === '1' ? `${v}++` : step === '-1' ? `${v}--` : neg ? `${v} -= ${this.x(abs)}` : `${v} += ${this.x(step)}`;
       out.push(ind + `for (${tn}${v} = ${this.x(f.start)}; ${v} ${cmp} ${this.x(end)}; ${inc}) {`);
     } else {
-      const v = f.var;
+      const v = hv || f.var;
       let coll = this.x(f.coll);
-      const t = this.typeOf(v);
+      const t = this.typeOf(f.var);
       // Feld-Literal im Schleifenkopf (foreach k in {1, 2, 3}) je Sprache als gültiges Feld
       const lit = isArrayLit(f.coll);
       const items = lit ? arrayItems(f.coll) : [];
@@ -1665,26 +1821,94 @@ class CGen extends BaseGen {
 
   tryEl(el, ind) {
     const L = this.lang, I = this.I, v = this.catchVar(el);
-    if (L === 'c') {
-      // C: try/catch mit setjmp/longjmp nachgebildet (Hilfsfunktion _throw)
-      this.needs.add('cthrow'); this.needs.add('stdlib');
-      const out = [ind + '{', ind + I + 'jmp_buf* _prev = _try_env;', ind + I + 'jmp_buf _env;', ind + I + '_try_env = &_env;',
-        ind + I + 'if (setjmp(_env) == 0) {', ...this.seq(el.qTry, ind + I + I), ind + I + I + '_try_env = _prev;',
-        ind + I + '} else {', ind + I + I + '_try_env = _prev;', ind + I + I + `const char* ${v} = _try_msg;`, ...this.seq(el.qCatch, ind + I + I), ind + I + '}'];
-      out.push(...this.seq(el.qFinally, ind + I), ind + '}');
-      return out;
-    }
+    if (L === 'c') return this.cTryEl(el, ind, v);
     if (L === 'cpp') this.needs.add('stdexcept');
+    // C++ kennt kein finally: ein Wächter-Objekt führt den finally-Teil beim Verlassen des Blocks aus – auch bei return,
+    // break/continue und weitergeworfenem Fehler
+    if (L === 'cpp' && this.activeEls(el.qFinally).length) {
+      this.needs.add('cppfinally');
+      const id = (this.tryCount = (this.tryCount || 0) + 1);
+      const inner = this.tryEl({ ...el, qFinally: [] }, ind + I);
+      return [ind + '{', ind + I + this.comment(tr('gen.cppFinally')),
+        ind + I + `_Finally _fin${id}([&] {`, ...this.seq(el.qFinally, ind + I + I), ind + I + '});', ...inner, ind + '}'];
+    }
     const head = { java: '} catch (Exception _e) {', csharp: '} catch (Exception _e) {', javascript: '} catch (_e) {', cpp: '} catch (const exception& _e) {' }[L];
     const decl = { java: `String ${v} = _e.getMessage();`, csharp: `string ${v} = _e.Message;`, javascript: `const ${v} = _e instanceof Error ? _e.message : String(_e);`, cpp: `string ${v} = _e.what();` }[L];
     const wasDeclared = this.cur.declared.has(v);
     this.cur.declared.add(v);
-    const out = [ind + 'try {', ...this.seq(el.qTry, ind + I), ind + head, ind + I + decl, ...this.seq(el.qCatch, ind + I)];
+    const out = [ind + 'try {', ...this.checked(() => this.seq(el.qTry, ind + I)), ind + head, ind + I + decl, ...this.seq(el.qCatch, ind + I)];
     if (!wasDeclared) this.cur.declared.delete(v);
     if (el.qFinally.length && L !== 'cpp') out.push(ind + '} finally {', ...this.seq(el.qFinally, ind + I));
     out.push(ind + '}');
-    if (el.qFinally.length && L === 'cpp') out.push(ind + this.comment(tr('gen.cppFinally')), ...this.seq(el.qFinally, ind));
     return out;
+  }
+
+  /**
+   * C: try/catch/finally mit setjmp/longjmp nachgebildet (Hilfsfunktion _throw). Jeder try-Block merkt sich den
+   * vorherigen Sprungpunkt (_prevN). Verlässt return/leave/continue den Block, stellt tryExit ihn vorher wieder her
+   * und führt den finally-Teil aus. Ein Fehler im catch-Teil führt erst finally aus und wird dann weitergeworfen.
+   */
+  cTryEl(el, ind, v) {
+    const I = this.I, I2 = I + I, I3 = I2 + I;
+    this.needs.add('cthrow'); this.needs.add('stdlib');
+    const id = (this.tryCount = (this.tryCount || 0) + 1);
+    const prev = `_prev${id}`, env = `_env${id}`, re = `_rethrow${id}`;
+    const fin = this.activeEls(el.qFinally).length ? el.qFinally : null;
+    const loopDepth = (this.loopStack || []).length;
+    this.cTry = this.cTry || [];
+    const part = (name, seq, pind) => {
+      this.cTry.push({ id, loopDepth, fin, part: name });
+      try { return this.seq(seq, pind); } finally { this.cTry.pop(); }
+    };
+    const out = [ind + '{', ind + I + `jmp_buf* ${prev} = _try_env;`, ind + I + `jmp_buf ${env};`];
+    if (fin) out.push(ind + I + `int ${re} = 0;`);
+    out.push(ind + I + `_try_env = &${env};`, ind + I + `if (setjmp(${env}) == 0) {`, ...this.checked(() => part('try', el.qTry, ind + I2)),
+      ind + I2 + `_try_env = ${prev};`, ind + I + '} else {', ind + I2 + `_try_env = ${prev};`, ind + I2 + `const char* ${v} = _try_msg;`);
+    if (fin) {
+      // Fehler im catch-Teil: erst finally, dann weiterwerfen
+      out.push(ind + I2 + `_try_env = &${env};`, ind + I2 + `if (setjmp(${env}) == 0) {`, ...part('catch', el.qCatch, ind + I3),
+        ind + I3 + `_try_env = ${prev};`, ind + I2 + '} else {', ind + I3 + `_try_env = ${prev};`, ind + I3 + `${re} = 1;`, ind + I2 + '}');
+    } else {
+      out.push(...this.seq(el.qCatch, ind + I2));
+    }
+    out.push(ind + I + '}');
+    if (fin) out.push(...this.seq(fin, ind + I), ind + I + `if (${re}) _throw(_try_msg);`);
+    out.push(ind + '}');
+    return out;
+  }
+
+  /**
+   * C: Sprung (return, leave, continue) aus einem oder mehreren try-Blöcken heraus. Vor dem Sprung: Sprungpunkt jedes
+   * verlassenen try-Blocks zurücksetzen (sonst zeigt _try_env auf einen beendeten Block – Absturz beim nächsten throw)
+   * und dessen finally-Teil ausführen. Liefert null, wenn kein try-Block verlassen wird.
+   */
+  tryExit(c, ind, jump) {
+    const stack = this.cTry || [];
+    if (this.lang !== 'c' || !stack.length) return null;
+    const loops = (this.loopStack || []).length;
+    const target = c.kind === 'return' ? -1 : c.kind === 'continue' ? loops - 1 : loops - (c.count || 1);
+    // betroffen: try-Blöcke, die innerhalb der verlassenen Schleife (bzw. der Routine) begonnen haben
+    const left = stack.map((t, k) => ({ ...t, k })).filter((t) => t.loopDepth > target);
+    if (!left.length) return null;
+    const out = [];
+    let ret = null;
+    if (c.kind === 'return' && c.expr && c.expr.trim()) {
+      // Rückgabewert zuerst berechnen: Ein Fehler darin gehört noch zu diesem try-Block, und finally läuft danach (wie in Java)
+      const ty = this.curIsMain ? 'int' : this.typeName(this.retType(this.curSig) || 'int');
+      out.push(ind + `${ty} _ret = ${this.x(c.expr)};`);
+      ret = '_ret';
+    }
+    for (const t of [...left].reverse()) { // von innen nach außen
+      out.push(ind + `_try_env = _prev${t.id};`);
+      if (t.fin) {
+        const saved = this.cTry;
+        this.cTry = stack.slice(0, t.k); // finally läuft außerhalb dieses try-Blocks
+        try { out.push(...this.seq(t.fin, ind)); } finally { this.cTry = saved; }
+      }
+    }
+    out.push(...(ret ? [ind + `return ${ret};`] : jump()));
+    // eigener Block, damit mehrere return-Stellen je eine eigene Variable _ret haben
+    return ret ? [ind + '{', ...out.map((l) => this.I + l), ind + '}'] : out;
   }
 
   /** C/C++: Hilfsfunktionen für Structorizer-Zeichenkettenfunktionen und throw */
@@ -1692,10 +1916,30 @@ class CGen extends BaseGen {
     if (this.lang === 'c') return this.cHelpers();
     if (this.lang !== 'cpp') return [];
     const out = [];
+    // Division und Rest innerhalb von try: bei 0 abfangbarer Fehler wie im Interpreter
+    if (this.needs.has('checkdiv') || this.needs.has('checkmod')) this.needs.add('stdexcept');
+    if (this.needs.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `long long _idiv(long long a, long long b) { if (b == 0) throw runtime_error(${JSON.stringify(tr('exec.divZero'))}); return a / b; }`, '');
+    if (this.needs.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `long long _imod(long long a, long long b) { if (b == 0) throw runtime_error(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; }`, '');
+    if (this.needs.has('cppfinally')) {
+      out.push(this.comment(tr('gen.cppFinallyGuard')), 'struct _Finally {', '    function<void()> f;', '    _Finally(function<void()> g) : f(g) {}',
+        '    ~_Finally() { f(); }', '};', '');
+    }
     if (this.needs.has('readline')) {
       this.needs.add('string');
       out.push(this.comment(tr('gen.readLine')), 'string read_line() {', '    string s;', '    getline(cin, s);',
         '    if (!s.empty() && s.back() == \'\\r\') s.pop_back();', '    return s;', '}', '');
+    }
+    // Zahlen einlesen, streng wie im Interpreter: anderer Text ist ein (abfangbarer) Fehler
+    if (this.needs.has('readnum')) {
+      this.needs.add('stdexcept');
+      const msg = (key) => { const [a, b] = tr(key, '\u0000').split('\u0000'); return `${JSON.stringify(a)} + s + ${JSON.stringify(b)}`; };
+      const body = (key, conv, extra) => ['    string s = read_line();', '    size_t a = s.find_first_not_of(" \\t"), b = s.find_last_not_of(" \\t");',
+        '    string t = a == string::npos ? "" : s.substr(a, b - a + 1);', '    size_t p = 0;', `    ${conv}`,
+        `    if (t.empty() || p != t.size()${extra}) throw runtime_error(${msg(key)});`, '    return v;'];
+      out.push(this.comment(tr('gen.readNum')),
+        'double read_double() {', ...body('exec.notNumber', 'double v = 0; try { v = stod(t, &p); } catch (...) { p = 0; }', ' || t.find_first_of("xXnNiI") != string::npos'), '}',
+        // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
+        'long long read_int() {', '    return (long long) read_double();', '}', '');
     }
     if (this.needs.has('fmtdouble')) {
       this.needs.add('stdlib');
@@ -1714,17 +1958,15 @@ class CGen extends BaseGen {
     if (N.has('readline')) {
       N.add('string');
       out.push(this.comment(tr('gen.readLine')), 'char* read_line(void) {', '    static char buf[1024];', '    if (!fgets(buf, sizeof buf, stdin)) buf[0] = 0;',
-        '    buf[strcspn(buf, "\\r\\n")] = 0;', '    return buf;', '}',
-        'double read_double(void) {', '    return strtod(read_line(), NULL);', '}', '');
+        '    buf[strcspn(buf, "\\r\\n")] = 0;', '    return buf;', '}', '');
     }
     if (N.has('strcat')) {
       N.add('stdlib');
       out.push(this.comment(tr('gen.strCat')), 'char* str_cat(const char* a, const char* b) {', '    char* r = malloc(strlen(a) + strlen(b) + 1);',
         '    strcpy(r, a);', '    strcat(r, b);', '    return r;', '}',
-        'const char* str_int(long long v) {', '    static char buf[8][24];', '    static int k = 0;', '    char* s = buf[k++ % 8];',
-        '    snprintf(s, sizeof buf[0], "%lld", v);', '    return s;', '}',
-        'const char* str_chr(char c) {', '    static char buf[8][2];', '    static int k = 0;', '    char* s = buf[k++ % 8];',
-        '    s[0] = c; s[1] = 0;', '    return s;', '}', '');
+        // eigener Speicher je Aufruf (ein Ringpuffer würde gespeicherte Texte später überschreiben, z. B. erstes := s[0])
+        'char* str_int(long long v) {', '    char* s = malloc(24);', '    snprintf(s, 24, "%lld", v);', '    return s;', '}',
+        'char* str_chr(char c) {', '    char* s = malloc(2);', '    s[0] = c; s[1] = 0;', '    return s;', '}', '');
     }
     if (N.has('fmtdouble')) {
       N.add('stdlib');
@@ -1737,6 +1979,20 @@ class CGen extends BaseGen {
         tr('gen.cThrow'),
         'void _throw(const char* msg) {', '    if (_try_env) { _try_msg = msg; longjmp(*_try_env, 1); }', '    fprintf(stderr, "%s\\n", msg);', '    exit(1);', '}');
     }
+    // Zahlen einlesen, streng wie im Interpreter: anderer Text ist ein Fehler (abfangbar, wenn das Programm try nutzt)
+    if (N.has('readnum')) {
+      N.add('string');
+      const fail = N.has('cthrow') ? '_throw(_in_msg);' : 'fprintf(stderr, "%s\\n", _in_msg); exit(1);';
+      out.push(this.comment(tr('gen.readNum')), 'static char _in_msg[1200];',
+        `void _input_fail(const char* fmt, const char* s) { snprintf(_in_msg, sizeof _in_msg, fmt, s); ${fail} }`,
+        'double read_double(void) {', '    char* s = read_line();', '    char* e;', '    double v = strtod(s, &e);',
+        "    while (*e == ' ' || *e == '\\t') e++;", `    if (e == s || *e || strpbrk(s, "xXnNiI")) _input_fail(${JSON.stringify(tr('exec.notNumber', '%s'))}, s);`, '    return v;', '}',
+        // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
+        'long long read_int(void) {', '    return (long long) read_double();', '}');
+    }
+    // Division und Rest innerhalb von try: bei 0 abfangbarer Fehler wie im Interpreter
+    if (N.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `int _idiv(int a, int b) { if (b == 0) _throw(${JSON.stringify(tr('exec.divZero'))}); return a / b; }`);
+    if (N.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `int _imod(int a, int b) { if (b == 0) _throw(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; }`);
     if (N.has('strupper') || N.has('strlower')) {
       for (const [n, f] of [['strupper', 'toupper'], ['strlower', 'tolower']]) {
         if (N.has(n)) out.push(`char* str_${n.slice(3)}(const char* s) {`, '    char* r = malloc(strlen(s) + 1);', '    size_t i = 0;', `    for (; s[i]; i++) r[i] = (char) ${f}((unsigned char) s[i]);`, '    r[i] = 0;', '    return r;', '}');
@@ -1755,7 +2011,11 @@ class CGen extends BaseGen {
   /** Records und Aufzählungswerte (Java/C#: in der Klasse, sonst am Dateianfang) */
   typeDefs(ind) {
     const L = this.lang, I = this.I, out = [];
-    for (const e of this.enumConsts) {
+    // C: const int ist keine Konstante im Sinne von case-Marken – Aufzählungswerte als enum
+    if (L === 'c' && this.enumConsts.length) {
+      out.push(ind + `enum { ${this.enumConsts.map((e) => `${e.name} = ${this.x(e.value)}`).join(', ')} };`);
+    }
+    for (const e of (L === 'c' ? [] : this.enumConsts)) {
       out.push(ind + ({ java: `static final int ${e.name} = ${this.x(e.value)};`, csharp: `const int ${e.name} = ${this.x(e.value)};`, javascript: `const ${e.name} = ${this.x(e.value)};` }[L] || `const int ${e.name} = ${this.x(e.value)};`));
     }
     for (const [name, fields] of this.recordTypes) {
@@ -1866,6 +2126,8 @@ class CGen extends BaseGen {
     this.cur = info;
     this.curIsMain = isMain;
     this.curSig = sig;
+    // aus einem try-Teil aufgerufen: Division durch 0 auch hier abfangbar machen
+    this.checkDiv = !isMain && this.checkedRoutines().has(sig.name) ? 1 : 0;
     const I = this.I;
     const bodyInd = L === 'java' || L === 'csharp' ? I + I : I;
     const head = [];
@@ -1902,6 +2164,12 @@ class CGen extends BaseGen {
     if (isMain && (L === 'c' || L === 'cpp')) {
       const last = root.children[root.children.length - 1];
       if (!(last && last.type === 'jump' && /^return\b/.test(linesOf(last).join(' ')))) lines.push(I + 'return 0;');
+    }
+    // C: Endet eine Funktion mit try, sieht der Compiler hinter setjmp nicht, dass jeder Weg mit return endet
+    // („control reaches end of non-void function“) – unerreichbares return mit Standardwert ergänzen
+    const lastEl = this.activeEls(root.children).pop();
+    if (L === 'c' && !isMain && ret && lastEl && lastEl.type === 'try') {
+      lines.push(I + `return ${this.defaultValue(ret) || (P.normType(ret) === 'string' ? '""' : '0')}; ` + this.comment(tr('gen.cUnreachableReturn')).replace(/^\/\/ /, '/* ') + ' */');
     }
     if (!(isMain && L === 'javascript')) lines.push(pre + '}');
     else {
@@ -1969,7 +2237,14 @@ class CGen extends BaseGen {
     } else if (L === 'javascript') {
       out.push(title);
       if (this.needs.has('prompt')) out.push(tr('gen.jsPrompt'), 'const prompt = require("prompt-sync")();');
+      // Zahlen einlesen, streng wie im Interpreter (Number() nähme 2.5 für eine Ganzzahl und "" als 0)
+      const jsMsg = (key) => { const [a, b] = tr(key, '\u0000').split('\u0000'); return `${JSON.stringify(a)} + s + ${JSON.stringify(b)}`; };
+      if (this.needs.has('readint')) out.push(this.comment(tr('gen.readNum')), `const _int = (s) => Math.trunc(_num(s));`);
+      if (this.needs.has('readnum')) out.push(this.comment(tr('gen.readNum')), `const _num = (s) => { const v = String(s ?? "").trim(); if (!/^[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?$/.test(v)) throw new Error(${jsMsg('exec.notNumber')}); return parseFloat(v); };`);
       if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), 'const fmtNum = (x) => (Number.isInteger(x) ? x.toFixed(1) : String(x));');
+      // Division und Rest innerhalb von try: bei 0 abfangbarer Fehler wie im Interpreter (sonst Infinity bzw. NaN)
+      if (this.needs.has('checkdiv')) out.push(this.comment(tr('gen.checkDiv')), `const _idiv = (a, b) => { if (b === 0) throw new Error(${JSON.stringify(tr('exec.divZero'))}); return Math.trunc(a / b); };`);
+      if (this.needs.has('checkmod')) out.push(this.comment(tr('gen.checkDiv')), `const _imod = (a, b) => { if (b === 0) throw new Error(${JSON.stringify(tr('exec.divZeroMod'))}); return a % b; };`);
       out.push('', ...td);
       const subs = gen.filter((g) => !g.isMain);
       const main = gen.find((g) => g.isMain);
@@ -1991,6 +2266,7 @@ class CGen extends BaseGen {
         if (this.needs.has('math')) inc.push('#include <cmath>');
         if (this.needs.has('stdlib')) inc.push('#include <cstdlib>');
         if (this.needs.has('stdexcept')) inc.push('#include <stdexcept>');
+        if (this.needs.has('cppfinally')) inc.push('#include <functional>');
         if (this.needs.has('thread')) inc.push('#include <thread>');
         inc.push('', 'using namespace std;');
       }
@@ -2029,7 +2305,8 @@ class PyGen extends BaseGen {
         c.vars.forEach((v, k) => {
           const t = P.normType(this.typeOf(v));
           const pr = `input(${k === 0 && c.prompt ? this.x(c.prompt) : ''})`;
-          const rd = t === 'int' ? `int(${pr})` : t === 'double' ? `float(${pr})` : t === 'boolean' ? `${pr} == "True"` : pr;
+          // Ganzzahl: Kommazahl wird abgeschnitten wie im Interpreter (2.5 -> 2)
+          const rd = t === 'int' ? `int(float(${pr}))` : t === 'double' ? `float(${pr})` : t === 'boolean' ? `${pr} == "True"` : pr;
           out.push(ind + `${this.x(v)} = ${rd}`);
         });
         return out;
@@ -2040,7 +2317,11 @@ class PyGen extends BaseGen {
         return [ind + (c.expr ? `return ${this.x(c.expr)}` : 'return')];
       case 'exit': this.needs.add('sys'); return [ind + `sys.exit(${c.expr ? this.x(c.expr) : ''})`];
       case 'leave': return [ind + 'break'];
-      case 'continue': return [ind + 'continue'];
+      case 'continue': {
+        // repeat … until ist „while True: … if Bedingung: break“ – continue überspränge die Prüfung
+        const rc = this.innerRepeatCond();
+        return [...(rc ? [ind + `if ${this.x(rc)}:`, ind + this.I + 'break'] : []), ind + 'continue'];
+      }
       case 'throw': return [ind + (P.isStringLiteral(c.expr) ? `raise Exception(${this.x(c.expr)})` : `raise ${this.x(c.expr)}`)];
       default: return [ind + this.x(c.expr)];
     }
@@ -2250,7 +2531,8 @@ class PyGen extends BaseGen {
     const out = [];
     if (head.length) out.push(...head, '', '');
     const leaves = [...this.needs].filter((n) => n.startsWith('leave:')).map((n) => n.slice(6));
-    if (leaves.length) out.push(...leaves.map((l) => `class _Leave${l}(Exception):
+    // BaseException statt Exception: Das „except Exception“ eines try-Elements darf leave n nicht abfangen
+    if (leaves.length) out.push(...leaves.map((l) => `class _Leave${l}(BaseException):
 ${this.I}pass`), '', '');
     if (this.needs.has('fmtnum')) out.push(this.comment(tr('gen.fmtDouble')), ...fmtHelper('python'), '', '');
     out.push(...td);
@@ -2410,7 +2692,7 @@ class KtGen extends CGen {
         c.vars.forEach((v) => {
           const t = P.normType(this.targetType(v)) || 'string';
           const ct = P.canonType(this.targetType(v)) || t;
-          const rd = { int: 'readln().toInt()', long: 'readln().toLong()', short: 'readln().toShort()', byte: 'readln().toByte()', float: 'readln().toFloat()', double: 'readln().toDouble()', boolean: 'readln().toBoolean()', char: 'readln()[0]' }[ct] || 'readln()';
+          const rd = { int: 'readln().trim().toDouble().toInt()', long: 'readln().trim().toDouble().toLong()', short: 'readln().trim().toDouble().toInt().toShort()', byte: 'readln().trim().toDouble().toInt().toByte()', float: 'readln().trim().toFloat()', double: 'readln().trim().toDouble()', boolean: 'readln().trim().toBoolean()', char: 'readln()[0]' }[ct] || 'readln()';
           const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
           if (decl) this.cur.declared.add(v);
           out.push(ind + (decl ? `var ${v}: ${this.typeName(this.targetType(v) || t)} = ${rd}` : `${this.x(v)} = ${rd}`));
@@ -2487,7 +2769,11 @@ class KtGen extends CGen {
     const f = P.parseForText(text);
     const body = this.seq(el.body, ind + this.I);
     if (!f) return [ind + this.comment(tr('gen.todoLoop', text)), ind + 'while (true) {', ...body, ind + this.I + 'break', ind + '}'];
-    if (f.kind === 'each') return [ind + `for (${f.var} in ${isArrayLit(f.coll) ? this.val(null, f.coll) : this.x(f.coll)}) {`, ...body, ind + '}'];
+    // Zählvariable der Routine (nach der Schleife benutzt): mit Hilfsvariable zählen, im Rumpf zuweisen
+    const hv = this.loopHidden(f.var);
+    if (hv) body.unshift(ind + this.I + `${f.var} = ${hv}`);
+    const lv = hv || this.x(f.var);
+    if (f.kind === 'each') return [ind + `for (${lv} in ${isArrayLit(f.coll) ? this.val(null, f.coll) : this.x(f.coll)}) {`, ...body, ind + '}'];
     const step = f.step.replace(/\s+/g, '');
     const neg = step.startsWith('-');
     const abs = neg ? step.slice(1).replace(/^\((.*)\)$/, '$1') : step;
@@ -2500,7 +2786,7 @@ class KtGen extends CGen {
     } else {
       range = `${start} downTo ${this.x(f.end)}` + (abs !== '1' ? ` step ${this.x(abs)}` : '');
     }
-    return [ind + `for (${this.x(f.var)} in ${range}) {`, ...body, ind + '}'];
+    return [ind + `for (${lv} in ${range}) {`, ...body, ind + '}'];
   }
 
   whileEl(cond, body, ind) {
@@ -2771,7 +3057,8 @@ class RsGen extends BaseGen {
           const ct = P.canonType(this.targetType(v)) || t;
           const num = EXACT_TYPES.rust[ct];
           const rd = ct === 'char' ? 'read_line().chars().next().unwrap()' : ct === 'string' || !num ? 'read_line()'
-            : `read_line().parse::<${num}>().unwrap()`;
+            : /^[iu]/.test(num) ? `read_line().parse::<f64>().unwrap() as ${num}` // Ganzzahl: Kommazahl abschneiden (2.5 -> 2)
+              : `read_line().parse::<${num}>().unwrap()`;
           const decl = this.cur.inline.get(el) && this.cur.inline.get(el).has(v) && !this.cur.declared.has(v);
           if (decl) this.cur.declared.add(v);
           out.push(ind + (decl ? `let mut ${v}: ${this.typeName(this.targetType(v) || t)} = ${rd};` : `${this.x(v)} = ${rd};`));
@@ -2789,7 +3076,11 @@ class RsGen extends BaseGen {
         return [ind + (c.expr ? `return ${this.val(this.retType(this.curSig), c.expr)};` : 'return;')];
       case 'exit': return [ind + `std::process::exit(${c.expr ? this.x(c.expr) : '0'});`];
       case 'leave': return [ind + 'break;'];
-      case 'continue': return [ind + 'continue;'];
+      case 'continue': {
+        // repeat … until ist „loop { … if Bedingung { break; } }“ – continue überspränge die Prüfung
+        const rc = this.innerRepeatCond();
+        return [...(rc ? [ind + `if ${this.bare(rc)} {`, ind + this.I + 'break;', ind + '}'] : []), ind + 'continue;'];
+      }
       case 'throw': return [ind + `panic!("{}", ${this.x(c.expr)});`];
       default: return [ind + this.x(c.expr) + ';'];
     }
@@ -2849,10 +3140,14 @@ class RsGen extends BaseGen {
     const f = P.parseForText(text);
     const body = this.seq(el.body, ind + this.I);
     if (!f) return [ind + this.comment(tr('gen.todoLoop', text)), ind + 'loop {', ...body, ind + this.I + 'break;', ind + '}'];
+    // Zählvariable der Routine (nach der Schleife benutzt): mit Hilfsvariable zählen, im Rumpf zuweisen
+    const hv = this.loopHidden(f.var);
+    if (hv) body.unshift(ind + this.I + `${f.var} = ${hv};`);
+    const lv = hv || this.x(f.var);
     if (f.kind === 'each') {
       const ct = P.normType(this.exprType(f.coll));
       const c = isArrayLit(f.coll) ? this.val(null, f.coll) : this.x(f.coll);
-      return [ind + `for ${f.var} in ${ct === 'string' ? `${c}.chars()` : isArrayLit(f.coll) ? c : `${c}.clone()`} {`, ...body, ind + '}'];
+      return [ind + `for ${lv} in ${ct === 'string' ? `${c}.chars()` : isArrayLit(f.coll) ? c : `${c}.clone()`} {`, ...body, ind + '}'];
     }
     const usize = (s) => (/^\d+$/.test(s) ? s : `(${s}) as usize`);
     const step = f.step.replace(/\s+/g, '');
@@ -2867,7 +3162,7 @@ class RsGen extends BaseGen {
     } else {
       range = `(${this.x(f.end)}..=${start}).rev()` + (abs !== '1' ? `.step_by(${usize(this.x(abs))})` : '');
     }
-    return [ind + `for ${this.x(f.var)} in ${range} {`, ...body, ind + '}'];
+    return [ind + `for ${lv} in ${range} {`, ...body, ind + '}'];
   }
 
   whileEl(cond, body, ind) {
@@ -2894,11 +3189,89 @@ class RsGen extends BaseGen {
 
   /** TRY: Rust hat keine Ausnahmen – throw ist panic!, abgefangen mit catch_unwind (Hilfsfunktion try_block) */
   tryEl(el, ind) {
-    const I = this.I, v = this.catchVar(el);
+    const I = this.I, I2 = I + I, v = this.catchVar(el);
     this.needs.add('try');
-    const out = [ind + `if let Err(${v}) = try_block(|| {`, ...this.seq(el.qTry, ind + I), ind + '}) {', ...this.seq(el.qCatch, ind + I), ind + '}'];
-    if (el.qFinally.length) out.push(...this.seq(el.qFinally, ind));
+    const fin = this.activeEls(el.qFinally).length ? el.qFinally : null;
+    // try-Teil (und bei finally auch catch-Teil) läuft in einer Closure: Sprünge hinaus meldet sie als Flow-Wert (tryExit)
+    const frame = { loopDepth: (this.loopStack || []).length, flows: new Set() };
+    this.rsTry = this.rsTry || [];
+    const inClosure = (seq, pind) => { this.rsTry.push(frame); try { return this.seq(seq, pind); } finally { this.rsTry.pop(); } };
+    const tryBody = inClosure(el.qTry, ind + I);
+    if (!fin && !frame.flows.size) {
+      // einfache Form: kein Sprung aus dem try-Teil, kein finally
+      return [ind + `if let Err(${v}) = try_block(|| {`, ...tryBody, ind + '}) {', ...this.seq(el.qCatch, ind + I), ind + '}'];
+    }
+    this.needs.add('flow');
+    const T = this.curIsMain || !this.retType(this.curSig) ? '()' : this.typeName(this.retType(this.curSig));
+    const open = `try_block(|| -> Flow<${T}> {`;
+    const out = [];
+    if (!fin) {
+      out.push(ind + `match ${open}`, ...tryBody, ind + I + 'Flow::Normal', ind + '}) {');
+      out.push(...this.rsFlowArms(frame, ind + I));
+      out.push(ind + I + `Err(${v}) => {`, ...this.seq(el.qCatch, ind + I2), ind + I + '}', ind + '}');
+      return out;
+    }
+    // mit finally: auch der catch-Teil in einer Closure, damit finally bei jedem Ausgang läuft (auch bei throw in catch)
+    const id = (this.tryCount = (this.tryCount || 0) + 1);
+    const catchBody = inClosure(el.qCatch, ind + I2);
+    out.push(ind + `let _o${id} = match ${open}`, ...tryBody, ind + I + 'Flow::Normal', ind + '}) {',
+      ind + I + 'Ok(f) => Ok(f),', ind + I + `Err(${v}) => ${open}`, ...catchBody, ind + I2 + 'Flow::Normal', ind + I + '}),', ind + '};');
+    out.push(...this.seq(fin, ind));
+    out.push(ind + `match _o${id} {`, ...this.rsFlowArms(frame, ind + I, true), ind + I + 'Err(_m) => panic!("{}", _m),', ind + '}');
     return out;
+  }
+
+  /** Auswertung des Flow-Werts nach einem try-Block: Sprünge, die die Closure gemeldet hat, hier ausführen */
+  rsFlowArms(frame, ind, wrapped) {
+    const arms = [];
+    // Sprung im umgebenden Kontext – der kann selbst wieder in einer try-Closure liegen
+    const jump = (c) => {
+      let lines = this.tryExit(c, '');
+      if (!lines && c.kind === 'return') {
+        const T = this.curIsMain || !this.retType(this.curSig) ? '()' : 'v';
+        lines = [T === '()' ? 'return;' : 'return _v;'];
+      }
+      if (!lines && c.kind === 'leave' && c.count > 1) lines = this.leaveN(c.count, '');
+      if (!lines) lines = this.stmt(c, '', null);
+      return `{ ${lines.map((l) => l.trim()).join(' ')} }`;
+    };
+    for (const f of [...frame.flows].sort()) {
+      if (f.startsWith('leave:')) { const n = Number(f.slice(6)); arms.push(`Ok(Flow::Leave(${n})) => ${jump({ kind: 'leave', count: n })}`); }
+      else if (f === 'continue') arms.push(`Ok(Flow::Continue) => ${jump({ kind: 'continue' })}`);
+      else if (f === 'return') arms.push(`Ok(Flow::Return(_v)) => ${jump({ kind: 'return', value: '_v' })}`);
+    }
+    arms.push('Ok(_) => {}');
+    return arms.map((a) => ind + a + ',');
+  }
+
+  /**
+   * Sprung (return, leave, continue) aus der Closure eines try-Blocks heraus: als Flow-Wert zurückgeben, den die
+   * Auswertung nach dem try-Block (rsFlowArms) ausführt. Null, wenn der Sprung innerhalb der Closure bleibt.
+   */
+  tryExit(c, ind = '') {
+    const f = this.rsTry && this.rsTry[this.rsTry.length - 1];
+    if (!f) return null;
+    const loops = (this.loopStack || []).length;
+    if (c.kind === 'return') {
+      if (this.curIsMain && c.expr && c.expr.trim() && c.expr.trim() !== '0') return null; // exit: geht auch aus der Closure
+      f.flows.add('return');
+      const ret = this.retType(this.curSig);
+      const val = c.value || (this.curIsMain || !c.expr || !c.expr.trim() || !ret ? '()' : this.val(ret, c.expr));
+      return [ind + `return Flow::Return(${val});`];
+    }
+    if (c.kind === 'continue') {
+      if (loops - 1 >= f.loopDepth) return null;
+      f.flows.add('continue');
+      return [ind + 'return Flow::Continue;'];
+    }
+    if (c.kind === 'leave') {
+      const n = c.count || 1;
+      if (loops - n >= f.loopDepth) return null;
+      const rem = f.loopDepth - (loops - n); // so viele Schleifen außerhalb des try-Blocks sind zu verlassen
+      f.flows.add('leave:' + rem);
+      return [ind + `return Flow::Leave(${rem});`];
+    }
+    return null;
   }
 
   routine(root) {
@@ -2915,6 +3288,9 @@ class RsGen extends BaseGen {
     const params = isMain ? [] : sig.params.map((p) => `${assigned.has(p.name) ? 'mut ' : ''}${p.name}: ${this.typeName(p.type || p.inferredType || 'int')}`);
     const doc = (root.comment || []).filter((s) => s.trim()).map((s) => '/// ' + s);
     const head = isMain ? 'fn main() {' : `fn ${sig.name}(${params.join(', ')})${ret ? ' -> ' + this.typeName(ret) : ''} {`;
+    // Endet die Funktion mit try, sieht der Compiler nicht, dass jeder Weg mit return endet: Standardwert als Abschluss
+    const lastEl = this.activeEls(root.children).pop();
+    if (ret && lastEl && lastEl.type === 'try') body.push(I + 'Default::default() ' + this.comment(tr('gen.cUnreachableReturn')));
     return { lines: [...doc, head, ...hoisted, ...body, '}'], isMain };
   }
 
@@ -2926,7 +3302,7 @@ class RsGen extends BaseGen {
     for (const r of roots) if (r !== mainRoot) gen.push(this.routine(r));
     const out = [
       this.comment(tr('gen.generated', (mainRoot || roots[0]).text.join(' '))),
-      '#![allow(unused_mut, unused_variables, unused_assignments, unused_parens, non_snake_case, dead_code)]',
+      '#![allow(unused_mut, unused_variables, unused_assignments, unused_parens, non_snake_case, dead_code, unreachable_code)]',
       '',
     ];
     for (const e of this.enumConsts) out.push(`const ${e.name}: i32 = ${this.x(e.value)};`);
@@ -2943,7 +3319,7 @@ class RsGen extends BaseGen {
     }
     if (this.needs.has('try')) {
       out.push('', tr('gen.rsTry'),
-        'fn try_block<F: FnOnce()>(f: F) -> Result<(), String> {',
+        'fn try_block<R, F: FnOnce() -> R>(f: F) -> Result<R, String> {',
         '    let prev = std::panic::take_hook();',
         '    std::panic::set_hook(Box::new(|_| {}));',
         '    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));',
@@ -2954,6 +3330,9 @@ class RsGen extends BaseGen {
         '        else { String::from("Fehler") }',
         '    })',
         '}');
+    }
+    if (this.needs.has('flow')) {
+      out.push('', tr('gen.rsFlow'), 'enum Flow<T> {', '    Normal,', '    Leave(u32),', '    Continue,', '    Return(T),', '}');
     }
     if (this.needs.has('random')) {
       out.push('', tr('gen.rsRandom'), 'fn random() -> f64 {',

@@ -448,7 +448,9 @@ class Interpreter {
     sig.params.forEach((p, k) => {
       const t = P.normType(p.type);
       if (t) types.set(p.name, t);
-      vars.set(p.name, this.coerce(args[k], t));
+      // ohne Typangabe: Typ, den die Codeerzeugung aus allen Aufrufen ableitet (halb(7) und halb(3.0) -> Kommazahl),
+      // damit Interpreter und erzeugter Code gleich rechnen
+      vars.set(p.name, this.coerce(args[k], t || this.staticType(rootIndex, p.name)));
     });
     // Aufrufe je Name zählen, damit mehrfache Aufrufe in der Variablenansicht unterscheidbar sind
     if (!this.callCounts) this.callCounts = new Map();
@@ -702,7 +704,9 @@ class Interpreter {
           const prompt = k === 0 && c.prompt ? unquote(c.prompt) : `${name}:`;
           const raw = yield { type: 'input', prompt, name };
           const base = name.replace(/\[.*$/, '');
-          const t = this.frame.types.get(base);
+          // ohne Typangabe: Typ, den die Codeerzeugung ableitet – 2.5 für eine Ganzzahl-Variable ist dann wie im
+          // erzeugten Programm ein Fehler, 5 für eine Kommazahl-Variable wird 5.0
+          const t = this.frame.types.get(base) || this.staticType(this.frame.rootIndex, base);
           yield* this.assignTo(name, this.convertInput(raw, t && t.endsWith('[]') ? t.slice(0, -2) : t), path);
         }
         return;
@@ -792,6 +796,20 @@ class Interpreter {
     }
   }
 
+  /**
+   * Typ einer Variable bzw. eines Parameters, wie ihn die Codeerzeugung für diese Routine ableitet (generators.js,
+   * inferTypes) – nur einfache Typen (int, double, string, boolean), sonst null. Einmal je Interpreter berechnet.
+   */
+  staticType(rootIndex, name) {
+    if (this.opts.dynamicTypes) return null;
+    if (!this._static) {
+      try { this._static = require('./generators').inferTypes(this.doc); } catch (e) { this._static = []; }
+    }
+    const s = this._static[rootIndex];
+    const t = s && s.types ? P.normType(s.types.get(name)) : null;
+    return ['int', 'double', 'string', 'boolean'].includes(t) ? t : null;
+  }
+
   coerce(v, t) {
     if (v === undefined) return v;
     if (t === 'double' && typeof v === 'number') return new Float(v);
@@ -804,7 +822,8 @@ class Interpreter {
     const s = raw == null ? '' : String(raw);
     // (nicht „tr“ nennen: das ist die Übersetzungsfunktion für die Fehlermeldungen)
     const v = s.trim();
-    if (t === 'int') return strictInt(s);
+    // Ganzzahl-Variable: eine Kommazahl wird abgeschnitten (2.5 -> 2, -2.7 -> -2), anderer Text ist ein Fehler
+    if (t === 'int') return INT_RE.test(v) ? parseInt(v, 10) : Math.trunc(strictNumber(s));
     if (t === 'double') return new Float(strictNumber(s));
     if (t === 'boolean') return /^(true|wahr|ja|1)$/i.test(v);
     if (t === 'string' || t === 'char') return s;
