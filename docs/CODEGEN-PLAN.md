@@ -339,7 +339,17 @@ den Abschnitt „Grenzen“ des README.
 
 ## Phase 8 – Automatisch nach Fehlern suchen (Fuzzing)
 
-- [ ] **8.1 Zufällige Struktogramme mit fast-check** (L)
+- [x] **8.1 Zufällige Struktogramme** (L)
+  *Erledigt – ohne fast-check:* `test/fuzz.js` (`npm run test:fuzz -- --n 100 --seed 1`) erzeugt mit einem eigenen,
+  über den Seed wiederholbaren Zufallsgenerator Struktogramme (Ganz-/Kommazahlen, Texte, Arrays, `if`, `case`, alle
+  Schleifen, `leave`/`continue`, Unterprogramm), vergleicht Interpreter und erzeugten Code und schreibt Abweichungen
+  als `.nsd` nach `test/out/fuzz/`. Ganzzahlen bleiben klein (`mod`), geteilt wird nur durch Konstanten ≠ 0 – die
+  bewussten Grenzen aus Phase 1 werden so nicht als Fehler gemeldet. Kein Verkleinern (Shrinking); die Programme sind
+  von vornherein kurz (`--size`). Gleich im ersten Lauf gefunden und behoben: `div` in JavaScript ohne Abschneiden
+  (`7 div 2` ergab 3.5) und in Python mit `//` (rundet bei negativen Zahlen ab); Textverkettung in Argumenten
+  (`copy(s + "ab", 1, 3)` in C, `f("n" + a)` in Python). `div` fiel in den festen Tests nicht auf, weil `.nsd`-Dateien
+  beim Speichern `div` zu `/` normalisieren – aus dem offenen Editor kommt es aber an. Test
+  `expressions/13_concat_in_args`.
   Ein Generator für zufällige, gültige Struktogramme beginnt mit einer kleinen Teilmenge und wächst schrittweise:
   - Zuweisungen, Ausgaben, `if`, `while`, `for`
   - danach `case`, `repeat`, `leave`/`continue`

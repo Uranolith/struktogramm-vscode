@@ -40,7 +40,8 @@
   "main": "./src/extension.js",
   "scripts": {
     "test": "node test/builtins.js && node test/tasktest.js",
-    "test:builtins": "node test/builtins.js -v"
+    "test:builtins": "node test/builtins.js -v",
+    "test:fuzz": "node test/fuzz.js"
   },
   "activationEvents": [
     "onDebugResolve:struktogramm",

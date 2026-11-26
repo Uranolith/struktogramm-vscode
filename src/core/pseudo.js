@@ -822,7 +822,8 @@ function intDivision(toks, lang, ctx) {
   // abfangbaren Fehler werfen wie der Interpreter (siehe generators.js, checkDiv)
   const checked = !!(ctx && ctx.checkDiv) && CHECKDIV_LANGS.has(lang);
   const isChk = (t) => checked && !t.chkDone && ((t.t === 'op' && ['/', '%'].includes(t.v)) || (t.t === 'id' && ['div', 'mod'].includes(t.v.toLowerCase())));
-  if (!res.some((t) => (t.t === 'op' && t.v === '/' && !t.intDivDone) || isMod(t) || isChk(t))) return res;
+  const isDivKw = (t) => t.t === 'id' && t.v.toLowerCase() === 'div' && !t.intDivDone;
+  if (!res.some((t) => (t.t === 'op' && t.v === '/' && !t.intDivDone) || isDivKw(t) || isMod(t) || isChk(t))) return res;
   const isMul = (t) => (t.t === 'op' && ['*', '/', '%'].includes(t.v)) || (t.t === 'id' && ['div', 'mod'].includes(t.v.toLowerCase()));
   const KW = new Set(['and', 'or', 'xor', 'not', 'div', 'mod']);
   const endsFactor = (t) => t && (t.t === 'num' || t.t === 'str' || (t.t === 'id' && !KW.has(t.v.toLowerCase())) || (t.t === 'op' && CLOSE[t.v]));
@@ -869,9 +870,10 @@ function intDivision(toks, lang, ctx) {
         acc = intOf(acc) && intOf(f) ? [{ t: 'id', v: 'int', ws: acc[0].ws }, tok('(', 'op', false), ...fm, tok(')', 'op', false)] : fm;
         return;
       }
-      if (op.t === 'op' && op.v === '/' && !op.intDivDone && f.length && intOf(acc) && intOf(f)) {
+      // Ganzzahldivision schneidet ab: / mit Ganzzahlen und div immer (Python // würde abrunden: -7 // 2 = -4)
+      if (((op.t === 'op' && op.v === '/' && !op.intDivDone && intOf(acc) && intOf(f)) || isDivKw(op)) && f.length) {
         const first = { ...acc[0], ws: false };
-        acc = [{ t: 'id', v: 'int', ws: acc[0].ws }, tok('(', 'op', false), first, ...acc.slice(1), { ...op, intDivDone: true }, ...f, tok(')', 'op', false)];
+        acc = [{ t: 'id', v: 'int', ws: acc[0].ws }, tok('(', 'op', false), first, ...acc.slice(1), { t: 'op', v: '/', ws: true, intDivDone: true }, ...f, tok(')', 'op', false)];
         return;
       }
       acc = [...acc, op, ...f];
@@ -885,6 +887,20 @@ function intDivision(toks, lang, ctx) {
 
 /** pi als Konstante der Zielsprache (wenn es keine Variable dieses Namens gibt) */
 const PI_CONST = { python: 'math.pi', java: 'Math.PI', csharp: 'Math.PI', javascript: 'Math.PI', c: 'M_PI', cpp: 'M_PI', kotlin: 'Math.PI', rust: 'std::f64::consts::PI' };
+
+/**
+ * Argument eines Aufrufs übersetzen: Ist es eine Textverkettung („n“ + a, s + "ab"), über die volle Übersetzung des
+ * Generators (ctx.x) – sonst schriebe C char* + char*, Python "n" + 5 (Fundstelle des Zufallstests, Plan 8)
+ */
+function argOut(x, lang, ctx) {
+  const src = joinTokens(x);
+  if (ctx && ctx.x && ctx.exprType && findTop(x, (t) => t.v === '+') >= 0) {
+    let ty = null;
+    try { ty = normType(ctx.exprType(src)); } catch (e) { ty = null; }
+    if (ty === 'string') return ctx.x(src);
+  }
+  return joinTokens(mapToks(x, lang, ctx));
+}
 
 /** s[i] auf einem Text je Sprache als Text aus einem Zeichen (Python und JavaScript können das selbst) */
 const TEXT_INDEX = {
@@ -1089,7 +1105,7 @@ function mapToks(toks, lang, ctx) {
         // Structorizer-Funktion (uppercase, pos, copy, ord, sgn …) in der Zielsprache
         const close = matchClose(toks, i + 1);
         const args = splitTop(toks.slice(i + 2, close < 0 ? toks.length : close), ',').filter((x) => x.length)
-          .map((x) => ({ src: joinTokens(x), out: joinTokens(mapToks(x, lang, ctx)) }))
+          .map((x) => ({ src: joinTokens(x), out: argOut(x, lang, ctx) }))
           .map((x) => (lang === 'cpp' && isStringLiteral(x.src) && /^"/.test(x.out) ? { ...x, out: `string(${x.out})` } : x)); // C++: Methoden auf Literalen (Plan 5.6)
         const tab = l === 'random' ? RANDOM_N : SFN[l];
         const fn = tab[lang] || tab['*'];
@@ -1106,6 +1122,14 @@ function mapToks(toks, lang, ctx) {
         out.push({ t: 'id', v: MODERN.has(lang) ? modernNewArray(toks[i + 1].v, size, lang) : NEW_ARRAY[lang](normType(toks[i + 1].v), size), ws: t.ws });
         i = c < 0 ? toks.length : c;
         continue;
+      } else if (!MODERN.has(lang) && lang !== 'c' && ctx.funcs && ctx.funcs.has(t.v) && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.') &&
+          (() => { const c2 = matchClose(toks, i + 1); return splitTop(toks.slice(i + 2, c2 < 0 ? toks.length : c2), ',').some((x) => findTop(x, (q) => q.v === '+') >= 0); })()) {
+        // eigenes Unterprogramm mit Textverkettung im Argument
+        const close = matchClose(toks, i + 1);
+        const parts = splitTop(toks.slice(i + 2, close < 0 ? toks.length : close), ',').filter((x) => x.length);
+        out.push({ t: 'id', v: `${t.v}(${parts.map((x) => argOut(x, lang, ctx)).join(', ')})`, ws: t.ws });
+        i = close < 0 ? toks.length : close;
+        continue;
       } else if (lang === 'c' && ctx.cCall && ctx.funcs && ctx.funcs.has(t.v) && toks[i + 1] && toks[i + 1].v === '(' && !(out.length && out[out.length - 1].v === '.')) {
         // C: eigenes Unterprogramm – Array-Argumente mit Länge (Plan 4.2)
         const close = matchClose(toks, i + 1);
@@ -1117,7 +1141,7 @@ function mapToks(toks, lang, ctx) {
           (MODERN_FN.has(l) || (ctx.funcs && ctx.funcs.has(t.v)))) {
         const close = matchClose(toks, i + 1);
         const argToks = splitTop(toks.slice(i + 2, close < 0 ? toks.length : close), ',').filter((x) => x.length);
-        const args = argToks.map((x) => ({ src: joinTokens(x), out: joinTokens(mapToks(x, lang, ctx)), toks: x }));
+        const args = argToks.map((x) => ({ src: joinTokens(x), out: argOut(x, lang, ctx), toks: x }));
         let v;
         if (ctx.funcs && ctx.funcs.has(t.v)) {
           // eigene Funktion: Argumente an Parametertypen anpassen
