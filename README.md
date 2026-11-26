@@ -396,8 +396,10 @@ Parallelverarbeitung im erzeugten Code:
 - **Test im echten VS Code** – `npm run test:vscode`: startet ein VS Code mit der Entwicklungsversion der Erweiterung
   (`@vscode/test-electron`, beim ersten Mal wird es nach `.vscode-test/` geladen) und prüft über die echten Befehle:
   Ausführen mit Eingaben (Ausgabe wie im Interpreter, Dateien der Dateifunktionen neben der `.nsd`), Code erzeugen für
-  alle acht Sprachen samt Übersetzen und Ausführen genau dieses Codes, Meldungen beim Erzeugen und den Live-Code
-  (`test/vscode/`).
+  alle acht Sprachen, Meldungen beim Erzeugen und den Live-Code (`test/vscode/`). Der erzeugte Code wird im Terminal
+  „Struktograf: erzeugter Code“ des Test-VS-Code sichtbar mit dem echten Compiler übersetzt und ausgeführt (Java, Kotlin
+  und C# gemeinsam übersetzt). Zum Zuschauen: `npm run test:vscode -- --schritt` wartet nach jedem Programm im Terminal
+  auf Enter; ohne den Schalter läuft der Test durch (so auch in der CI).
 - **Veröffentlichen** – ohne gespeichertes Zugangstoken über *OIDC Trusted Publishing*: Wird auf GitHub ein Release mit
   der `.vsix` veröffentlicht, lädt der Workflow `.github/workflows/publish.yml` genau diese Datei hoch
   (`vsce publish --oidc`). Für ein bestehendes Release lässt er sich auch von Hand starten (*Actions → Marketplace

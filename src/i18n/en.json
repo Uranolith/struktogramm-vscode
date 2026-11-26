@@ -566,6 +566,7 @@
  "lint.assignInCond": "Assignment instead of comparison: conditions compare with =.",
  "lint.assignEq": "Comparison instead of assignment: assign with := or <-.",
  "lint.divZero": "Division by 0.",
+ "lint.divZeroFloat": "Decimal number divided by 0: gives Infinity (0 / 0 gives NaN) – as in common software, not an error. Intended?",
  "lint.badLoopHead": "Loop head cannot be read: “{0}” (e.g. “for i := 1 to 10” or “foreach x in array”).",
  "lint.emptyCond": "The condition is empty.",
  "lint.caseBool": "Case selection on the condition “{0}” with the labels true/false. Better: a branch with the condition “{0}”. Reason: the two-way selection is meant for yes/no decisions and reads at a glance; the case selection is for several values of one expression.",

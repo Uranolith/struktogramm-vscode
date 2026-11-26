@@ -2,7 +2,10 @@
 // Erweiterung (@vscode/test-electron), öffnet einen Arbeitsordner mit Beispiel-Struktogrammen und führt dort
 // test/vscode/suite.js aus – Ausführen über den echten Befehl, Code erzeugen, Meldungen, Live-Code.
 //
-//   npm run test:vscode            (lädt beim ersten Mal ein Test-VS-Code nach .vscode-test/)
+//   npm run test:vscode               läuft durch (CI)
+//   npm run test:vscode -- --schritt  zum Zuschauen: nach jedem Programm im Terminal „Struktograf: erzeugter Code“
+//                                     auf Enter warten
+//   (lädt beim ersten Mal ein Test-VS-Code nach .vscode-test/)
 //
 // Der Arbeitsordner liegt im Temp-Verzeichnis; seine Dateien (z. B. von fileCreate) bleiben nach einem Fehlschlag
 // zum Nachsehen liegen, nach einem Erfolg wird er gelöscht.
@@ -35,7 +38,8 @@ const FIXTURES = {
       extensionDevelopmentPath: ROOT,
       extensionTestsPath: path.join(__dirname, 'suite.js'),
       launchArgs: [ws, '--disable-extensions', '--skip-welcome', '--skip-release-notes', '--disable-workspace-trust'],
-      extensionTestsEnv: { STRUKTOGRAF_TEST_WS: ws },
+      // --schritt: nach jedem Programm im Terminal auf Enter warten (zum Zuschauen), ohne: durchlaufen (CI)
+      extensionTestsEnv: { STRUKTOGRAF_TEST_WS: ws, STRUKTOGRAF_TEST_SCHRITT: process.argv.includes('--schritt') ? '1' : '' },
     });
   } catch (e) {
     failed = true;

@@ -14,9 +14,11 @@ const S = require('./languages');
 
 const BATCH_LANGS = ['java', 'kotlin', 'csharp'];
 
+const javaClass = new Map(); // id -> Klassenname (Java: Datei muss so heißen wie die öffentliche Klasse)
+
 /** Datei eines Programms relativ zum Arbeitsordner der Sprache */
 function fileFor(lang, id) {
-  if (lang === 'java') return path.join('src', `p${id}`, 'Program.java');
+  if (lang === 'java') return path.join('src', `p${id}`, `${javaClass.get(id) || 'Program'}.java`);
   if (lang === 'kotlin') return path.join('src', `p${id}`, 'prog.kt');
   return path.join('cs', `p${id}.cs`);
 }
@@ -43,12 +45,15 @@ function prepare(lang, dir) {
     '<StartupObject>BatchMain</StartupObject><NoWarn>CS7022;CS0168;CS0219;CS0162</NoWarn></PropertyGroup></Project>');
   fs.writeFileSync(path.join(dir, 'cs/BatchMain.cs'), `using System;
 using System.Reflection;
-// Startprogramm: ruft die Main des Programms auf, dessen Klasse als Argument kommt (z. B. P12.Program)
+// Startprogramm: ruft die Main des Programms im angegebenen Namensraum auf (z. B. P12)
 class BatchMain
 {
     static void Main(string[] a)
     {
-        var m = Type.GetType(a[0]).GetMethod("Main", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+        const BindingFlags F = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+        MethodInfo m = null;
+        foreach (var t in Assembly.GetExecutingAssembly().GetTypes())
+            if (t.Namespace == a[0] && t.DeclaringType == null && (m = t.GetMethod("Main", F)) != null) break;
         try { m.Invoke(null, m.GetParameters().Length == 0 ? null : new object[] { new string[0] }); }
         catch (TargetInvocationException e) { Console.Out.Flush(); Console.Error.WriteLine(e.InnerException); Environment.Exit(1); }
     }
@@ -68,9 +73,9 @@ function buildCmd(lang, dir, files) {
 
 /** Programm starten: [befehl, argumente] – mit absoluten Pfaden, damit jedes Programm in einem eigenen Ordner laufen kann */
 function runCmd(lang, dir, id) {
-  if (lang === 'java') return ['java', ['-Dstdout.encoding=UTF-8', '-cp', path.join(dir, 'jcls'), `p${id}.Program`]];
+  if (lang === 'java') return ['java', ['-Dstdout.encoding=UTF-8', '-cp', path.join(dir, 'jcls'), `p${id}.${javaClass.get(id) || 'Program'}`]];
   if (lang === 'kotlin') return ['java', ['-Dstdout.encoding=UTF-8', '-cp', path.join(dir, 'batch.jar'), `p${id}.ProgKt`]];
-  return ['dotnet', [path.join(dir, 'cs/out/cs.dll'), `P${id}.Program`]];
+  return ['dotnet', [path.join(dir, 'cs/out/cs.dll'), `P${id}`]];
 }
 
 /** Fehlerzeilen eines gemeinsamen Übersetzens den Programmen zuordnen (javac meldet je nach Sprache „Fehler“) */
@@ -94,6 +99,7 @@ async function compileAll(lang, dir, items) {
   const t0 = Date.now();
   prepare(lang, dir);
   for (const it of items) {
+    if (lang === 'java') javaClass.set(it.id, (/public\s+class\s+(\w+)/.exec(it.code) || [])[1] || 'Program');
     const f = path.join(dir, fileFor(lang, it.id));
     fs.mkdirSync(path.dirname(f), { recursive: true });
     fs.writeFileSync(f, wrapCode(lang, it.id, it.code));

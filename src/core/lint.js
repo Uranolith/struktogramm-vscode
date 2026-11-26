@@ -40,7 +40,7 @@ const CATEGORY = {
   untyped: 'bestPractice', untypedParam: 'bestPractice', untypedReturn: 'bestPractice', untypedVoid: 'bestPractice', declScope: 'bestPractice', noPrompt: 'bestPractice',
   caseBool: 'conventions', caseCond: 'conventions', multiLine: 'conventions', emptyLoop: 'conventions', emptyBlock: 'conventions', noName: 'conventions',
   caseElseCond: 'confusion', typeMix: 'confusion', floatEq: 'confusion', unused: 'confusion',
-  endless: 'logic', condUnchanged: 'logic', unreachable: 'logic',
+  endless: 'logic', condUnchanged: 'logic', unreachable: 'logic', divZeroFloat: 'logic',
   untranslatable: 'codegen',
 };
 const lc = (s) => String(s || '').toLowerCase();
@@ -78,14 +78,15 @@ function scanAst(n, out) {
     scanAst(n.args, out);
     return;
   }
-  if ((n.op === '/' || n.op === 'div' || n.op === 'mod' || n.op === '%') && n.b && n.b.k === 'num' && Number(n.b.v) === 0) out.divZero = true;
+  // Division durch eine feste 0: Art und Operanden merken – ob es ein Fehler ist, hängt vom Typ ab (useExpr)
+  if ((n.op === '/' || n.op === 'div' || n.op === 'mod' || n.op === '%') && n.b && n.b.k === 'num' && Number(n.b.v) === 0) out.divZeros.push(n);
   if (n.k === 'bin' && ['=', '==', '<>', '!='].includes(n.op)) out.cmps.push([n.a, n.b]);
   for (const k of Object.keys(n)) if (k !== 'k' && k !== 'fn' && typeof n[k] === 'object') scanAst(n[k], out);
 }
 
-/** Ausdruck lesen; liefert { reads, calls, divZero } oder { error } */
+/** Ausdruck lesen; liefert { reads, calls, divZeros, cmps } oder { error } */
 function readExpr(text) {
-  const out = { reads: [], calls: [], divZero: false, cmps: [] };
+  const out = { reads: [], calls: [], divZeros: [], cmps: [] };
   const s = String(text || '').trim();
   if (!s) return out;
   try { scanAst(parseExpr(s), out); } catch (e) { out.error = e.message; }
@@ -182,8 +183,16 @@ function lintDoc(doc) {
           if (!counts.includes(c.argc)) add(path, 'error', 'argCount', tr('lint.argCount', c.name, counts.join(' / '), c.argc));
         } else if (!BUILTINS.has(ln) && !typeNames.has(c.name)) add(path, 'error', 'unknownFunc', tr('lint.unknownFunc', c.name));
       }
-      if (r.divZero) add(path, 'error', 'divZero', tr('lint.divZero'));
       const isDouble = (n) => n && ((n.k === 'num' && n.isFloat) || (n.k === 'id' && P.normType(inf.types.get(n.name)) === 'double'));
+      // Kommazahl im Ausdruck (Variable, Literal, Rechnung damit) – x / 0 ergibt dann Infinity bzw. NaN, kein Fehler
+      const hasDouble = (n) => !!n && typeof n === 'object' && (isDouble(n) || (n.k === 'bin' && ['+', '-', '*', '/'].includes(n.op) && (hasDouble(n.a) || hasDouble(n.b))) ||
+        (n.k === 'neg' && hasDouble(n.a)) || (n.k === 'call' && n.fn && n.fn.k === 'id' && ['sqrt', 'float', 'double', 'random'].includes(lc(n.fn.name))));
+      // Division durch 0 (Entscheidung 1.7): Ganzzahl, div und mod sind ein Fehler wie im Interpreter; eine Kommazahl
+      // ergibt Infinity bzw. NaN wie in üblicher Software – nur ein Hinweis, der Code wird erzeugt
+      for (const n of r.divZeros) {
+        if (n.op === '/' && (n.b.isFloat || hasDouble(n.a))) add(path, 'hint', 'divZeroFloat', tr('lint.divZeroFloat'));
+        else add(path, 'error', 'divZero', tr('lint.divZero'));
+      }
       if (r.cmps.some(([a, b]) => isDouble(a) || isDouble(b))) {
         const fc = floatComparison(text, inf);
         if (fc) add(path, 'hint', 'floatEq', tr('lint.floatEq', fc.cmp, fc.better));

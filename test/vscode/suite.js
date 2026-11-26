@@ -2,21 +2,27 @@
 // Prüft, was man sonst von Hand ausprobiert – über die echten Befehle der Erweiterung:
 //   1. Ausführen (Befehl „Ausführen ohne Debuggen“) mit Eingaben, Ausgabe wie der Interpreter; Dateien der
 //      Dateifunktionen landen neben der .nsd
-//   2. Code erzeugen (Befehl „Struktogramm → Code“) für alle acht Sprachen; genau dieser Code wird übersetzt und
-//      ausgeführt und mit dem Interpreter verglichen
+//   2. Code erzeugen (Befehl „Struktogramm → Code“) für alle acht Sprachen; genau dieser Code wird im Terminal
+//      „Struktograf: erzeugter Code“ sichtbar mit dem echten Compiler übersetzt, ausgeführt und mit dem Interpreter
+//      verglichen (test/vscode/terminal-run.js) – keine Simulation
 //   3. Meldungen beim Erzeugen (fileRead als Text, nicht übersetzbare Befehle)
 //   4. Live-Code: eine Änderung am Struktogramm erscheint im erzeugten (ungespeicherten) Code
+// Mit STRUKTOGRAF_TEST_SCHRITT=1 (npm run test:vscode -- --schritt) wartet das Terminal nach jedem Schritt auf Enter.
 'use strict';
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
 const S = require(path.join(ROOT, 'test', 'languages'));
-const { fromNsd } = require(path.join(ROOT, 'src', 'core', 'nsdxml'));
+const { fromNsd, toNsd } = require(path.join(ROOT, 'src', 'core', 'nsdxml'));
+const { mk } = require(path.join(ROOT, 'src', 'core', 'model'));
 const { generateCode, TARGETS, toClassName } = require(path.join(ROOT, 'src', 'core', 'generators'));
 const { lintDoc } = require(path.join(ROOT, 'src', 'core', 'lint'));
+const { BATCH_LANGS } = require(path.join(ROOT, 'test', 'batch'));
 
 const WS = process.env.STRUKTOGRAF_TEST_WS;
+const STEP = process.env.STRUKTOGRAF_TEST_SCHRITT === '1';
 /** Eingaben je Beispiel (eine je INPUT) */
 const INPUTS = {
   '01_dateien.nsd': ['5'],
@@ -30,7 +36,7 @@ const INPUTS = {
 const results = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(fn, ms = 15000, what = 'Bedingung') {
-  const end = Date.now() + ms;
+  const end = ms ? Date.now() + ms : Infinity;
   for (;;) {
     const v = fn();
     if (v) return v;
@@ -49,10 +55,35 @@ async function test(name, fn) {
     console.log(`  O ${name}${note ? ' – ' + note : ''} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
   } catch (e) {
     results.push({ name, ok: false, note: e.message });
-    console.log(`  X ${name}: ${String(e.message).split('\n').slice(0, 6).join('\n      ')}`);
+    console.log(`  X ${name}: ${String(e.message).split('\n').slice(0, 8).join('\n      ')}`);
   }
 }
 
+/* ---------------- Terminal „Struktograf: erzeugter Code“ (terminal-run.js) ---------------- */
+const JOBS = path.join(WS, '.terminal');
+let jobNo = 0;
+function startTerminal() {
+  fs.mkdirSync(JOBS, { recursive: true });
+  // Node aus dem PATH (das Programm von VS Code selbst ist Electron)
+  const node = execSync(process.platform === 'win32' ? 'where node' : 'which node', { encoding: 'utf8' }).split(/\r?\n/)[0].trim();
+  const term = vscode.window.createTerminal({ name: 'Struktograf: erzeugter Code', shellPath: node,
+    shellArgs: [path.join(__dirname, 'terminal-run.js'), JOBS, ...(STEP ? ['--schritt'] : [])] });
+  term.show(false);
+  return term;
+}
+/** Auftrag ans Terminal; liefert dessen Ergebnis (und wartet im Schritt-Modus auf Enter) */
+async function terminalJob(job, timeoutMs = 600000) {
+  const n = ++jobNo;
+  const f = path.join(JOBS, `job-${n}.json`);
+  fs.writeFileSync(f + '.tmp', JSON.stringify({ n, ...job }));
+  fs.renameSync(f + '.tmp', f);
+  const resFile = path.join(JOBS, `result-${n}.json`);
+  await waitFor(() => fs.existsSync(resFile), STEP ? 0 : timeoutMs, 'Ergebnis im Terminal');
+  await waitFor(() => fs.existsSync(path.join(JOBS, `ack-${n}`)), STEP ? 0 : 10000, 'Terminal');
+  return JSON.parse(fs.readFileSync(resFile, 'utf8'));
+}
+
+/* ---------------- Erweiterung ansteuern ---------------- */
 let provider;
 const uriOf = (f) => vscode.Uri.file(path.join(WS, f));
 
@@ -66,20 +97,27 @@ async function openEditor(file) {
 /** Ausführen über den echten Befehl; Eingaben wie über das Eingabefeld. Liefert Ausgabezeilen und Endzustand. */
 async function runInVsCode(file, inputs) {
   const st = await openEditor(file);
-  const out = [];
+  const out = [], trace = [];
   const queue = inputs.slice();
   let finish;
   const done = new Promise((r) => { finish = r; });
   const listener = (state, m) => {
     if (state !== st) return;
     if (m.type === 'execOut') for (const l of m.lines) if (l.kind === 'out') out.push(l.text);
-    if (m.type === 'execState' && m.state === 'input') setTimeout(() => st.exec.handle({ type: 'execInput', value: queue.length ? queue.shift() : '' }), 20);
+    if (m.type === 'execState') trace.push(m.state);
+    // Eingabe erst schicken, wenn die Ausführung wirklich darauf wartet (wie ein Mensch, der danach tippt)
+    if (m.type === 'execState' && m.state === 'input') {
+      const value = queue.length ? queue.shift() : '';
+      waitFor(() => st.exec.session && st.exec.session.state === 'input', 5000, 'Eingabebereitschaft')
+        .then(() => { trace.push(`Eingabe „${value}“`); st.exec.handle({ type: 'execInput', value }); })
+        .catch((e) => trace.push(e.message));
+    }
     if (m.type === 'execState' && m.state === 'done') finish(m);
   };
   provider.execListeners.add(listener);
   try {
     await vscode.commands.executeCommand('struktogramm.runNoDebug', uriOf(file));
-    const end = await withTimeout(done, 60000, 'Ende der Ausführung');
+    const end = await withTimeout(done, 60000, 'Ende der Ausführung').catch((e) => { throw new Error(`${e.message} – Ablauf: ${trace.join(' → ')}`); });
     return { out, end };
   } finally {
     provider.execListeners.delete(listener);
@@ -106,53 +144,30 @@ async function closeDoc(doc) {
   await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
 }
 
-/** genau diesen Code übersetzen und ausführen; liefert null oder die Abweichung zum Interpreter */
-async function buildAndRun(lang, code, inputs, ref) {
-  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), `vsc-${lang}-`));
-  try {
-    S.prepare(dir, lang);
-    let r;
-    if (lang === 'java') { // Dateiname = Klassenname (die Erweiterung benennt die Klasse nach der Datei)
-      const cls = (/public class (\w+)/.exec(code) || [])[1];
-      fs.writeFileSync(path.join(dir, `${cls}.java`), code);
-      const b = await S.exec('javac', ['-encoding', 'UTF-8', '-d', 'jcls', `${cls}.java`], { cwd: dir });
-      if (b.status !== 0) return 'Übersetzen: ' + ((b.stdout || '') + (b.stderr || '')).split('\n').find((l) => /error|fehler/i.test(l));
-      r = await S.exec('java', ['-Dstdout.encoding=UTF-8', '-cp', 'jcls', cls], { cwd: dir, input: inputs.join('\n') + '\n', timeout: 30000 });
-    } else {
-      fs.writeFileSync(path.join(dir, S.RUN[lang].file), code);
-      const b = await S.build(lang, dir);
-      if (b) return 'Übersetzen: ' + b.split('\n')[0];
-      r = await S.run(lang, dir, inputs);
-    }
-    if (r.timedOut) return 'Zeitüberschreitung';
-    return S.diff(ref.output, r.stdout);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 exports.run = async () => {
   const ext = vscode.extensions.all.find((e) => path.resolve(e.extensionPath) === ROOT);
   if (!ext) throw new Error('Erweiterung nicht geladen');
   const api = await ext.activate();
   provider = api && api._test && api._test.provider;
   if (!provider) throw new Error('Testzugang der Erweiterung fehlt (activate im Testmodus)');
-  console.log(`\nStruktograf im echten VS Code ${vscode.version} – Arbeitsordner ${WS}`);
+  console.log(`\nStruktograf im echten VS Code ${vscode.version} – Arbeitsordner ${WS}${STEP ? ' – Schritt für Schritt (Enter im Terminal)' : ''}`);
+  const term = startTerminal();
 
   // Meldungen der Erweiterung mitschneiden (gleiche vscode-API wie die Erweiterung)
   const warnings = [];
-  const origWarn = vscode.window.showWarningMessage;
-  vscode.window.showWarningMessage = (msg, ...rest) => { warnings.push(String(msg)); return Promise.resolve(undefined); };
-  const origErr = vscode.window.showErrorMessage;
-  vscode.window.showErrorMessage = (msg, ...rest) => { errorsShown.push(String(msg)); return Promise.resolve(undefined); };
+  const origWarn = vscode.window.showWarningMessage, origErr = vscode.window.showErrorMessage;
+  vscode.window.showWarningMessage = (msg) => { warnings.push(String(msg)); return Promise.resolve(undefined); };
+  vscode.window.showErrorMessage = (msg) => { errorsShown.push(String(msg)); return Promise.resolve(undefined); };
 
   console.log('\n1. Ausführen (Befehl „Ausführen ohne Debuggen“)');
   for (const [file, inputs] of Object.entries(INPUTS)) {
     await test(`${file} ausführen${inputs.length ? ` (Eingaben ${inputs.join(', ')})` : ''}`, async () => {
       const ref = S.interpret(fromNsd(fs.readFileSync(path.join(WS, file), 'utf8')), inputs);
       const { out, end } = await runInVsCode(file, inputs);
-      if (end.error && !ref.error) throw new Error('Fehler beim Ausführen: ' + end.error);
-      const d = S.diff(ref.output, out.join('\n'));
+      const d = end.error && !ref.error ? 'Fehler beim Ausführen: ' + end.error : S.diff(ref.output, out.join('\n'));
+      // im Terminal zeigen, was der Interpreter in VS Code ausgegeben hat (Schritt-Modus: Enter abwarten)
+      await terminalJob({ type: 'note', text: `\x1b[1m━━ ${file} im Interpreter (Befehl „Ausführen“)${inputs.length ? `, Eingaben ${inputs.map((x) => `„${x}“`).join(', ')}` : ''} ━━\x1b[0m\n` +
+        out.join('\n') + `\n${d ? `\x1b[31m✗ ${d}\x1b[0m` : '\x1b[32m✓ wie der Interpreter im Test\x1b[0m'}` });
       if (d) throw new Error(d);
       return `${out.length} Zeilen wie im Interpreter`;
     });
@@ -164,12 +179,16 @@ exports.run = async () => {
     return 'daten.txt, t.txt';
   });
 
-  console.log('\n2. Code erzeugen (Befehl „Struktogramm → Code“), übersetzen und ausführen');
+  console.log('\n2. Code erzeugen (Befehl „Struktogramm → Code“), im Terminal übersetzen und ausführen');
   for (const lang of Object.keys(TARGETS)) {
     await test(`${TARGETS[lang].label}: 6 Struktogramme`, async () => {
       const bad = [], blockedFiles = [];
+      // Java, Kotlin, C#: erst den Code aller Struktogramme erzeugen, im Terminal gemeinsam übersetzen (ein
+      // Compiler-Aufruf statt sechs – Kotlin bräuchte sonst je Programm ≈ 11 s zum Hochfahren), dann einzeln ausführen
+      const batch = BATCH_LANGS.includes(lang) ? [] : null;
       for (const [file, inputs] of Object.entries(INPUTS)) {
-        const lintErrors = lintDoc(fromNsd(fs.readFileSync(path.join(WS, file), 'utf8'))).filter((x) => x.severity === 'error');
+        const model = fromNsd(fs.readFileSync(path.join(WS, file), 'utf8'));
+        const lintErrors = lintDoc(model).filter((x) => x.severity === 'error');
         const doc = await toCodeInVsCode(file, lang);
         // Fehler im Struktogramm (Prüfung im Editor): die Erweiterung darf keinen Code erzeugen, sondern meldet ihn
         if (lintErrors.length || doc.blocked) {
@@ -179,15 +198,29 @@ exports.run = async () => {
           continue;
         }
         const code = doc.getText().replace(/\r\n/g, '\n');
-        await closeDoc(doc);
-        const model = fromNsd(fs.readFileSync(path.join(WS, file), 'utf8'));
         const expected = generateCode(model, lang, { className: toClassName(file.replace(/\.nsd$/, '')) });
-        if (code !== expected.replace(/\r\n/g, '\n')) { bad.push(`${file}: Code im Editor weicht vom Generator ab`); continue; }
-        const d = await buildAndRun(lang, code, inputs, S.interpret(model, inputs));
-        if (d) bad.push(`${file}: ${d}`);
+        if (code !== expected.replace(/\r\n/g, '\n')) { bad.push(`${file}: Code im Editor weicht vom Generator ab`); await closeDoc(doc); continue; }
+        const job = { type: 'run', title: file, lang, code, inputs, expected: S.interpret(model, inputs).output };
+        if (batch) { batch.push({ id: batch.length + 1, doc, job }); continue; }
+        // genau dieser Code im Terminal: übersetzen, ausführen, mit dem Interpreter vergleichen (Code bleibt dabei offen)
+        term.show(true);
+        const r = await terminalJob(job);
+        await closeDoc(doc);
+        if (!r.ok) bad.push(`${file}: ${r.msg}`);
+      }
+      if (batch && batch.length) {
+        term.show(true);
+        await terminalJob({ type: 'compile', lang, items: batch.map((b) => ({ id: b.id, title: b.job.title, code: b.job.code })) });
+        for (const b of batch) {
+          await vscode.window.showTextDocument(b.doc, { preview: false }); // Code dieses Programms zeigen
+          term.show(true);
+          const r = await terminalJob({ ...b.job, batched: true, id: b.id });
+          await closeDoc(b.doc);
+          if (!r.ok) bad.push(`${b.job.title}: ${r.msg}`);
+        }
       }
       if (bad.length) throw new Error(bad.join('\n'));
-      return 'übersetzt und ausgeführt wie im Interpreter' + (blockedFiles.length ? `; gesperrt wegen Fehler im Struktogramm: ${blockedFiles.join(', ')}` : '');
+      return 'im Terminal übersetzt und ausgeführt wie im Interpreter' + (blockedFiles.length ? `; gesperrt wegen Fehler im Struktogramm: ${blockedFiles.join(', ')}` : '');
     });
   }
 
@@ -197,15 +230,13 @@ exports.run = async () => {
     const doc = await toCodeInVsCode('07_nicht_uebersetzbar.nsd', 'java');
     const code = doc.getText();
     await closeDoc(doc);
-    if (vscode.window.showWarningMessage !== origWarn && !warnings.length) throw new Error('keine Meldung');
     if (!/push|forward/.test(warnings.join(' '))) throw new Error('Meldung nennt die Befehle nicht: ' + warnings.join(' | '));
     if (!/push/.test(code)) throw new Error('Kommentar im Code fehlt');
     return warnings[0].slice(0, 90);
   });
   await test('fileRead mitten in einem Ausdruck: Meldung (Java)', async () => {
-    fs.writeFileSync(path.join(WS, '08_fileread_ausdruck.nsd'), require(path.join(ROOT, 'src', 'core', 'nsdxml')).toNsd({ roots: [
-      require(path.join(ROOT, 'src', 'core', 'model')).mk.root('FrAusdruck', 'program', [
-        require(path.join(ROOT, 'src', 'core', 'model')).mk.instruction(['g := fileOpen("x.txt")', 'OUTPUT fileRead(g)'])])] }));
+    fs.writeFileSync(path.join(WS, '08_fileread_ausdruck.nsd'), toNsd({ roots: [mk.root('FrAusdruck', 'program', [
+      mk.instruction(['g := fileOpen("x.txt")', 'OUTPUT fileRead(g)'])])] }));
     warnings.length = 0;
     const doc = await toCodeInVsCode('08_fileread_ausdruck.nsd', 'java');
     await closeDoc(doc);
@@ -218,8 +249,7 @@ exports.run = async () => {
     const doc = await toCodeInVsCode('01_dateien.nsd', 'python');
     if (!/Hallo Welt/.test(doc.getText())) throw new Error('Ausgangstext fehlt im Code');
     const nsd = await vscode.workspace.openTextDocument(uriOf('01_dateien.nsd'));
-    const text = nsd.getText();
-    const at = text.indexOf('Hallo Welt');
+    const at = nsd.getText().indexOf('Hallo Welt');
     const edit = new vscode.WorkspaceEdit();
     edit.replace(nsd.uri, new vscode.Range(nsd.positionAt(at), nsd.positionAt(at + 'Hallo Welt'.length)), 'Hallo Live');
     await vscode.workspace.applyEdit(edit);
@@ -239,6 +269,10 @@ exports.run = async () => {
   vscode.window.showErrorMessage = origErr;
   await vscode.workspace.getConfiguration('struktogramm').update('defaultTargetLanguage', undefined, vscode.ConfigurationTarget.Global);
   const failed = results.filter((r) => !r.ok);
-  console.log(`\n${failed.length ? `${failed.length} von ${results.length} Tests nicht erfolgreich` : `alle ${results.length} Tests erfolgreich`}`);
-  if (failed.length) throw new Error(`${failed.length} Tests nicht erfolgreich`);
+  const summary = failed.length ? `${failed.length} von ${results.length} Tests nicht erfolgreich` : `alle ${results.length} Tests erfolgreich`;
+  console.log(`\n${summary}`);
+  term.show(true);
+  await terminalJob({ type: 'end', text: `\n${failed.length ? '\x1b[31m' : '\x1b[32m'}\x1b[1m■ ${summary}\x1b[0m` +
+    failed.map((f) => `\n  ✗ ${f.name}: ${String(f.note).split('\n')[0]}`).join('') });
+  if (failed.length) throw new Error(summary);
 };

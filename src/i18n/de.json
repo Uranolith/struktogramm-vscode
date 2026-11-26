@@ -566,6 +566,7 @@
  "lint.assignInCond": "Zuweisung statt Vergleich: in Bedingungen vergleicht man mit =.",
  "lint.assignEq": "Vergleich statt Zuweisung: zugewiesen wird mit := bzw. <-.",
  "lint.divZero": "Division durch 0.",
+ "lint.divZeroFloat": "Kommazahl durch 0: ergibt Infinity (0 / 0 ergibt NaN) – wie in üblicher Software, kein Fehler. Gewollt?",
  "lint.badLoopHead": "Schleifenkopf nicht lesbar: „{0}“ (z. B. „for i := 1 to 10“ oder „foreach x in feld“).",
  "lint.emptyCond": "Die Bedingung ist leer.",
  "lint.caseBool": "Fallauswahl über die Bedingung „{0}“ mit den Marken true/false. Besser: Verzweigung mit der Bedingung „{0}“. Grund: Für Ja/Nein-Entscheidungen ist die zweiseitige Auswahl gedacht und auf einen Blick lesbar; die Fallauswahl ist für mehrere Werte eines Ausdrucks da.",

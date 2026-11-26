@@ -90,3 +90,47 @@ jobs:
             test/out/tasktest-${{ matrix.lang }}.xlsx
             test/samples/codefiles/**/Program.*
           if-no-files-found: ignore
+
+  vscode:
+    name: Im echten VS Code (alle Sprachen)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Kotlin-Compiler installieren
+        run: |
+          curl -fsSL -o kotlin.zip "https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip"
+          unzip -q kotlin.zip -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/kotlinc/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Test-VS-Code (@vscode/test-electron lädt es nach .vscode-test/) zwischenspeichern
+      - uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-test-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+
+      # VS Code braucht einen Bildschirm: virtueller X-Server unter Linux
+      - name: Test im echten VS Code
+        run: xvfb-run -a npm run test:vscode
