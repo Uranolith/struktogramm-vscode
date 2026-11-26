@@ -1,5 +1,6 @@
 # Excel-Protokoll für test/tasktest.js: python tasktest_excel.py ergebnis.json ausgabe.xlsx
-# Blatt „Übersicht“: Aufgaben × Sprachen mit O (erfolgreich) / X (nicht erfolgreich) / – (nicht geprüft)
+# Blatt „Übersicht“: Aufgaben × Sprachen mit O (erfolgreich) / X (nicht erfolgreich) / K (bekannter Fehler) /
+# B (bekannter Fehler behoben) / – (nicht geprüft)
 # Blatt „Details“: jeder Testfall mit Eingaben, Ergebnis und Fehlermeldung
 import json
 import sys
@@ -22,6 +23,8 @@ HEAD_FILL = PatternFill('solid', start_color='D9E1F2')
 OK_FILL = PatternFill('solid', start_color='C6EFCE')
 BAD_FILL = PatternFill('solid', start_color='FFC7CE')
 NA_FILL = PatternFill('solid', start_color='EDEDED')
+KNOWN_FILL = PatternFill('solid', start_color='FFEB9C')
+FIXED_FILL = PatternFill('solid', start_color='DDEBF7')
 CENTER = Alignment(horizontal='center', vertical='center')
 langs = rep['langs']
 tasks = rep['tasks']
@@ -57,7 +60,7 @@ for i, t in enumerate(tasks):
     ws.cell(row=r, column=3, value=title).font = F()
     for j, l in enumerate(langs):
         res = t['results'][l['id']]
-        s = res['status'] if res['status'] in ('O', 'X') else '–'
+        s = res['status'] if res['status'] in ('O', 'X', 'K', 'B') else '–'
         cell = ws.cell(row=r, column=C0 + j, value=s)
         cell.font = F(bold=True)
         cell.alignment = CENTER
@@ -65,7 +68,7 @@ for i, t in enumerate(tasks):
             from openpyxl.comments import Comment
             cell.comment = Comment(res['detail'][:1500], 'Aufgabentest')
     a, b = get_column_letter(C0), get_column_letter(C0 + n - 1)
-    sc = ws.cell(row=r, column=C0 + n, value=f'=COUNTIF({a}{r}:{b}{r},"O")&" / "&(COUNTIF({a}{r}:{b}{r},"O")+COUNTIF({a}{r}:{b}{r},"X"))')
+    sc = ws.cell(row=r, column=C0 + n, value=f'=COUNTIF({a}{r}:{b}{r},"O")&" / "&(COUNTIF({a}{r}:{b}{r},"O")+COUNTIF({a}{r}:{b}{r},"X")+COUNTIF({a}{r}:{b}{r},"K")+COUNTIF({a}{r}:{b}{r},"B"))')
     sc.font = F()
     sc.alignment = CENTER
     for c in range(1, n + C0 + 1):
@@ -80,7 +83,7 @@ for j in range(n + 1):
         R = f'{col}{first}:{col}{end}'
     else:
         R = f'{get_column_letter(C0)}{first}:{get_column_letter(C0 + n - 1)}{end}'
-    f = f'=COUNTIF({R},"O")&" / "&(COUNTIF({R},"O")+COUNTIF({R},"X"))'
+    f = f'=COUNTIF({R},"O")&" / "&(COUNTIF({R},"O")+COUNTIF({R},"X")+COUNTIF({R},"K")+COUNTIF({R},"B"))'
     c = ws.cell(row=sr, column=C0 + j, value=f)
     c.font = F(bold=True)
     c.alignment = CENTER
@@ -92,14 +95,18 @@ rng = f'{get_column_letter(C0)}{first}:{get_column_letter(C0 + n - 1)}{end}'
 ws.conditional_formatting.add(rng, CellIsRule(operator='equal', formula=['"O"'], fill=OK_FILL, font=F(bold=True, color='006100')))
 ws.conditional_formatting.add(rng, CellIsRule(operator='equal', formula=['"X"'], fill=BAD_FILL, font=F(bold=True, color='9C0006')))
 ws.conditional_formatting.add(rng, CellIsRule(operator='equal', formula=['"–"'], fill=NA_FILL))
+ws.conditional_formatting.add(rng, CellIsRule(operator='equal', formula=['"K"'], fill=KNOWN_FILL, font=F(bold=True, color='9C5700')))
+ws.conditional_formatting.add(rng, CellIsRule(operator='equal', formula=['"B"'], fill=FIXED_FILL, font=F(bold=True, color='1F4E79')))
 
 lg = sr + 2
 legend = [
     ('Legende', True),
     ('O = erfolgreich: Code erzeugt, mit dem echten Compiler/Interpreter der Sprache übersetzt und ausgeführt, Ausgabe bei allen Testfällen gleich der des eingebauten Interpreters', False),
     ('X = nicht erfolgreich: Fehler beim Erzeugen, Übersetzen oder Ausführen oder abweichende Ausgabe (Kommentar an der Zelle und Blatt „Details“ nennen den Grund)', False),
+    ('K = bekannter Fehler: steht in inputs.json unter „_known“ mit dem Schritt aus docs/CODEGEN-PLAN.md, der ihn behebt; lässt den Lauf nicht fehlschlagen', False),
+    ('B = bekannter Fehler behoben: läuft inzwischen fehlerfrei, der Eintrag unter „_known“ muss entfernt werden', False),
     ('– = nicht geprüft: Compiler der Sprache nicht installiert', False),
-    ('„Erfolgreich“ zählt O je Zeile bzw. Spalte; hinter dem Schrägstrich steht die Zahl der geprüften Einträge (O und X). Testfälle: inputs.json im jeweiligen Ordner unter test/samples', False),
+    ('„Erfolgreich“ zählt O je Zeile bzw. Spalte; hinter dem Schrägstrich steht die Zahl der geprüften Einträge (O, X, K und B). Testfälle: inputs.json im jeweiligen Ordner unter test/samples', False),
 ]
 for k, (txt, bold) in enumerate(legend):
     c = ws.cell(row=lg + k, column=1, value=txt)
@@ -128,7 +135,7 @@ for t in tasks:
         res = t['results'][l['id']]
         for k, c in enumerate(t['cases']):
             rc = res['cases'][k] if k < len(res['cases']) else None
-            status = '–' if res['status'] == '-' else ('O' if rc and rc['ok'] else 'X')
+            status = '–' if res['status'] == '-' else ('O' if rc and rc['ok'] else 'K' if res['status'] == 'K' else 'X')
             detail = res['detail'] if res['status'] == '-' else (rc['detail'] if rc else res.get('detail', ''))
             vals = [t.get('group') or '', t['name'], l['label'], k + 1, ', '.join(map(str, c['inputs'])) or '(keine)', status, c['expected'], detail]
             for ci, v in enumerate(vals, 1):
@@ -140,6 +147,7 @@ for t in tasks:
 drng = f'F2:F{row - 1}'
 d.conditional_formatting.add(drng, CellIsRule(operator='equal', formula=['"O"'], fill=OK_FILL, font=F(bold=True, color='006100')))
 d.conditional_formatting.add(drng, CellIsRule(operator='equal', formula=['"X"'], fill=BAD_FILL, font=F(bold=True, color='9C0006')))
+d.conditional_formatting.add(drng, CellIsRule(operator='equal', formula=['"K"'], fill=KNOWN_FILL, font=F(bold=True, color='9C5700')))
 for col, wdt in zip('ABCDEFGH', (20, 30, 20, 9, 22, 9, 50, 70)):
     d.column_dimensions[col].width = wdt
 d.freeze_panes = 'A2'

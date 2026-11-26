@@ -1,0 +1,7 @@
+{
+  "_note": "Testfälle für node test/tasktest.js – Records, Aufzählungen und eingebundene Diagramme (Includables). Je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).",
+  "01_record.nsd": [[]],
+  "02_record_array.nsd": [[]],
+  "03_enum.nsd": [[]],
+  "04_includable.nsd": [[]]
+}

@@ -1,0 +1,11 @@
+{
+  "_note": "Testfälle für node test/tasktest.js – try/catch/finally: Rückgabe und leave im try-Block, finally bei return, verschachtelte Ausnahmen, Laufzeitfehler. Je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).",
+  "01_try_nested.nsd": [[]],
+  "02_try_return.nsd": [[]],
+  "03_finally_return.nsd": [[]],
+  "04_try_leave_loop.nsd": [[]],
+  "05_catch_runtime.nsd": [[]],
+  "06_finally_paths.nsd": [[]],
+  "07_try_nested_jumps.nsd": [[]],
+  "08_div_in_function.nsd": [[]]
+}

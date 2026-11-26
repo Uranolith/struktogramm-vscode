@@ -1,0 +1,90 @@
+# Prüft die Codeerzeugung bei jedem Push und Pull Request: Jedes Struktogramm in test/samples wird in die Zielsprache
+# übersetzt, mit dem echten Compiler gebaut, ausgeführt und mit dem eingebauten Interpreter verglichen (test/tasktest.js).
+# Je Sprache ein eigener Job – Kotlin ist langsam (≈ 15 s je Datei) und soll die anderen nicht aufhalten.
+# Bekannte Fehler (inputs.json „_known“, test/builtins.js KNOWN) lassen den Lauf nicht fehlschlagen; siehe
+# docs/CODEGEN-PLAN.md.
+name: Codeerzeugung testen
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KOTLIN_VERSION: 2.4.21
+  STRUKTOGRAMM_LANGUAGE: de # Kommentare im erzeugten Code wie lokal
+
+jobs:
+  builtins:
+    name: Bibliotheksfunktionen (ohne Compiler)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node test/builtins.js
+
+  sprache:
+    name: ${{ matrix.lang }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: [python, javascript, c, cpp, csharp, java, kotlin, rust]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Python: Zielsprache und Excel-Protokoll (openpyxl)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install openpyxl
+
+      - if: matrix.lang == 'java' || matrix.lang == 'kotlin'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - if: matrix.lang == 'kotlin'
+        name: Kotlin-Compiler installieren
+        run: |
+          curl -fsSL -o kotlin.zip "https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip"
+          unzip -q kotlin.zip -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/kotlinc/bin" >> "$GITHUB_PATH"
+
+      - if: matrix.lang == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - if: matrix.lang == 'rust'
+        uses: dtolnay/rust-toolchain@stable
+
+      # gcc/g++ sind auf ubuntu-latest vorhanden
+      - name: Aufgabentest
+        env:
+          FORCE_COLOR: '1'
+        run: node test/tasktest.js ${{ matrix.lang }} --out test/out/tasktest-${{ matrix.lang }}.xlsx
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tasktest-${{ matrix.lang }}
+          path: |
+            test/out/tasktest-${{ matrix.lang }}.xlsx
+            test/samples/codefiles/**/Program.*
+          if-no-files-found: ignore

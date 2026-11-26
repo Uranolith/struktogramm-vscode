@@ -39,7 +39,8 @@
   ],
   "main": "./src/extension.js",
   "scripts": {
-    "test": "node test/tasktest.js"
+    "test": "node test/builtins.js && node test/tasktest.js",
+    "test:builtins": "node test/builtins.js -v"
   },
   "activationEvents": [
     "onDebugResolve:struktogramm",

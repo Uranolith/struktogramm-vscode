@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<roots xmlns:nsd="https://structorizer.fisch.lu">
+	<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-26" changedby="" changed="2026-11-26" origin="Struktograf (VS Code)" text="&#34;TrySpruenge&#34;" comment="&#34;&#34;" color="ffffff" type="program" style="nice">
+		<children>
+			<for text="&#34;for i := 1 to 3&#34;" comment="&#34;&#34;" color="ffffff" counterVar="i" startValue="1" endValue="3" stepConst="1" style="COUNTER" disabled="0">
+				<qFor>
+					<for text="&#34;for j := 1 to 3&#34;" comment="&#34;&#34;" color="ffffff" counterVar="j" startValue="1" endValue="3" stepConst="1" style="COUNTER" disabled="0">
+						<qFor>
+							<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+								<qTry>
+									<alternative text="&#34;i * j = 4&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+										<qTrue>
+											<jump text="&#34;leave 2&#34;" comment="&#34;&#34;" color="ffffff" disabled="0"></jump>
+										</qTrue>
+										<qFalse>
+										</qFalse>
+									</alternative>
+									<instruction text="&#34;OUTPUT i, &#34;&#34;,&#34;&#34;, j&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+								</qTry>
+								<qCatch>
+								</qCatch>
+								<qFinally>
+									<instruction text="&#34;OUTPUT &#34;&#34;f&#34;&#34;&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+								</qFinally>
+							</try>
+						</qFor>
+					</for>
+				</qFor>
+			</for>
+			<instruction text="&#34;OUTPUT &#34;&#34;nach leave 2&#34;&#34;&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			<for text="&#34;for k := 1 to 4&#34;" comment="&#34;&#34;" color="ffffff" counterVar="k" startValue="1" endValue="4" stepConst="1" style="COUNTER" disabled="0">
+				<qFor>
+					<try text="&#34;a&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+						<qTry>
+							<try text="&#34;b&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+								<qTry>
+									<alternative text="&#34;k mod 2 = 0&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+										<qTrue>
+											<jump text="&#34;continue&#34;" comment="&#34;&#34;" color="ffffff" disabled="0"></jump>
+										</qTrue>
+										<qFalse>
+										</qFalse>
+									</alternative>
+									<instruction text="&#34;OUTPUT &#34;&#34;k&#34;&#34;, k&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+								</qTry>
+								<qCatch>
+								</qCatch>
+								<qFinally>
+									<instruction text="&#34;OUTPUT &#34;&#34;innen&#34;&#34;, k&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+								</qFinally>
+							</try>
+						</qTry>
+						<qCatch>
+						</qCatch>
+						<qFinally>
+							<instruction text="&#34;OUTPUT &#34;&#34;aussen&#34;&#34;, k&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+						</qFinally>
+					</try>
+				</qFor>
+			</for>
+			<instruction text="&#34;n := 0&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+			<repeat text="&#34;until n &#62;= 4&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+				<qRepeat>
+					<instruction text="&#34;n := n + 1&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+					<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+						<qTry>
+							<alternative text="&#34;n = 2&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+								<qTrue>
+									<jump text="&#34;continue&#34;" comment="&#34;&#34;" color="ffffff" disabled="0"></jump>
+								</qTrue>
+								<qFalse>
+								</qFalse>
+							</alternative>
+							<instruction text="&#34;OUTPUT &#34;&#34;n&#34;&#34;, n&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+						</qTry>
+						<qCatch>
+							<instruction text="&#34;OUTPUT &#34;&#34;x&#34;&#34;&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+						</qCatch>
+						<qFinally>
+						</qFinally>
+					</try>
+				</qRepeat>
+			</repeat>
+			<instruction text="&#34;OUTPUT suche(7)&#34;,&#34;OUTPUT suche(99)&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+		</children>
+	</root>
+	<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-26" changedby="" changed="2026-11-26" origin="Struktograf (VS Code)" text="&#34;suche(z)&#34;" comment="&#34;&#34;" color="ffffff" type="sub" style="nice">
+		<children>
+			<for text="&#34;for i := 1 to 10&#34;" comment="&#34;&#34;" color="ffffff" counterVar="i" startValue="1" endValue="10" stepConst="1" style="COUNTER" disabled="0">
+				<qFor>
+					<try text="&#34;e&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+						<qTry>
+							<alternative text="&#34;i * i &#62;= z&#34;" comment="&#34;&#34;" color="ffffff" disabled="0">
+								<qTrue>
+									<jump text="&#34;return i&#34;" comment="&#34;&#34;" color="ffffff" disabled="0"></jump>
+								</qTrue>
+								<qFalse>
+								</qFalse>
+							</alternative>
+						</qTry>
+						<qCatch>
+						</qCatch>
+						<qFinally>
+						</qFinally>
+					</try>
+				</qFor>
+			</for>
+			<jump text="&#34;return -1&#34;" comment="&#34;&#34;" color="ffffff" disabled="0"></jump>
+		</children>
+	</root>
+</roots>

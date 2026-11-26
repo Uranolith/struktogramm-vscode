@@ -8,6 +8,10 @@
 // Die Struktogramme liegen nach Themen in Unterordnern von test/samples (z. B. branching, edge_cases).
 // Je Ordner stehen die Testfälle in inputs.json: je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).
 // Ordner mit "_tasktest": false in inputs.json werden übersprungen (z. B. checks – absichtlich fehlerhaft).
+// Bekannte Fehler stehen in inputs.json unter "_known": { "datei.nsd": { "c": "2.1", "*": "6.1" } } – Sprache (oder * für
+// alle) und der Schritt in docs/CODEGEN-PLAN.md, der den Fehler behebt. Sie erscheinen als K und lassen den Lauf nicht
+// fehlschlagen. Läuft ein bekannter Fehler inzwischen durch, erscheint B (behoben): Eintrag aus "_known" entfernen –
+// bis dahin schlägt der Lauf fehl, damit die Liste stimmt.
 //
 // Ablauf in drei Schritten, jeweils mit Ausgabe in der Konsole:
 //   1. Code erzeugen: test/samples/codefiles/<ordner>/<aufgabe>/Program.<endung> – bei jedem Lauf vollständig neu,
@@ -70,7 +74,8 @@ if (!selected.length) { console.error(`Keine Struktogramme in ${SAMPLES}` + (fil
 const color = !!process.env.FORCE_COLOR && process.env.FORCE_COLOR !== '0' || (process.stdout.isTTY && !process.env.NO_COLOR);
 const paint = (code) => (s) => (color ? `\x1b[${code}m${s}\x1b[0m` : String(s));
 const green = paint('32'), red = paint('31'), gray = paint('90'), bold = paint('1'), cyan = paint('36');
-const mark = (st) => (st === 'O' ? green('O') : st === 'X' ? red('X') : gray('–'));
+const yellow = paint('33');
+const mark = (st) => (st === 'O' ? green('O') : st === 'X' ? red('X') : st === 'K' ? yellow('K') : st === 'B' ? cyan('B') : gray('–'));
 const label = (l) => TARGETS[l].label.replace(/ \(.*\)$/, '');
 const LW = Math.max(...LANGS.map((l) => label(l).length));
 const heading = (n, text) => console.log('\n' + bold(cyan(`[${n}/3] ${text}`)) + '\n' + gray('─'.repeat(70)));
@@ -87,6 +92,14 @@ function inputsFor(s) {
   }
   const c = inputCache.get(dir)[s.file];
   return Array.isArray(c) && c.length ? c : null;
+}
+
+/** Bekannter Fehler dieser Aufgabe in dieser Sprache: Planschritt (z. B. "2.1") oder null */
+function knownFor(s, lang) {
+  inputsFor(s); // lädt inputs.json des Ordners
+  const k = (inputCache.get(path.dirname(s.abs))._known || {})[s.file];
+  if (!k) return null;
+  return k[lang] || k['*'] || null;
 }
 
 const started = new Date();
@@ -137,7 +150,7 @@ const tasks = selected.filter((s) => docs.has(s.rel)).map((s) => {
   const doc = docs.get(s.rel);
   const root = doc.roots.find((r) => r.rootType === 'program') || doc.roots[0];
   const defined = inputsFor(s);
-  const tc = (defined || [[5]]).map((inp) => { const r = S.interpret(doc, inp); return { inputs: r.used, expected: r.output, refError: r.error }; });
+  const tc = (defined || [[5]]).map((inp) => { const r = S.interpret(doc, inp); return { inputs: r.used, expected: r.output, refError: r.error, exitCode: r.exitCode || 0 }; });
   const title = root ? String(root.text[0] || '') : '';
   return { ...s, title: title.includes(':') ? title.split(':').slice(1).join(':').trim() : title, cases: tc, defaultInputs: !defined };
 });
@@ -166,14 +179,18 @@ async function runOne(t, lang) {
   if (err) return { status: 'X', detail: 'Übersetzen: ' + err, buildMs, cases: t.cases.map(() => ({ ok: false, detail: 'nicht übersetzt' })) };
   const res = { status: 'O', detail: '', buildMs, cases: [] };
   for (const c of t.cases) {
-    if (c.refError) { res.cases.push({ ok: false, detail: 'Interpreter: ' + c.refError }); res.status = 'X'; res.detail ||= 'Interpreter: ' + c.refError; continue; }
+    // Bricht der Interpreter mit einem Laufzeitfehler ab (z. B. 2.5 für eine Ganzzahl-Eingabe, Division durch 0), muss
+    // auch das Programm mit einem Fehler enden – mit derselben Ausgabe bis dahin (die Fehlertexte unterscheiden sich)
+    if (c.refError && /zu viele Schritte/.test(c.refError)) { res.cases.push({ ok: false, detail: 'Interpreter: ' + c.refError }); res.status = 'X'; res.detail ||= 'Interpreter: ' + c.refError; continue; }
     const r = await S.run(lang, dir, c.inputs);
     let detail = null;
     if (r.error) detail = 'Start: ' + r.error.message;
     else if (r.timedOut) detail = 'Zeitüberschreitung';
+    else if (r.overflow) detail = 'Ausgabe über 4 MB – abgebrochen (Endlosschleife?)';
     else {
       detail = S.diff(c.expected, r.stdout);
-      if (!detail && r.status !== 0) detail = `Exitcode ${r.status}`;
+      if (c.refError) { if (!detail && r.status === 0) detail = `Interpreter bricht ab („${c.refError}“), das Programm nicht`; }
+      else if (!detail && r.status !== c.exitCode) detail = `Exitcode ${r.status}` + (c.exitCode ? ` statt ${c.exitCode}` : '');
       if (detail && r.stderr) detail += ' | ' + r.stderr.trim().split('\n').slice(-3).join(' ').slice(0, 300);
     }
     res.cases.push({ ok: !detail, detail: detail || '' });
@@ -182,13 +199,21 @@ async function runOne(t, lang) {
   return res;
 }
 
-const results = {}; // results[rel][lang] = { status: 'O'|'X'|'-', cases: [{ ok, detail }], detail }
+const results = {}; // results[rel][lang] = { status: 'O'|'X'|'K'|'B'|'-', cases: [{ ok, detail }], detail }
 
 (async () => {
   for (const [k, t] of tasks.entries()) {
     console.log(`\n${bold(`Aufgabe ${k + 1}/${tasks.length}: ${t.group ? t.group + '/' : ''}${t.name}`)}${t.title ? gray(' – ' + t.title) : ''}`);
     t.cases.forEach((c, i) => console.log(gray(`  Testfall ${i + 1}: Eingabe ${c.inputs.length ? c.inputs.join(', ') : '(keine)'}`)));
     const res = await Promise.all(LANGS.map((l) => runOne(t, l)));
+    // bekannte Fehler: X -> K (erwartet), O -> B (behoben, Eintrag in _known entfernen)
+    LANGS.forEach((l, i) => {
+      const step = knownFor(t, l), r = res[i];
+      if (!step) return;
+      r.known = step;
+      if (r.status === 'X') { r.status = 'K'; r.detail = `bekannt (Plan ${step}): ${r.detail}`; }
+      else if (r.status === 'O') { r.status = 'B'; r.detail = `bekannter Fehler (Plan ${step}) ist behoben – Eintrag in _known von ${t.group ? t.group + '/' : ''}inputs.json entfernen`; }
+    });
     results[t.rel] = Object.fromEntries(LANGS.map((l, i) => [l, res[i]]));
     LANGS.forEach((l, i) => {
       const r = res[i];
@@ -197,6 +222,8 @@ const results = {}; // results[rel][lang] = { status: 'O'|'X'|'-', cases: [{ ok,
       const sum = r.status === '-' ? '' : gray(` (${ok}/${t.cases.length} Testfälle${r.buildMs != null && S.RUN[l].build ? `, übersetzt in ${(r.buildMs / 1000).toFixed(1)} s` : ''})`);
       console.log(`  ${mark(r.status)} ${label(l).padEnd(LW)}  ${per}${sum}`);
       if (r.status === 'X') console.log('      ' + red(r.detail.split('\n')[0].slice(0, 220)));
+      else if (r.status === 'K') console.log('      ' + yellow(r.detail.split('\n')[0].slice(0, 220)));
+      else if (r.status === 'B') console.log('      ' + cyan(r.detail));
     });
   }
   const seconds = Math.round((Date.now() - started) / 1000);
@@ -206,12 +233,17 @@ const results = {}; // results[rel][lang] = { status: 'O'|'X'|'-', cases: [{ ok,
   const short = (n) => n.replace(/^\d+_aufgaben_le\d+_/, '');
   const w = Math.max(...tasks.map((t) => short(t.name).length));
   const cw = Math.max(LW, 6);
-  let okCount = 0, failed = 0, skipped = 0;
+  let okCount = 0, failed = 0, skipped = 0, known = 0, fixed = 0;
   for (const g of [...new Set(tasks.map((t) => t.group))]) {
     console.log('\n' + bold(g || '(samples)').padEnd(w) + '  ' + LANGS.map((l) => label(l).padEnd(cw)).join(' '));
     for (const t of tasks.filter((x) => x.group === g)) console.log(short(t.name).padEnd(w) + '  ' + LANGS.map((l) => mark(results[t.rel][l].status) + ''.padEnd(cw - 1)).join(' '));
   }
-  for (const t of tasks) for (const l of LANGS) { const s = results[t.rel][l].status; if (s === 'O') okCount++; else if (s === 'X') failed++; else skipped++; }
+  for (const t of tasks) {
+    for (const l of LANGS) {
+      const s = results[t.rel][l].status;
+      if (s === 'O') okCount++; else if (s === 'X') failed++; else if (s === 'K') known++; else if (s === 'B') fixed++; else skipped++;
+    }
+  }
 
   /* ---------------------------------------------------------------- */
   /* 3. Excel-Protokoll                                               */
@@ -242,7 +274,9 @@ const results = {}; // results[rel][lang] = { status: 'O'|'X'|'-', cases: [{ ok,
 
   const total = okCount + failed;
   console.log('\n' + bold(failed ? red(`${failed} von ${total} nicht erfolgreich`) : green(`alle ${total} erfolgreich`)) +
+    (known ? yellow(`, ${known} bekannte Fehler (K)`) : '') +
+    (fixed ? cyan(`, ${fixed} bekannte Fehler behoben (B) – Einträge in _known entfernen`) : '') +
     gray(`${skipped ? `, ${skipped} nicht geprüft` : ''} – ${seconds} s`));
   fs.rmSync(WORK, { recursive: true, force: true });
-  process.exitCode = failed ? 1 : 0;
+  process.exitCode = failed || fixed ? 1 : 0;
 })();

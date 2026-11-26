@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
-const { Interpreter } = require('../src/core/executor');
+const { Interpreter, Signal } = require('../src/core/executor');
 
 const CLASS_NAME = 'Program';
 
@@ -23,12 +23,20 @@ env[pathKey] = [...extra, env[pathKey]].join(path.delimiter);
 const X = process.platform === 'win32' ? '.exe' : '';
 const has = (cmd) => spawnSync(process.platform === 'win32' ? 'where' : 'which', [cmd], { env }).status === 0;
 
+/**
+ * C/C++: Warnungen, die auf falsch erzeugten Code hinweisen, als Fehler – z. B. sizeof auf einem Array-Parameter (misst den
+ * Zeiger), printf-Format passt nicht zum Typ, Zeiger aus Ganzzahl, Funktion ohne Deklaration, Lesen über ein Textende hinaus
+ */
+const STRICT_CFAMILY = ['-Werror=sizeof-array-argument', '-Werror=format', '-Werror=stringop-overread', '-Werror=return-type',
+  '-Werror=sizeof-pointer-div'];
+const STRICT_C = [...STRICT_CFAMILY, '-Werror=int-conversion', '-Werror=implicit-function-declaration', '-Werror=incompatible-pointer-types'];
+
 /** Je Sprache: Werkzeug, Quelldatei, Übersetzen (optional, [befehl, argumente, shell]) und Ausführen – relativ zum Ordner */
 const RUN = {
   python: { tool: 'python', file: 'prog.py', run: (d) => ['python', ['prog.py']] },
   javascript: { tool: 'node', file: 'prog.js', run: (d) => ['node', ['prog.js']] },
-  c: { tool: 'gcc', file: 'prog.c', build: ['gcc', ['-fopenmp', '-o', 'prog_c' + X, 'prog.c', '-lm']], run: (d) => [path.join(d, 'prog_c' + X), []] },
-  cpp: { tool: 'g++', file: 'prog.cpp', build: ['g++', ['-pthread', '-o', 'prog_cpp' + X, 'prog.cpp']], run: (d) => [path.join(d, 'prog_cpp' + X), []] },
+  c: { tool: 'gcc', file: 'prog.c', build: ['gcc', [...STRICT_C, '-fopenmp', '-o', 'prog_c' + X, 'prog.c', '-lm']], run: (d) => [path.join(d, 'prog_c' + X), []] },
+  cpp: { tool: 'g++', file: 'prog.cpp', build: ['g++', [...STRICT_CFAMILY, '-pthread', '-o', 'prog_cpp' + X, 'prog.cpp']], run: (d) => [path.join(d, 'prog_cpp' + X), []] },
   csharp: { tool: 'dotnet', file: 'cs/Program.cs', build: ['dotnet', ['build', 'cs', '-nologo', '-v', 'q', '-o', 'cs/out']], run: (d) => ['dotnet', ['cs/out/cs.dll']] },
   java: { tool: 'javac', file: `${CLASS_NAME}.java`, build: ['javac', ['-encoding', 'UTF-8', '-d', 'jcls', `${CLASS_NAME}.java`]], run: (d) => ['java', ['-Dstdout.encoding=UTF-8', '-cp', 'jcls', CLASS_NAME]] },
   kotlin: { tool: 'kotlinc', file: 'prog.kt', build: ['kotlinc', ['prog.kt', '-include-runtime', '-nowarn', '-d', 'prog_kt.jar'], true], run: (d) => ['java', ['-Dstdout.encoding=UTF-8', '-jar', 'prog_kt.jar']] },
@@ -60,15 +68,24 @@ module.exports = () => (msg) => {
   }
 }
 
-/** Prozess asynchron starten; liefert { status, stdout, stderr, error, timedOut } */
+/** Obergrenze für gesammelte Ausgabe: Eine Endlosschleife mit Ausgabe füllt sonst den Speicher (Invalid string length) */
+const MAX_OUTPUT = 4 * 1024 * 1024;
+
+/** Prozess asynchron starten; liefert { status, stdout, stderr, error, timedOut, overflow } */
 function exec(cmd, args, { cwd, input, shell = false, timeout = 300000 } = {}) {
   return new Promise((resolve) => {
-    let stdout = '', stderr = '', done = false, timedOut = false;
+    let stdout = '', stderr = '', done = false, timedOut = false, overflow = false;
     const p = spawn(shell ? [cmd, ...args].join(' ') : cmd, shell ? [] : args, { cwd, env, shell, windowsHide: true });
-    const timer = setTimeout(() => { timedOut = true; try { p.kill(); } catch (e) { /* bereits beendet */ } }, timeout);
-    const finish = (r) => { if (done) return; done = true; clearTimeout(timer); resolve({ stdout, stderr, timedOut, ...r }); };
-    p.stdout.on('data', (d) => { stdout += d; });
-    p.stderr.on('data', (d) => { stderr += d; });
+    const kill = () => { try { p.kill(); } catch (e) { /* bereits beendet */ } };
+    const timer = setTimeout(() => { timedOut = true; kill(); }, timeout);
+    const finish = (r) => { if (done) return; done = true; clearTimeout(timer); resolve({ stdout, stderr, timedOut, overflow, ...r }); };
+    const collect = (d, which) => {
+      if (overflow) return;
+      if (which === 'out') stdout += d; else stderr += d;
+      if (stdout.length + stderr.length > MAX_OUTPUT) { overflow = true; kill(); }
+    };
+    p.stdout.on('data', (d) => collect(d, 'out'));
+    p.stderr.on('data', (d) => collect(d, 'err'));
     p.on('error', (error) => finish({ status: -1, error }));
     p.on('close', (status) => finish({ status }));
     p.stdin.on('error', () => { /* Programm hat stdin nicht gelesen */ });
@@ -116,9 +133,11 @@ function interpret(doc, inputs, maxSteps = 2e6) {
       r = g.next(v);
     }
   } catch (e) {
+    // exit im Struktogramm beendet das Programm regulär (wie in der Erweiterung, execSession.js)
+    if (e instanceof Signal && e.kind === 'exit') return { output: out.join('\n'), used, error: null, exitCode: Number(e.value) || 0 };
     return { output: out.join('\n'), used, error: e.message || String(e) };
   }
-  return { output: out.join('\n'), used, error: null };
+  return { output: out.join('\n'), used, error: null, exitCode: 0 };
 }
 
 /** Erwartete und erhaltene Ausgabe vergleichen; liefert null oder eine Beschreibung der ersten Abweichung */

@@ -1,0 +1,14 @@
+{
+  "_note": "Testfälle für node test/tasktest.js – Unterprogramme: veränderte Parameter, Parametertypen aus mehreren Aufrufen, Prozeduren, Rekursion, Parallelverarbeitung. Je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).",
+  "_known": {
+    "03_type_inference.nsd": { "rust": "5.2" },
+    "05_recursion_misc.nsd": { "*": "6.3" }
+  },
+  "01_param_reassign.nsd": [[]],
+  "02_param_widen.nsd": [[]],
+  "03_type_inference.nsd": [[]],
+  "04_uncalled_and_proc.nsd": [[]],
+  "05_recursion_misc.nsd": [[]],
+  "06_names.nsd": [[]],
+  "07_parallel.nsd": [[]]
+}

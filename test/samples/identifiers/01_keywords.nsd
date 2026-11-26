@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="" created="2026-11-26" changedby="" changed="2026-11-26" origin="Struktograf (VS Code)" text="&#34;Schluessel&#34;" comment="&#34;&#34;" color="ffffff" type="program" style="nice">
+	<children>
+		<instruction text="&#34;new := 1&#34;,&#34;class := 2&#34;,&#34;var := 3&#34;,&#34;val := 4&#34;,&#34;fn := 5&#34;,&#34;match := 6&#34;,&#34;def := 7&#34;,&#34;is := 8&#34;,&#34;string := 9&#34;,&#34;char := 10&#34;,&#34;object := 11&#34;,&#34;let := 12&#34;,&#34;loop := 13&#34;,&#34;self := 14&#34;,&#34;this := 15&#34;,&#34;ref := 16&#34;,&#34;out := 17&#34;,&#34;fun := 18&#34;,&#34;when := 19&#34;,&#34;list := 20&#34;,&#34;str := 21&#34;,&#34;type := 23&#34;,&#34;lambda := 24&#34;,&#34;final := 26&#34;,&#34;base := 27&#34;,&#34;impl := 28&#34;,&#34;mut := 29&#34;,&#34;pass := 30&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;OUTPUT new + class + var + val + fn + match + def + is + string + char + object + let + loop + self + this + ref + out + fun + when + list + str + type + lambda + final + base + impl + mut + pass&#34;" comment="&#34;&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+	</children>
+</root>

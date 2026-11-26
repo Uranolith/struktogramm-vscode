@@ -1,0 +1,15 @@
+{
+  "_note": "Testfälle für node test/tasktest.js – Arrays: Übergabe an Unterprogramme, Länge von Array-Parametern, new int[n], Text-Arrays, copyArray, split. Je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).",
+  "_known": {
+    "01_array_param_len.nsd": { "c": "4.2", "cpp": "4.2", "rust": "4.3" },
+    "02_array_func.nsd": { "c": "4.2", "cpp": "4.6", "rust": "4.3" },
+    "03_string_array.nsd": { "c": "4.5", "rust": "4.7" },
+    "04_copyarray.nsd": { "c": "4.4", "cpp": "4.4", "csharp": "4.4" },
+    "05_split.nsd": { "java": "6.1", "c": "6.1", "cpp": "6.1" }
+  },
+  "01_array_param_len.nsd": [[]],
+  "02_array_func.nsd": [[]],
+  "03_string_array.nsd": [[]],
+  "04_copyarray.nsd": [[]],
+  "05_split.nsd": [[]]
+}

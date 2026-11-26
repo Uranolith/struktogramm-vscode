@@ -1,0 +1,16 @@
+{
+  "_note": "Testfälle für node test/tasktest.js – Typen: Gültigkeitsbereich bei Zuweisung in Zweigen, Kommazahlen, Eingabetypen, große Zahlen, Zeichen und Text, Deklarationen. Je Struktogramm eine Liste von Eingabefolgen (eine Zeile je INPUT).",
+  "_known": {
+    "05_big_ints.nsd": { "java": "3.6", "c": "3.6", "cpp": "3.6", "csharp": "3.6", "kotlin": "3.6", "rust": "3.6" },
+    "08_xor_bool.nsd": { "javascript": "5.7" }
+  },
+  "01_branch_scope.nsd": [[5], [-1]],
+  "02_double_output.nsd": [[]],
+  "03_input_mixed.nsd": [["Max", 30, 2.5], ["Eva", 1, 3]],
+  "04_avg.nsd": [[3, 1, 2, 4], [2, 1.5, 2.5]],
+  "05_big_ints.nsd": [[]],
+  "06_foreach_chars.nsd": [["banane"], ["xyz"]],
+  "07_typed_decl.nsd": [[]],
+  "08_xor_bool.nsd": [[]],
+  "09_input_error_try.nsd": [["5", "2.5"], [" 7 ", "abc"], ["2.5", "1e2"], [" -2.7 ", "3"], ["x", ""]]
+}
